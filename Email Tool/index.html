@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AltiusNXT – Outreach Outreach & Data Enrichment Platform</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Chart.js CDN for analytics daily bar chart -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <!-- LEFT SIDEBAR: Gmail-Style Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo-icon">A</div>
+                <div class="brand-name">AltiusNXT</div>
+            </div>
+
+            <!-- Compose Pill Button -->
+            <button id="sidebar-compose-btn" class="compose-btn" title="Compose New Email">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Compose
+            </button>
+
+            <!-- Navigation Links -->
+            <nav class="sidebar-nav">
+                <a href="#" id="menu-compose" class="nav-item active">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                        <polyline points="22,6 12,13 2,6"></polyline>
+                    </svg>
+                    <span>Composer</span>
+                </a>
+                <a href="#" id="menu-sent" class="nav-item">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                    <span>Sent Emails</span>
+                </a>
+                <a href="#" id="menu-drafts" class="nav-item">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    <span>Drafts</span>
+                    <span id="drafts-count-badge" class="nav-badge" style="display: none;">0</span>
+                </a>
+                <a href="#" id="menu-analytics" class="nav-item">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
+                    <span>Analytics</span>
+                </a>
+                <a href="#" id="menu-settings" class="nav-item">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    <span>Settings</span>
+                </a>
+            </nav>
+
+            <!-- Sidebar Connection Footer Status -->
+            <div class="sidebar-footer">
+                <div id="gmail-status" class="status-badge disconnected">
+                    <span class="status-dot"></span>
+                    <span id="gmail-status-text">Gmail Disconnected</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- RIGHT PANEL: Main Content Area -->
+        <main class="content-panel">
+            
+            <!-- Mobile Toggle Navbar (visible only on mobile) -->
+            <div class="mobile-navbar">
+                <button id="mobile-sidebar-toggle" class="mobile-toggle-btn" title="Toggle Navigation Menu">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+                <div class="mobile-logo">
+                    <div class="logo-icon-sm">A</div>
+                    <span class="brand-name-sm">AltiusNXT</span>
+                </div>
+                <div style="width: 22px;"></div> <!-- Spacer to center logo -->
+            </div>
+            
+            <!-- SECTION 1: COMPOSE NEW EMAIL -->
+            <section id="section-compose" class="content-section">
+                <div class="panel-header">
+                    <h1 class="panel-title">Outreach Email Composer</h1>
+                </div>
+                
+                <div class="compose-split-container">
+                    
+                    <!-- Composer Form Panel -->
+                    <div class="composer-form-card">
+                        
+                        <div class="form-row header-fields">
+                            <div class="form-group">
+                                <label>From</label>
+                                <div class="read-only-sender">manoj@altiusnxt.com</div>
+                            </div>
+                            <div class="form-group">
+                                <label for="email-to">To *</label>
+                                <input type="email" id="email-to" class="input-field" placeholder="client@email.com" required>
+                            </div>
+                        </div>
+
+                        <!-- CC & BCC Expanders -->
+                        <div class="form-row cc-bcc-fields">
+                            <div class="form-group">
+                                <label for="email-cc">Cc</label>
+                                <input type="text" id="email-cc" class="input-field" placeholder="cc@email.com, colleague@email.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="email-bcc">Bcc</label>
+                                <input type="text" id="email-bcc" class="input-field" placeholder="bcc@email.com">
+                            </div>
+                        </div>
+
+                        <!-- Client Type Selection (drives which template set is loaded) -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="client-type-select">Client Type</label>
+                                <select id="client-type-select" class="input-field">
+                                    <option value="ecommerce" selected>E-commerce</option>
+                                    <option value="static">Static Website</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>&nbsp;</label>
+                                <div class="help-text" style="margin-top: 0.65rem;">Templates auto-load the predefined content for the selected client type. Only Template 3 (Audit) uses AI — it generates the body from the uploaded Before &amp; After images.</div>
+                            </div>
+                        </div>
+
+                        <!-- Template Selection -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="email-template-select">Email Pitch Template</label>
+                                <select id="email-template-select" class="input-field">
+                                    <option value="manual">Manual Compose (Blank Slate)</option>
+                                    <option value="1" selected>Email 1: Before & After Sample</option>
+                                    <option value="2">Email 2: Client Project References</option>
+                                    <option value="3">Email 3: PDP Audit (AI Generated)</option>
+                                    <option value="4">Email 4: Pilot Offer (POC)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="client-name-group">
+                                <label for="client-name">Client Name *</label>
+                                <input type="text" id="client-name" class="input-field" placeholder="Client Display Name">
+                            </div>
+                        </div>
+
+                        <!-- Dynamic Template Screenshot Slots -->
+                        <div class="form-group" id="template-uploads-group">
+                            <label>Template Screenshot Uploads (Before & After)</label>
+                            <div class="upload-container">
+                                
+                                <div class="upload-box" id="before-upload-box">
+                                    <input type="file" id="before-file" accept="image/png, image/jpeg, application/pdf">
+                                    <div class="upload-icon">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="16 16 12 12 8 16"></polyline>
+                                            <line x1="12" y1="12" x2="12" y2="21"></line>
+                                            <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="upload-text">Upload <span>Before</span></div>
+                                    <div class="upload-filename" id="before-filename">PNG, JPG, PDF</div>
+                                    <div id="before-thumb-container"></div>
+                                </div>
+
+                                <div class="upload-box" id="after-upload-box">
+                                    <input type="file" id="after-file" accept="image/png, image/jpeg, application/pdf">
+                                    <div class="upload-icon">
+                                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <polyline points="16 16 12 12 8 16"></polyline>
+                                            <line x1="12" y1="12" x2="12" y2="21"></line>
+                                            <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="upload-text">Upload <span>After</span></div>
+                                    <div class="upload-filename" id="after-filename">PNG, JPG, PDF</div>
+                                    <div id="after-thumb-container"></div>
+                                </div>
+
+                            </div>
+                            <div class="help-text">
+                                <a href="#" id="load-demo-assets">Load demo screenshots</a> to test template integrations.
+                            </div>
+                        </div>
+
+                        <!-- Generic Multi-Attachment Upload Area -->
+                        <div class="form-group">
+                            <label>Additional Email Attachments</label>
+                            <div class="multi-upload-zone" id="additional-attachments-zone">
+                                <input type="file" id="additional-files-input" multiple accept="image/*, application/pdf, .docx, .xlsx, .zip">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
+                                </svg>
+                                <p>Drag & Drop additional files here, or <span>Browse Files</span></p>
+                                <span class="help-text" style="margin-top: 0;">Supports PNG, JPG, PDF, DOCX, XLSX, ZIP</span>
+                            </div>
+                            <!-- Selected Files List -->
+                            <div id="uploaded-files-list" class="uploaded-files-list"></div>
+                        </div>
+
+                        <!-- Mail Subject and Editor Body -->
+                        <div class="form-group">
+                            <label for="email-subject">Subject Line</label>
+                            <input type="text" id="email-subject" class="input-field" placeholder="Enter subject line...">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="email-body-editor">Email Content Body</label>
+                            <textarea id="email-body-editor" class="input-field" rows="12" placeholder="Write or edit email contents here..."></textarea>
+                        </div>
+
+                        <!-- Actions Bar -->
+                        <div class="composer-actions">
+                            <button id="btn-preview-pitch" class="action-btn btn-secondary">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                                Compile Preview
+                            </button>
+                            <button id="btn-save-draft" class="action-btn btn-secondary">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                                    <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                                    <polyline points="7 3 7 8 15 8"></polyline>
+                                </svg>
+                                Save Draft
+                            </button>
+                            <button id="btn-send-email" class="action-btn btn-primary" disabled>
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                </svg>
+                                Send via Gmail
+                            </button>
+                        </div>
+
+                    </div>
+                    
+                    <!-- Inbox Preview Card -->
+                    <div class="composer-preview-card">
+                        <div class="preview-header">
+                            <h3>Live Gmail Delivery Preview</h3>
+                        </div>
+                        
+                        <div class="preview-meta-fields">
+                            <div class="meta-row">
+                                <span class="meta-label">From:</span>
+                                <span class="meta-val">manoj@altiusnxt.com</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">To:</span>
+                                <span id="preview-meta-to" class="meta-val">(Recipient email address)</span>
+                            </div>
+                            <div class="meta-row" id="preview-cc-row" style="display: none;">
+                                <span class="meta-label">Cc:</span>
+                                <span id="preview-meta-cc" class="meta-val"></span>
+                            </div>
+                            <div class="meta-row" id="preview-bcc-row" style="display: none;">
+                                <span class="meta-label">Bcc:</span>
+                                <span id="preview-meta-bcc" class="meta-val"></span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="meta-label">Subject:</span>
+                                <span id="preview-meta-subject" class="meta-val">(No Subject)</span>
+                            </div>
+                        </div>
+
+                        <!-- Verdana 14px Email Body Preview Canvas -->
+                        <div class="preview-body-container">
+                            <div class="gmail-message-envelope">
+                                <div id="preview-html-body" class="gmail-message-body">
+                                    <p style="color: #94a3b8; font-style: italic;">
+                                        Enter email inputs on the left and click <strong>Compile Preview</strong> to view the structured draft here.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Rendered Attachments Bar -->
+                        <div class="preview-attachments-footer" id="preview-attachments-section" style="display: none;">
+                            <span class="meta-label" style="font-size: 0.7rem;">Attachments:</span>
+                            <div id="preview-attachments-container" class="preview-attachments-container"></div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- SECTION 2: SENT EMAILS MODULE -->
+            <section id="section-sent" class="content-section hidden">
+                <div class="panel-header">
+                    <h1 class="panel-title">Sent Folder</h1>
+                    <!-- Search bar -->
+                    <div class="search-container">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <input type="text" id="sent-search-input" class="input-field search-field" placeholder="Search by recipient, subject, date...">
+                    </div>
+                </div>
+
+                <div class="panel-body grid-panel">
+                    <div class="table-scroll-container">
+                        <table class="grid-table" id="sent-emails-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 50px;">Status</th>
+                                    <th>Client Name</th>
+                                    <th>Client Email</th>
+                                    <th>Subject</th>
+                                    <th style="width: 140px;">Date & Time</th>
+                                    <th style="width: 80px; text-align: center;">Files</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sent-emails-tbody">
+                                <!-- Grid items populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 3: DRAFTS LIST -->
+            <section id="section-drafts" class="content-section hidden">
+                <div class="panel-header">
+                    <h1 class="panel-title">Outreach Drafts</h1>
+                </div>
+                <div class="panel-body grid-panel">
+                    <div class="table-scroll-container">
+                        <table class="grid-table" id="drafts-emails-table">
+                            <thead>
+                                <tr>
+                                    <th>Recipient Email</th>
+                                    <th>Subject Line</th>
+                                    <th style="width: 180px;">Saved Date & Time</th>
+                                    <th style="width: 80px; text-align: center;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="drafts-emails-tbody">
+                                <!-- Drafts items populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 4: EMAIL ANALYTICS -->
+            <section id="section-analytics" class="content-section hidden">
+                <div class="panel-header">
+                    <h1 class="panel-title">Email Outreach Analytics</h1>
+                </div>
+                <div class="panel-body" style="overflow-y: auto;">
+                    
+                    <!-- KPI Cards Row -->
+                    <div class="analytics-kpi-grid">
+                        <div class="kpi-card">
+                            <div class="kpi-label">Total Emails Sent</div>
+                            <div class="kpi-val" id="kpi-total-sent">0</div>
+                            <div class="kpi-sub">Outreach campaign total</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Emails Sent Today</div>
+                            <div class="kpi-val" id="kpi-sent-today">0</div>
+                            <div class="kpi-sub">Within last 24 hours</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Emails Sent This Week</div>
+                            <div class="kpi-val" id="kpi-sent-week">0</div>
+                            <div class="kpi-sub">Current calendar week</div>
+                        </div>
+                        <div class="kpi-card">
+                            <div class="kpi-label">Emails Sent This Month</div>
+                            <div class="kpi-val" id="kpi-sent-month">0</div>
+                            <div class="kpi-sub">Current calendar month</div>
+                        </div>
+                    </div>
+
+                    <!-- Daily Bar Chart Container -->
+                    <div class="analytics-chart-card">
+                        <h3 class="chart-title">Daily Sent Email Volume</h3>
+                        <div class="chart-canvas-container">
+                            <canvas id="analytics-bar-chart"></canvas>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- SECTION 5: SETTINGS view -->
+            <section id="section-settings" class="content-section hidden">
+                <div class="panel-header">
+                    <h1 class="panel-title">System Configurations</h1>
+                </div>
+                <div class="panel-body" style="max-width: 600px;">
+                    
+                    <!-- Google Cloud OAuth Credentials -->
+                    <div class="form-group">
+                        <label for="google-client-id">Google OAuth Web Client ID</label>
+                        <input type="password" id="google-client-id" class="input-field" placeholder="Enter Google Web Client ID">
+                        <span class="help-text">Authorized Redirect URI must be set to <code>http://localhost:8080/index.html</code> inside Google Cloud Developer Console.</span>
+                    </div>
+
+                    <div style="border-top: 1px solid var(--border-color); margin: 0.5rem 0;"></div>
+
+                    <!-- AI APIs Setup -->
+                    <div class="form-group">
+                        <label for="ai-provider">AI Content Model Provider</label>
+                        <select id="ai-provider" class="input-field">
+                            <option value="gemini" selected>Google Gemini API (Direct CORS)</option>
+                            <option value="openai">OpenAI API (GPT-4o)</option>
+                            <option value="anthropic">Anthropic Claude API</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="ai-key">AI Secret API Key</label>
+                        <input type="password" id="ai-key" class="input-field" placeholder="Enter selected provider API Key">
+                    </div>
+
+                    <div class="settings-actions" style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+                        <button id="settings-save-btn" class="action-btn btn-primary" style="width: auto; padding: 0.75rem 2rem;">Save & Apply</button>
+                        <button id="gmail-connect-btn" class="action-btn btn-secondary" style="width: auto; padding: 0.75rem 2rem;">Connect Gmail Account</button>
+                    </div>
+
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- DETAIL MODAL FOR SENT EMAIL VIEW -->
+    <div class="modal-overlay" id="sent-detail-modal">
+        <div class="modal-box" style="max-width: 700px; width: 90%;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="detail-modal-title">Sent Email Details</h3>
+                <button class="modal-close" id="detail-modal-close">&times;</button>
+            </div>
+            <div class="modal-body" style="padding-top: 1rem;">
+                <div class="preview-meta-fields" style="background: rgba(15, 23, 42, 0.4); border-radius: 6px; padding: 1rem; border: 1px solid var(--border-color); margin-bottom: 1rem;">
+                    <div class="meta-row">
+                        <span class="meta-label">From:</span>
+                        <span class="meta-val" id="detail-from">manoj@altiusnxt.com</span>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-label">To:</span>
+                        <span class="meta-val" id="detail-to"></span>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-label">Date:</span>
+                        <span class="meta-val" id="detail-date"></span>
+                    </div>
+                    <div class="meta-row">
+                        <span class="meta-label">Subject:</span>
+                        <span class="meta-val" id="detail-subject" style="font-weight: 600;"></span>
+                    </div>
+                </div>
+
+                <!-- Scrollable Body Canvas (Verdana 14px) -->
+                <div style="background: #FFFFFF; border-radius: 8px; border: 1px solid var(--border-color); padding: 2rem; max-height: 400px; overflow-y: auto; color: #222222; font-family: Verdana, sans-serif; font-size: 14px; line-height: 1.6;">
+                    <div id="detail-body-content"></div>
+                </div>
+
+                <!-- Attachments section -->
+                <div id="detail-attachments-section" style="margin-top: 1rem; display: none;">
+                    <span class="meta-label" style="font-size: 0.75rem;">Attachments:</span>
+                    <div id="detail-attachments-container" style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="detail-modal-close-btn" class="action-btn btn-secondary" style="padding: 0.5rem 1.5rem; font-size: 0.85rem;">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Sidebar Scrim Overlay -->
+    <div class="sidebar-scrim" id="sidebar-scrim"></div>
+
+    <!-- Floating Toast Message Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

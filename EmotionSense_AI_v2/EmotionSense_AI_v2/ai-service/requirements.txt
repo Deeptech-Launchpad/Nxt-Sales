@@ -1,0 +1,23 @@
+# Transcription + speaker diarization via Gemini API
+google-genai
+
+# Audio features
+librosa==0.10.2
+
+# Text emotion + call summariser (flan-t5-base)
+transformers==4.44.2
+torch==2.4.1
+sentencepiece==0.2.0
+tokenizers==0.19.1
+
+# API
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.12
+
+# Audio I/O
+soundfile==0.12.1
+
+# Utilities
+python-dotenv==1.0.1
+numpy==1.26.4

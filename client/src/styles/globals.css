@@ -1,0 +1,11 @@
+:root {
+  --red: #e63329;
+  --red-dark: #c0271e;
+  --navy: #1c1c2e;
+  --font: 'DM Sans', system-ui, sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body { font-family: var(--font); -webkit-font-smoothing: antialiased; background: #f1f5f9; }
+button { font-family: var(--font); }
+a { text-decoration: none; }

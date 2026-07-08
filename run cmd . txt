@@ -1,0 +1,17 @@
+Open 3 terminal windows and run in order:
+
+Terminal 1 — EmotionSense AI (Python):
+
+cd "c:\Users\Altius-Admin\Desktop\Nxt MarketWiz"
+.\start-emotionsense.ps1
+
+Terminal 2 — Backend:
+
+cd "c:\Users\Altius-Admin\Desktop\Nxt MarketWiz"
+.\start-backend.ps1
+
+Terminal 3 — Frontend:
+
+cd "c:\Users\Altius-Admin\Desktop\Nxt MarketWiz"
+.\start-frontend.ps1
+Then open http://localhost:3000 in your browser.

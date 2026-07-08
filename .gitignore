@@ -1,0 +1,13 @@
+node_modules/
+client/node_modules/
+server/node_modules/
+dist/
+.env
+*.env.local
+.DS_Store
+client/dist/
+server/dist/
+
+# Excluded: contain a hardcoded secret — kept out of the repo
+get-user-and-test.js
+server/test-task-flow.js

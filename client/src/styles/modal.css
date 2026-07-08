@@ -1,0 +1,222 @@
+/* ── Overlay ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 2000;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+}
+
+/* ── Drawer ── */
+.modal-drawer {
+  width: 520px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-shadow: -4px 0 32px rgba(0, 0, 0, 0.18);
+  animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+/* ── Header ── */
+.modal-header {
+  background: #0d9488;
+  color: #fff;
+  padding: 18px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.modal-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  opacity: 0.85;
+  transition: opacity .15s;
+}
+.modal-close:hover { opacity: 1; }
+
+/* ── Body ── */
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 6px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+.form-group.required label::after {
+  content: '';
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 5px;
+  font-size: 14px;
+  color: #0f172a;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  outline: none;
+  transition: border-color .15s;
+  box-sizing: border-box;
+  background: #f8fafc;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  border-color: #0d9488;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* ── Select wrapper ── */
+.select-wrapper {
+  position: relative;
+}
+
+.select-wrapper select {
+  width: 100%;
+  padding: 8px 32px 8px 12px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 5px;
+  font-size: 14px;
+  color: #0f172a;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  outline: none;
+  appearance: none;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+
+.select-wrapper select:focus {
+  border-color: #0d9488;
+  background: #fff;
+}
+
+.select-wrapper svg {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: #64748b;
+}
+
+/* ── Hint ── */
+.form-hint {
+  font-size: 13px;
+  color: #94a3b8;
+  margin: 16px 0;
+  text-align: center;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
+.form-section-divider {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 16px 0;
+}
+
+/* ── Footer ── */
+.modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 24px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+.btn-modal-primary {
+  padding: 8px 20px;
+  border-radius: 5px;
+  border: none;
+  background: #e63329;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  transition: background .15s;
+}
+.btn-modal-primary:hover { background: #c0271e; }
+
+.btn-modal-secondary {
+  padding: 8px 16px;
+  border-radius: 5px;
+  border: 1.5px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  transition: all .15s;
+}
+.btn-modal-secondary:hover { border-color: #94a3b8; background: #f1f5f9; }
+
+.btn-modal-cancel {
+  padding: 8px 16px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: #e63329;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  margin-left: auto;
+  transition: color .15s;
+}
+.btn-modal-cancel:hover { color: #c0271e; text-decoration: underline; }
+
+/* ── Two-column form row ── */
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}

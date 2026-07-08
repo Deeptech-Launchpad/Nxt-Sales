@@ -1,0 +1,200 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String         @id @default(cuid())
+  email            String         @unique
+  name             String
+  passwordHash     String?
+  googleId         String?        @unique
+  avatar           String?
+  role             String         @default("member")
+  status           String         @default("active")
+  inviteToken      String?        @unique
+  inviteExpires    DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  activities       Activity[]
+  companies        Company[]
+  contacts         Contact[]
+  deals            Deal[]
+  emailAccounts    EmailAccount[]
+  sentMessages     ChatMessage[]  @relation("SentMessages")
+  receivedMessages ChatMessage[]  @relation("ReceivedMessages")
+}
+
+model Contact {
+  id             String     @id @default(cuid())
+  name           String
+  email          String
+  phone          String?
+  company        String?
+  status         String     @default("Lead")
+  notes          String?
+  ownerId        String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  firstName      String?
+  jobTitle       String?
+  lastName       String?
+  leadStatus     String?
+  lifecycleStage String     @default("Lead")
+  linkedinUrl    String?
+  activities     Activity[]
+  owner          User?      @relation(fields: [ownerId], references: [id])
+  deals          Deal[]
+
+  @@index([email])
+  @@index([ownerId])
+}
+
+model Company {
+  id             String     @id @default(cuid())
+  name           String
+  email          String?
+  phone          String?
+  website        String?
+  industry       String?
+  employeeCount  Int?
+  revenue        Float?
+  lifecycleStage String     @default("Lead")
+  leadStatus     String?
+  status         String     @default("Lead")
+  notes          String?
+  ownerId        String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  domain                String?
+  companyType           String?
+  city                  String?
+  stateRegion           String?
+  postalCode            String?
+  timeZone              String?
+  description           String?
+  linkedinUrl           String?
+  industryType          String?
+  leadType              String?
+  originalTrafficSource String?
+  country               String?
+  mobile                String?
+  activities     Activity[]
+  owner          User?      @relation(fields: [ownerId], references: [id])
+
+  @@index([email])
+  @@index([ownerId])
+}
+
+model Deal {
+  id        String    @id @default(cuid())
+  title     String
+  value     Float     @default(0)
+  stage     String    @default("New")
+  contactId String?
+  ownerId   String
+  closeDate DateTime?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  contact   Contact?  @relation(fields: [contactId], references: [id])
+  owner     User      @relation(fields: [ownerId], references: [id])
+
+  @@index([ownerId])
+}
+
+model Activity {
+  id            String    @id @default(cuid())
+  type          String
+  contactId     String?
+  userId        String
+  title         String?
+  body          String?
+  toEmail       String?
+  fromEmail     String?
+  subject       String?
+  emailStatus   String?
+  direction     String?
+  duration      Int?
+  outcome       String?
+  startTime     DateTime?
+  endTime       DateTime?
+  meetingStatus String?
+  location      String?
+  participants  String?
+  dueDate       DateTime?
+  priority      String?
+  taskStatus    String?
+  assignedToId  String?
+  meetLink      String?
+  messageId     String?
+  threadId      String?
+  companyId     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  company       Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contact       Contact?  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id])
+
+  @@index([contactId])
+  @@index([companyId])
+  @@index([messageId])
+  @@index([type])
+  @@index([userId])
+}
+
+model CallLog {
+  id              String    @id @default(cuid())
+  callhippoId     String    @unique
+  callDate        DateTime
+  fromNumber      String?
+  toNumber        String?
+  direction       String?
+  status          String?
+  duration        Int?
+  recordingUrl    String?
+  agentName       String?
+  agentId         String?
+  analysisStatus  String?
+  analysisResult  Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([callDate])
+  @@index([analysisStatus])
+}
+
+model ChatMessage {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  body       String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  fromUser   User     @relation("SentMessages",     fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("ReceivedMessages", fields: [toUserId],   references: [id], onDelete: Cascade)
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([createdAt])
+}
+
+model EmailAccount {
+  id           String    @id @default(cuid())
+  userId       String
+  provider     String
+  email        String
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
