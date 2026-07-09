@@ -2,6 +2,11 @@ import { useState } from 'react'
 import { X, Save, Loader2 } from 'lucide-react'
 import api from '../api/client'
 import { INDUSTRIES, COUNTRIES } from '../constants/formOptions'
+import MultiValueInput from './MultiValueInput'
+import { cleanList, editList } from '../utils/multiValue'
+
+// Compact input styling so MultiValueInput matches this modal's .er-input look.
+const ER_INPUT_STYLE = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }
 
 const LIFECYCLE_STAGES = ['Lead', 'Marketing Qualified Lead', 'Sales Qualified Lead', 'Opportunity', 'Customer', 'Evangelist', 'Other']
 const LEAD_STATUSES    = ['New', 'Open', 'In Progress', 'Open Deal', 'Unqualified', 'Attempted to Contact', 'Connected', 'Bad Timing']
@@ -15,10 +20,10 @@ function CompanyForm({ data, onChange }) {
         <input className="er-input" {...f('name')} placeholder="Company name" />
       </FormRow>
       <FormRow label="Email">
-        <input className="er-input" type="email" {...f('email')} placeholder="company@example.com" />
+        <MultiValueInput values={data.emails} onChange={v => onChange('emails', v)} type="email" placeholder="company@example.com" addLabel="Add email" inputStyle={ER_INPUT_STYLE} />
       </FormRow>
       <FormRow label="Phone Number">
-        <input className="er-input" {...f('phone')} placeholder="+91 98765 43210" />
+        <MultiValueInput values={data.phones} onChange={v => onChange('phones', v)} type="tel" placeholder="+91 98765 43210" addLabel="Add phone" inputStyle={ER_INPUT_STYLE} />
       </FormRow>
       <FormRow label="Website">
         <input className="er-input" {...f('website')} placeholder="https://example.com" />
@@ -65,10 +70,10 @@ function ContactForm({ data, onChange }) {
         </FormRow>
       </div>
       <FormRow label="Email">
-        <input className="er-input" type="email" {...f('email')} placeholder="contact@example.com" />
+        <MultiValueInput values={data.emails} onChange={v => onChange('emails', v)} type="email" placeholder="contact@example.com" addLabel="Add email" inputStyle={ER_INPUT_STYLE} />
       </FormRow>
       <FormRow label="Phone Number">
-        <input className="er-input" {...f('phone')} placeholder="+91 98765 43210" />
+        <MultiValueInput values={data.phones} onChange={v => onChange('phones', v)} type="tel" placeholder="+91 98765 43210" addLabel="Add phone" inputStyle={ER_INPUT_STYLE} />
       </FormRow>
       <FormRow label="Job Title">
         <input className="er-input" {...f('jobTitle')} placeholder="e.g. Sales Manager" />
@@ -118,7 +123,11 @@ function FormRow({ label, children }) {
 // ── Main modal ────────────────────────────────────────────────
 export default function EditRecordModal({ type, id, record, onClose, onSaved }) {
   const isCompany = type === 'company'
-  const [data,    setData]    = useState({ ...record })
+  const [data,    setData]    = useState(() => ({
+    ...record,
+    emails: editList(record.email, record.emails),
+    phones: editList(record.phone, record.phones),
+  }))
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
 
@@ -126,10 +135,14 @@ export default function EditRecordModal({ type, id, record, onClose, onSaved }) 
 
   const handleSave = async () => {
     if (!data.name?.trim()) { setError('Name is required.'); return }
+    const emails = cleanList(data.emails)
+    const phones = cleanList(data.phones)
+    if (!isCompany && !emails.length) { setError('At least one email is required.'); return }
     setSaving(true); setError('')
     try {
       const endpoint = isCompany ? `/companies/${id}` : `/contacts/${id}`
-      const { data: updated } = await api.put(endpoint, data)
+      const payload  = { ...data, emails, phones, email: emails[0] || null, phone: phones[0] || null }
+      const { data: updated } = await api.put(endpoint, payload)
       onSaved(updated)
       onClose()
     } catch (err) {

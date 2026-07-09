@@ -48,6 +48,8 @@ model Contact {
   linkedinUrl    String?
   industry       String?
   country        String?
+  emails         Json?
+  phones         Json?
   activities     Activity[]
   owner          User?      @relation(fields: [ownerId], references: [id])
   deals          Deal[]
@@ -85,6 +87,8 @@ model Company {
   originalTrafficSource String?
   country               String?
   mobile                String?
+  emails                Json?
+  phones                Json?
   activities     Activity[]
   owner          User?      @relation(fields: [ownerId], references: [id])
 

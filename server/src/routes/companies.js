@@ -6,6 +6,23 @@ const { getImportFields } = require('../utils/importFields')
 const prisma = new PrismaClient()
 
 // ── helpers ───────────────────────────────────────────────
+// Normalize a multi-value field: array or single scalar → trimmed, de-duped list.
+function cleanArr(a, fallback) {
+  let list = Array.isArray(a) ? a.slice() : (a ? [a] : [])
+  if (!list.length && fallback) list = [fallback]
+  const seen = new Set()
+  const out = []
+  for (const raw of list) {
+    const v = String(raw || '').trim()
+    if (!v) continue
+    const k = v.toLowerCase()
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(v)
+  }
+  return out
+}
+
 function dateRangeFor(key) {
   const now   = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -114,7 +131,9 @@ router.post('/bulk', auth, async (req, res) => {
           data: {
             name:                  String(c.name).trim(),
             email:                 c.email ? String(c.email).toLowerCase().trim() : null,
+            emails:                c.email ? [String(c.email).toLowerCase().trim()] : null,
             phone:                 c.phone || null,
+            phones:                c.phone ? [String(c.phone).trim()] : null,
             mobile:                c.mobile || null,
             website:               c.website || null,
             domain:                c.domain || null,
@@ -173,13 +192,18 @@ router.get('/:id', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { name, email, phone, website, industry, employeeCount, revenue, lifecycleStage, leadStatus, status, ownerId,
-            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, mobile } = req.body
+            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, mobile, emails, phones } = req.body
     if (!name) return res.status(400).json({ message: 'Company name is required.' })
+
+    const emailList = cleanArr(emails, email)
+    const phoneList = cleanArr(phones, phone)
+    const primaryEmail = emailList[0] ? emailList[0].toLowerCase() : null
+    const primaryPhone = phoneList[0] || null
 
     // Duplicate check — name (always) + email + phone + website (when provided)
     const dupConditions = [{ name: { equals: name.trim(), mode: 'insensitive' } }]
-    if (email && email.trim()) dupConditions.push({ email: email.toLowerCase().trim() })
-    if (phone && phone.trim()) dupConditions.push({ phone: phone.trim() })
+    if (primaryEmail) dupConditions.push({ email: primaryEmail })
+    if (primaryPhone) dupConditions.push({ phone: primaryPhone })
     if (website && website.trim()) dupConditions.push({ website: website.trim() })
 
     const existing = await prisma.company.findFirst({ where: { OR: dupConditions } })
@@ -194,8 +218,10 @@ router.post('/', auth, async (req, res) => {
     const company = await prisma.company.create({
       data: {
         name:            name.trim(),
-        email:           email ? email.toLowerCase().trim() : null,
-        phone:           phone    || null,
+        email:           primaryEmail,
+        emails:          emailList.length ? emailList : null,
+        phone:           primaryPhone,
+        phones:          phoneList.length ? phoneList : null,
         website:         website  || null,
         industry:        industry || null,
         employeeCount:   employeeCount ? parseInt(employeeCount) : null,
@@ -232,14 +258,20 @@ router.put('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params
     const { name, email, phone, website, industry, employeeCount, revenue, lifecycleStage, leadStatus, status, ownerId,
-            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, mobile } = req.body
+            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, mobile, emails, phones } = req.body
+
+    // Recompute the multi-value lists + primary only when arrays were sent.
+    const emailList = emails !== undefined ? cleanArr(emails, email) : null
+    const phoneList = phones !== undefined ? cleanArr(phones, phone) : null
 
     const company = await prisma.company.update({
       where: { id },
       data: {
         ...(name !== undefined && { name: name.trim() }),
-        ...(email !== undefined && { email: email ? email.toLowerCase().trim() : null }),
-        ...(phone !== undefined && { phone: phone || null }),
+        ...(emailList ? { email: emailList[0] ? emailList[0].toLowerCase() : null, emails: emailList.length ? emailList : null }
+                      : (email !== undefined && { email: email ? email.toLowerCase().trim() : null })),
+        ...(phoneList ? { phone: phoneList[0] || null, phones: phoneList.length ? phoneList : null }
+                      : (phone !== undefined && { phone: phone || null })),
         ...(website !== undefined && { website: website || null }),
         ...(industry !== undefined && { industry: industry || null }),
         ...(employeeCount !== undefined && { employeeCount: employeeCount ? parseInt(employeeCount) : null }),

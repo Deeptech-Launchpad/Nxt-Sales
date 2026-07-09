@@ -10,6 +10,13 @@ import FilterDropdown from '../../components/filters/FilterDropdown'
 import CreateContactModal from '../../components/modals/CreateContactModal'
 import ImportModal from '../../components/modals/ImportModal'
 import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../../utils/exportUtils'
+import { valueList } from '../../utils/multiValue'
+
+// "+N" badge when a record has more than one email/phone.
+const moreCount = (primary, arr) => Math.max(0, valueList(primary, arr).length - 1)
+const MoreBadge = ({ n }) => n > 0
+  ? <span style={{ marginLeft: 6, fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>+{n}</span>
+  : null
 import '../../styles/contacts.css'
 
 const PAGE_SIZE = 25
@@ -297,8 +304,8 @@ export default function Contacts() {
                     <span className="avatar">{initials}</span>
                     <span className="link-style" onClick={() => navigate(`/contacts/${c.id}`)}>{displayName}</span>
                   </td>
-                  <td><a href={`mailto:${c.email}`} className="link">{c.email}</a></td>
-                  <td>{c.phone || '--'}</td>
+                  <td><a href={`mailto:${c.email}`} className="link">{c.email}</a><MoreBadge n={moreCount(c.email, c.emails)} /></td>
+                  <td>{c.phone || '--'}<MoreBadge n={moreCount(c.phone, c.phones)} /></td>
                   <td>
                     {ownerInitials && <span className="owner-badge">{ownerInitials}</span>}{' '}
                     {ownerName}

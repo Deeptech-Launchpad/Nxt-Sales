@@ -5,6 +5,24 @@ const { getImportFields } = require('../utils/importFields')
 
 const prisma = new PrismaClient()
 
+// Normalize a multi-value field: accept an array or a single scalar, fall back
+// to a legacy single value, then trim / drop blanks / de-dupe (case-insensitive).
+function cleanArr(a, fallback) {
+  let list = Array.isArray(a) ? a.slice() : (a ? [a] : [])
+  if (!list.length && fallback) list = [fallback]
+  const seen = new Set()
+  const out = []
+  for (const raw of list) {
+    const v = String(raw || '').trim()
+    if (!v) continue
+    const k = v.toLowerCase()
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(v)
+  }
+  return out
+}
+
 // GET /api/contacts/import-fields — dynamic import template/mapping fields
 // (declared before /:id so it isn't captured as an id param)
 router.get('/import-fields', auth, (req, res) => res.json(getImportFields('Contact')))
@@ -96,12 +114,17 @@ router.get('/', auth, async (req, res) => {
 // ── POST /api/contacts ────────────────────────────────────
 router.post('/', auth, async (req, res) => {
   try {
-    const { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, ownerId, linkedinUrl, industry, country } = req.body
-    if (!email) return res.status(400).json({ message: 'Email is required.' })
+    const { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, ownerId, linkedinUrl, industry, country, emails, phones } = req.body
 
-    // Duplicate check — email (always) + phone (when provided)
-    const dupConditions = [{ email: email.toLowerCase().trim() }]
-    if (phone && phone.trim()) dupConditions.push({ phone: phone.trim() })
+    const emailList  = cleanArr(emails, email)
+    const phoneList  = cleanArr(phones, phone)
+    const primaryEmail = (emailList[0] || '').toLowerCase()
+    const primaryPhone = phoneList[0] || null
+    if (!primaryEmail) return res.status(400).json({ message: 'Email is required.' })
+
+    // Duplicate check — primary email (always) + primary phone (when provided)
+    const dupConditions = [{ email: primaryEmail }]
+    if (primaryPhone) dupConditions.push({ phone: primaryPhone })
 
     const existing = await prisma.contact.findFirst({ where: { OR: dupConditions } })
     if (existing) {
@@ -112,15 +135,17 @@ router.post('/', auth, async (req, res) => {
       })
     }
 
-    const contactName = name || `${firstName || ''} ${lastName || ''}`.trim() || email
+    const contactName = name || `${firstName || ''} ${lastName || ''}`.trim() || primaryEmail
 
     const contact = await prisma.contact.create({
       data: {
         firstName:     firstName  || null,
         lastName:      lastName   || null,
         name:          contactName,
-        email:         email.toLowerCase().trim(),
-        phone:         phone      || null,
+        email:         primaryEmail,
+        emails:        emailList.length ? emailList : null,
+        phone:         primaryPhone,
+        phones:        phoneList.length ? phoneList : null,
         company:       company    || null,
         jobTitle:      jobTitle   || null,
         lifecycleStage: lifecycleStage || 'Lead',
@@ -162,7 +187,9 @@ router.post('/bulk', auth, async (req, res) => {
             lastName:       c.lastName       || null,
             name:           contactName,
             email:          String(c.email).toLowerCase().trim(),
+            emails:         [String(c.email).toLowerCase().trim()],
             phone:          c.phone          || null,
+            phones:         c.phone ? [String(c.phone).trim()] : null,
             company:        c.company        || c.companyName   || null,
             jobTitle:       c.jobTitle       || c['Job Title']  || null,
             lifecycleStage: c.lifecycleStage || c['Lifecycle Stage'] || 'Lead',
@@ -205,10 +232,21 @@ router.get('/:id', auth, async (req, res) => {
 // ── PUT /api/contacts/:id ─────────────────────────────────
 router.put('/:id', auth, async (req, res) => {
   try {
-    const { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, notes, linkedinUrl, industry, country } = req.body
+    const { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, notes, linkedinUrl, industry, country, emails, phones } = req.body
+
+    // Recompute the multi-value lists + primary only when arrays were sent.
+    const emailList = emails !== undefined ? cleanArr(emails, email) : null
+    const phoneList = phones !== undefined ? cleanArr(phones, phone) : null
+
     const updated = await prisma.contact.update({
       where: { id: req.params.id },
-      data: { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, notes, linkedinUrl, industry, country },
+      data: {
+        firstName, lastName, name, company, jobTitle, lifecycleStage, leadStatus, status, notes, linkedinUrl, industry, country,
+        ...(emailList ? { email: (emailList[0] || '').toLowerCase() || null, emails: emailList.length ? emailList : null }
+                      : (email !== undefined && { email: email ? String(email).toLowerCase().trim() : null })),
+        ...(phoneList ? { phone: phoneList[0] || null, phones: phoneList.length ? phoneList : null }
+                      : (phone !== undefined && { phone: phone || null })),
+      },
       include: { owner: { select: { id: true, name: true, email: true } } },
     })
     res.json(updated)

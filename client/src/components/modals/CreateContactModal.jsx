@@ -3,6 +3,8 @@ import { X, ChevronDown, Search } from 'lucide-react'
 import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 import { INDUSTRIES, COUNTRIES } from '../../constants/formOptions'
+import MultiValueInput from '../MultiValueInput'
+import { cleanList } from '../../utils/multiValue'
 import '../../styles/modal.css'
 
 const LIFECYCLE_STAGES = [
@@ -116,8 +118,8 @@ function SearchableSelect({ value, onChange, options, placeholder = 'Select…',
 
 // ── Main Modal ────────────────────────────────────────────
 const EMPTY = {
-  email: '', firstName: '', lastName: '',
-  ownerId: '', jobTitle: '', phone: '', linkedinUrl: '',
+  emails: [''], firstName: '', lastName: '',
+  ownerId: '', jobTitle: '', phones: [''], linkedinUrl: '',
   industry: '', country: '',
   lifecycleStage: 'Lead', leadStatus: '',
 }
@@ -173,17 +175,21 @@ export default function CreateContactModal({ isOpen, onClose, onSave }) {
   const reset = () => { setForm(EMPTY); setError(''); setDuplicate(null) }
 
   const handleCreate = async (addAnother = false) => {
-    if (!form.email) { setError('Email is required.'); return }
+    const emails = cleanList(form.emails)
+    const phones = cleanList(form.phones)
+    if (!emails.length) { setError('At least one email is required.'); return }
     setSaving(true); setError(''); setDuplicate(null)
     try {
       await onSave({
-        email:          form.email.trim(),
+        email:          emails[0],
+        emails,
         firstName:      form.firstName,
         lastName:       form.lastName,
-        name:           `${form.firstName} ${form.lastName}`.trim() || form.email,
+        name:           `${form.firstName} ${form.lastName}`.trim() || emails[0],
         ownerId:        form.ownerId || null,
         jobTitle:       form.jobTitle,
-        phone:          form.phone,
+        phone:          phones[0] || null,
+        phones,
         linkedinUrl:    form.linkedinUrl || null,
         industry:       form.industry || null,
         country:        form.country || null,
@@ -219,15 +225,15 @@ export default function CreateContactModal({ isOpen, onClose, onSave }) {
 
         <div className="modal-body">
 
-          {/* Email */}
+          {/* Emails — one or more, first is primary */}
           <div className="form-group required">
             <label>Email</label>
-            <input
+            <MultiValueInput
+              values={form.emails}
+              onChange={v => { set('emails', v); setError('') }}
               type="email"
-              value={form.email}
-              onChange={e => set('email', e.target.value)}
-              autoFocus
-              placeholder=""
+              placeholder="name@example.com"
+              addLabel="Add email"
             />
           </div>
 
@@ -261,10 +267,16 @@ export default function CreateContactModal({ isOpen, onClose, onSave }) {
             <input type="text" value={form.jobTitle} onChange={e => set('jobTitle', e.target.value)} />
           </div>
 
-          {/* Phone */}
+          {/* Phones — one or more, first is primary */}
           <div className="form-group">
             <label>Phone number</label>
-            <input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} />
+            <MultiValueInput
+              values={form.phones}
+              onChange={v => set('phones', v)}
+              type="tel"
+              placeholder="+1 555 000 1234"
+              addLabel="Add phone"
+            />
           </div>
 
           {/* LinkedIn URL */}

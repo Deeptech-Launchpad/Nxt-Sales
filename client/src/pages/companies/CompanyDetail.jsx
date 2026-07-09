@@ -13,8 +13,15 @@ import MeetingModal from '../../components/activities/MeetingModal'
 import TaskModal    from '../../components/activities/TaskModal'
 import ActivityFeed      from '../../components/activities/ActivityFeed'
 import EditRecordModal   from '../../components/EditRecordModal'
+import { valueList } from '../../utils/multiValue'
 import '../../styles/detail-page.css'
 import '../../styles/activity-modals.css'
+
+// Small "Primary" tag shown next to the first value when there are several.
+const PRIMARY_TAG = {
+  fontSize: 9, fontWeight: 700, color: '#0d9488', background: '#f0fdfa',
+  border: '1px solid #99f6e4', borderRadius: 3, padding: '1px 4px', marginLeft: 6,
+}
 
 const LEFT_FIELDS = [
   { label: 'Email',           key: 'email',        isEmail: true },
@@ -227,31 +234,58 @@ export default function CompanyDetail() {
 
           <div className="detail-field-list">
             {LEFT_FIELDS.map(f => {
+              if (f.isEmail) {
+                const list = valueList(enriched.email, enriched.emails)
+                return (
+                  <div key={f.key} className="detail-field-row">
+                    <span className="detail-field-label">{f.label}</span>
+                    <span className="detail-field-value" style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                      {list.length
+                        ? list.map((e, i) => (
+                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                              <a href={`mailto:${e}`} className="link">{e}</a>
+                              {i === 0 && list.length > 1 && <span style={PRIMARY_TAG}>Primary</span>}
+                            </span>
+                          ))
+                        : '--'}
+                    </span>
+                  </div>
+                )
+              }
+              if (f.isPhone) {
+                const list = valueList(enriched.phone, enriched.phones)
+                return (
+                  <div key={f.key} className="detail-field-row">
+                    <span className="detail-field-label">{f.label}</span>
+                    <span className="detail-field-value" style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                      {list.length
+                        ? list.map((p, i) => (
+                            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              {p}
+                              <button
+                                title="Open CallHippo dialer"
+                                onClick={() => {
+                                  const dialUrl = `https://dialer.callhippo.com/dial#/?phone=${encodeURIComponent(p)}`
+                                  navigator.clipboard.writeText(p).catch(() => {})
+                                  window.open(dialUrl, '_blank', 'noreferrer')
+                                }}
+                                style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: '#e53e3e', padding: 0 }}
+                              >
+                                <Phone size={14} />
+                              </button>
+                              {i === 0 && list.length > 1 && <span style={PRIMARY_TAG}>Primary</span>}
+                            </span>
+                          ))
+                        : '--'}
+                    </span>
+                  </div>
+                )
+              }
               const val = enriched[f.key]
               return (
                 <div key={f.key} className="detail-field-row">
                   <span className="detail-field-label">{f.label}</span>
-                  {f.isEmail && val
-                    ? <a href={`mailto:${val}`} className="detail-field-value link">{val}</a>
-                    : f.isPhone && val
-                    ? <span className="detail-field-value" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {val}
-                        <button
-                          title="Open CallHippo dialer"
-                          onClick={() => {
-                            const phone = val || ''
-                            const dialUrl = phone
-                              ? `https://dialer.callhippo.com/dial#/?phone=${encodeURIComponent(phone)}`
-                              : 'https://dialer.callhippo.com/dial#/'
-                            if (phone) navigator.clipboard.writeText(phone).catch(() => {})
-                            window.open(dialUrl, '_blank', 'noreferrer')
-                          }}
-                          style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: '#e53e3e', padding: 0 }}
-                        >
-                          <Phone size={14} />
-                        </button>
-                      </span>
-                    : <span className="detail-field-value">{val || '--'}</span>}
+                  <span className="detail-field-value">{val || '--'}</span>
                 </div>
               )
             })}

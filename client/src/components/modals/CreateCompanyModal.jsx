@@ -3,6 +3,8 @@ import { X, ChevronDown, Search } from 'lucide-react'
 import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 import { INDUSTRIES, COUNTRIES } from '../../constants/formOptions'
+import MultiValueInput from '../MultiValueInput'
+import { cleanList } from '../../utils/multiValue'
 import '../../styles/modal.css'
 
 const LIFECYCLE_STAGES = [
@@ -122,7 +124,7 @@ function SearchableSelect({ value, onChange, options, placeholder = 'Select…',
 
 // ── Main Modal ────────────────────────────────────────────
 const EMPTY = {
-  name: '', email: '', phone: '', website: '',
+  name: '', emails: [''], phones: [''], website: '',
   industry: '', employeeCount: '', revenue: '',
   ownerId: '', lifecycleStage: 'Lead', leadStatus: '',
   // New reference fields
@@ -190,10 +192,14 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
     if (!form.name) { setError('Company name is required.'); return }
     setSaving(true); setError(''); setDuplicate(null)
     try {
+      const emails = cleanList(form.emails)
+      const phones = cleanList(form.phones)
       await onSave({
         name:            form.name.trim(),
-        email:           form.email || null,
-        phone:           form.phone || null,
+        email:           emails[0] || null,
+        emails,
+        phone:           phones[0] || null,
+        phones,
         website:         form.website || null,
         industry:        form.industry || null,
         employeeCount:   form.employeeCount ? parseInt(form.employeeCount) : null,
@@ -256,25 +262,27 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
             />
           </div>
 
-          {/* Email */}
+          {/* Emails — one or more, first is primary */}
           <div className="form-group">
             <label>Email</label>
-            <input
+            <MultiValueInput
+              values={form.emails}
+              onChange={v => set('emails', v)}
               type="email"
-              value={form.email}
-              onChange={e => set('email', e.target.value)}
-              placeholder=""
+              placeholder="name@example.com"
+              addLabel="Add email"
             />
           </div>
 
-          {/* Phone */}
+          {/* Phones — one or more, first is primary */}
           <div className="form-group">
             <label>Phone number</label>
-            <input
+            <MultiValueInput
+              values={form.phones}
+              onChange={v => set('phones', v)}
               type="tel"
-              value={form.phone}
-              onChange={e => set('phone', e.target.value)}
-              placeholder=""
+              placeholder="+1 555 000 1234"
+              addLabel="Add phone"
             />
           </div>
 

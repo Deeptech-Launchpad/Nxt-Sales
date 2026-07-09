@@ -9,7 +9,14 @@ import api from '../api/client'
 import FilterDropdown from '../components/filters/FilterDropdown'
 import CreateCompanyModal from '../components/modals/CreateCompanyModal'
 import ImportModal from '../components/modals/ImportModal'
+import { valueList } from '../utils/multiValue'
 import '../styles/contacts.css'
+
+// "+N" badge when a company has more than one email.
+const moreCount = (primary, arr) => Math.max(0, valueList(primary, arr).length - 1)
+const MoreBadge = ({ n }) => n > 0
+  ? <span style={{ marginLeft: 6, fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>+{n}</span>
+  : null
 
 const PAGE_SIZE = 25
 
@@ -223,7 +230,7 @@ export default function Companies() {
                   <span className="link-style" onClick={() => navigate(`/companies/${c.id}`)}>{c.name}</span>
                 </td>
                 <td>{c.industryType || '--'}</td>
-                <td style={{ color: c.email ? '#3b82f6' : undefined }}>{c.email || '--'}</td>
+                <td style={{ color: c.email ? '#3b82f6' : undefined }}>{c.email || '--'}<MoreBadge n={moreCount(c.email, c.emails)} /></td>
                 <td style={{ color: c.mobile ? '#3b82f6' : undefined }}>{c.mobile || '--'}</td>
                 <td>
                   {c.linkedinUrl
