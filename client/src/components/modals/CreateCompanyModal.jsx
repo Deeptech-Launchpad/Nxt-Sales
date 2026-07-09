@@ -2,13 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { X, ChevronDown, Search } from 'lucide-react'
 import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
+import { INDUSTRIES, COUNTRIES } from '../../constants/formOptions'
 import '../../styles/modal.css'
-
-const INDUSTRIES = [
-  'Chemicals', 'Construction', 'Education', 'Financial Services', 'Healthcare',
-  'Hospitality', 'IT & Software', 'Manufacturing', 'Media & Entertainment',
-  'Real Estate', 'Retail', 'Transportation', 'Other'
-]
 
 const LIFECYCLE_STAGES = [
   'Subscriber',
@@ -165,6 +160,11 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
   const industryOptions = [
     { value: '', label: 'Select an industry' },
     ...INDUSTRIES.map(i => ({ value: i, label: i })),
+  ]
+
+  const countryOptions = [
+    { value: '', label: 'Select a country' },
+    ...COUNTRIES.map(c => ({ value: c, label: c })),
   ]
 
   const lifecycleOptions = [
@@ -385,7 +385,7 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
 
           <div className="form-group">
             <label>Country of Origin</label>
-            <input type="text" value={form.country} onChange={e => set('country', e.target.value)} placeholder="" />
+            <SearchableSelect value={form.country} onChange={v => set('country', v)} options={countryOptions} placeholder="Select a country" />
           </div>
 
           <div className="form-group">

@@ -96,7 +96,7 @@ router.get('/', auth, async (req, res) => {
 // ── POST /api/contacts ────────────────────────────────────
 router.post('/', auth, async (req, res) => {
   try {
-    const { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, ownerId, linkedinUrl } = req.body
+    const { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, ownerId, linkedinUrl, industry, country } = req.body
     if (!email) return res.status(400).json({ message: 'Email is required.' })
 
     // Duplicate check — email (always) + phone (when provided)
@@ -128,6 +128,8 @@ router.post('/', auth, async (req, res) => {
         status:        status     || 'Lead',
         ownerId:       ownerId || req.user.id,
         linkedinUrl:   linkedinUrl || null,
+        industry:      industry || null,
+        country:       country || null,
       },
       include: { owner: { select: { id: true, name: true, email: true } } },
     })
@@ -166,6 +168,8 @@ router.post('/bulk', auth, async (req, res) => {
             lifecycleStage: c.lifecycleStage || c['Lifecycle Stage'] || 'Lead',
             leadStatus:     c.leadStatus     || c['Lead Status'] || null,
             linkedinUrl:    c.linkedinUrl    || c['LinkedIn URL'] || null,
+            industry:       c.industry       || c['Industry'] || null,
+            country:        c.country        || c['Country'] || null,
             status:         'Lead',
             ownerId:        req.user.id,
           },
@@ -201,10 +205,10 @@ router.get('/:id', auth, async (req, res) => {
 // ── PUT /api/contacts/:id ─────────────────────────────────
 router.put('/:id', auth, async (req, res) => {
   try {
-    const { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, notes, linkedinUrl } = req.body
+    const { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, notes, linkedinUrl, industry, country } = req.body
     const updated = await prisma.contact.update({
       where: { id: req.params.id },
-      data: { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, notes, linkedinUrl },
+      data: { firstName, lastName, name, email, phone, company, jobTitle, lifecycleStage, leadStatus, status, notes, linkedinUrl, industry, country },
       include: { owner: { select: { id: true, name: true, email: true } } },
     })
     res.json(updated)

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { X, ChevronDown, Search } from 'lucide-react'
 import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
+import { INDUSTRIES, COUNTRIES } from '../../constants/formOptions'
 import '../../styles/modal.css'
 
 const LIFECYCLE_STAGES = [
@@ -117,6 +118,7 @@ function SearchableSelect({ value, onChange, options, placeholder = 'Select…',
 const EMPTY = {
   email: '', firstName: '', lastName: '',
   ownerId: '', jobTitle: '', phone: '', linkedinUrl: '',
+  industry: '', country: '',
   lifecycleStage: 'Lead', leadStatus: '',
 }
 
@@ -156,6 +158,16 @@ export default function CreateContactModal({ isOpen, onClose, onSave }) {
     ...LEAD_STATUSES.map(s => ({ value: s, label: s })),
   ]
 
+  const industryOptions = [
+    { value: '', label: 'Select an industry' },
+    ...INDUSTRIES.map(i => ({ value: i, label: i })),
+  ]
+
+  const countryOptions = [
+    { value: '', label: 'Select a country' },
+    ...COUNTRIES.map(c => ({ value: c, label: c })),
+  ]
+
   const set = (field, val) => setForm(p => ({ ...p, [field]: val }))
 
   const reset = () => { setForm(EMPTY); setError(''); setDuplicate(null) }
@@ -173,6 +185,8 @@ export default function CreateContactModal({ isOpen, onClose, onSave }) {
         jobTitle:       form.jobTitle,
         phone:          form.phone,
         linkedinUrl:    form.linkedinUrl || null,
+        industry:       form.industry || null,
+        country:        form.country || null,
         lifecycleStage: form.lifecycleStage || 'Lead',
         leadStatus:     form.leadStatus || null,
       })
@@ -257,6 +271,28 @@ export default function CreateContactModal({ isOpen, onClose, onSave }) {
           <div className="form-group">
             <label>LinkedIn URL</label>
             <input type="url" value={form.linkedinUrl} onChange={e => set('linkedinUrl', e.target.value)} placeholder="https://www.linkedin.com/in/..." />
+          </div>
+
+          {/* Industry — searchable */}
+          <div className="form-group">
+            <label>Industry</label>
+            <SearchableSelect
+              value={form.industry}
+              onChange={v => set('industry', v)}
+              options={industryOptions}
+              placeholder="Select an industry"
+            />
+          </div>
+
+          {/* Country — searchable */}
+          <div className="form-group">
+            <label>Country</label>
+            <SearchableSelect
+              value={form.country}
+              onChange={v => set('country', v)}
+              options={countryOptions}
+              placeholder="Select a country"
+            />
           </div>
 
           {/* Lifecycle stage — searchable */}

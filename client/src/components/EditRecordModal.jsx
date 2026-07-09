@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { X, Save, Loader2 } from 'lucide-react'
 import api from '../api/client'
+import { INDUSTRIES, COUNTRIES } from '../constants/formOptions'
 
 const LIFECYCLE_STAGES = ['Lead', 'Marketing Qualified Lead', 'Sales Qualified Lead', 'Opportunity', 'Customer', 'Evangelist', 'Other']
 const LEAD_STATUSES    = ['New', 'Open', 'In Progress', 'Open Deal', 'Unqualified', 'Attempted to Contact', 'Connected', 'Bad Timing']
-const INDUSTRIES       = ['Technology', 'Healthcare', 'Finance', 'Education', 'Retail', 'Manufacturing', 'Real Estate', 'Media', 'Chemicals', 'Agriculture', 'Construction', 'Transportation', 'Other']
 
 // ── Company edit fields ───────────────────────────────────────
 function CompanyForm({ data, onChange }) {
@@ -27,6 +27,12 @@ function CompanyForm({ data, onChange }) {
         <select className="er-input" {...f('industry')}>
           <option value="">Select industry</option>
           {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+        </select>
+      </FormRow>
+      <FormRow label="Country of Origin">
+        <select className="er-input" {...f('country')}>
+          <option value="">Select country</option>
+          {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </FormRow>
       <FormRow label="Lifecycle Stage">
@@ -69,6 +75,18 @@ function ContactForm({ data, onChange }) {
       </FormRow>
       <FormRow label="Primary Company">
         <input className="er-input" {...f('company')} placeholder="Company name" />
+      </FormRow>
+      <FormRow label="Industry">
+        <select className="er-input" {...f('industry')}>
+          <option value="">Select industry</option>
+          {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+        </select>
+      </FormRow>
+      <FormRow label="Country">
+        <select className="er-input" {...f('country')}>
+          <option value="">Select country</option>
+          {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
       </FormRow>
       <FormRow label="Lifecycle Stage">
         <select className="er-input" {...f('lifecycleStage')}>

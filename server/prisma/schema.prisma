@@ -46,6 +46,8 @@ model Contact {
   leadStatus     String?
   lifecycleStage String     @default("Lead")
   linkedinUrl    String?
+  industry       String?
+  country        String?
   activities     Activity[]
   owner          User?      @relation(fields: [ownerId], references: [id])
   deals          Deal[]
