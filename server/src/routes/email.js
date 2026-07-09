@@ -60,10 +60,16 @@ function getOAuth2Client() {
   )
 }
 
+// Minimal scope set — request only what the app actually calls, to keep the
+// Google verification footprint as small as possible:
+//   gmail.send      (sensitive)  → used by messages.send
+//   gmail.readonly  (restricted) → used by messages.list / threads.get / getProfile (email sync)
+//   calendar.events (sensitive)  → used for meeting scheduling
+// gmail.modify was previously requested but is never used, so it is removed —
+// it is a restricted scope that would have widened the security assessment.
 const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/calendar.events',
   'email',
   'profile',
