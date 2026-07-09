@@ -6,6 +6,7 @@ import '../../styles/activity-modals.css'
 
 export default function NoteModal({ isOpen = true, contactId, companyId, contactName, onClose, onSaved, onActivitySaved }) {
   const { dragRef, pos } = useDraggable()
+  const [subject, setSubject] = useState('')
   const [body,    setBody]    = useState('')
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
@@ -18,7 +19,7 @@ export default function NoteModal({ isOpen = true, contactId, companyId, contact
         type: 'note',
         ...(contactId && { contactId }),
         ...(companyId && { companyId }),
-        title: 'Note',
+        title: subject.trim() || 'Note',
         body: body.trim(),
       })
       if (onSaved) onSaved(data)
@@ -44,6 +45,20 @@ export default function NoteModal({ isOpen = true, contactId, companyId, contact
         </div>
 
         <div className="act-popup-body" style={{ padding: '16px 20px' }}>
+          {/* Subject */}
+          <input
+            className="act-input"
+            style={{
+              width: '100%', padding: '9px 12px', marginBottom: 10,
+              border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 14,
+              color: '#0f172a', outline: 'none', boxSizing: 'border-box',
+              fontFamily: 'inherit',
+            }}
+            placeholder="Subject (optional)"
+            value={subject}
+            onChange={e => setSubject(e.target.value)}
+          />
+
           {/* Mini toolbar */}
           <div className="act-toolbar">
             <button className="act-toolbar-btn" title="Bold"><Bold size={13} /></button>
