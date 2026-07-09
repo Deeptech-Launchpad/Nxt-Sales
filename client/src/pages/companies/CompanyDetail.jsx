@@ -13,6 +13,7 @@ import MeetingModal from '../../components/activities/MeetingModal'
 import TaskModal    from '../../components/activities/TaskModal'
 import ActivityFeed      from '../../components/activities/ActivityFeed'
 import EditRecordModal   from '../../components/EditRecordModal'
+import CreateDealModal   from '../../components/modals/CreateDealModal'
 import { valueList } from '../../utils/multiValue'
 import '../../styles/detail-page.css'
 import '../../styles/activity-modals.css'
@@ -126,6 +127,8 @@ export default function CompanyDetail() {
   const [activeModal,     setActiveModal]     = useState(null)
   const [feedRefreshKey,  setFeedRefreshKey]  = useState(0)
   const [editOpen,        setEditOpen]        = useState(false)
+  const [deals,           setDeals]           = useState([])
+  const [showDealModal,   setShowDealModal]   = useState(false)
 
   useEffect(() => {
     setLoading(true); setNotFound(false)
@@ -134,6 +137,15 @@ export default function CompanyDetail() {
       .catch(e => { if (e.response?.status === 404) setNotFound(true) })
       .finally(() => setLoading(false))
   }, [id])
+
+  // Deals linked to this company (also visible on the global Deals dashboard).
+  const fetchDeals = () => {
+    if (!id) return
+    api.get('/deals', { params: { companyId: id } })
+      .then(r => setDeals(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setDeals([]))
+  }
+  useEffect(() => { fetchDeals() }, [id])
 
   useEffect(() => {
     if (!id) return
@@ -327,18 +339,26 @@ export default function CompanyDetail() {
         <div className="detail-right">
           <div className="right-panel-section">
             <div className="right-panel-header">
-              <div className="right-panel-header-left"><ChevronDown size={14} /> Deals (0)</div>
-              <button className="right-panel-add"><Plus size={12} /> Add</button>
+              <div className="right-panel-header-left"><ChevronDown size={14} /> Deals ({deals.length})</div>
+              <button className="right-panel-add" onClick={() => setShowDealModal(true)}><Plus size={12} /> Add</button>
             </div>
-            <div className="right-empty-state"><p className="right-empty-text">Track the revenue opportunities associated with this record.</p></div>
-          </div>
-
-          <div className="right-panel-section">
-            <div className="right-panel-header">
-              <div className="right-panel-header-left"><ChevronDown size={14} /> Tickets (0)</div>
-              <button className="right-panel-add"><Plus size={12} /> Add</button>
-            </div>
-            <div className="right-empty-state"><p className="right-empty-text">No tickets associated.</p></div>
+            {deals.length === 0 ? (
+              <div className="right-empty-state"><p className="right-empty-text">Track the revenue opportunities associated with this record.</p></div>
+            ) : (
+              <div style={{ padding: '4px 12px 12px' }}>
+                {deals.map(d => (
+                  <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 4px', borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>{d.stage}</div>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', flexShrink: 0 }}>
+                      {d.value > 0 ? Number(d.value).toLocaleString() : '--'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="right-panel-section">
@@ -373,6 +393,15 @@ export default function CompanyDetail() {
           record={company}
           onClose={() => setEditOpen(false)}
           onSaved={(updated) => setCompany(updated)}
+        />
+      )}
+
+      {/* ── Create deal (from company) — also appears on the global Deals dashboard ── */}
+      {showDealModal && (
+        <CreateDealModal
+          companyId={id}
+          onClose={() => setShowDealModal(false)}
+          onSaved={() => fetchDeals()}
         />
       )}
 

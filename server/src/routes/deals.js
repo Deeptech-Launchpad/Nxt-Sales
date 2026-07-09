@@ -7,11 +7,18 @@ const prisma = new PrismaClient()
 const STAGES = ['New', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost']
 
 // GET /api/deals
+// No params → the logged-in user's deals (global Deals dashboard, unchanged).
+// ?companyId=… → all deals for that company (Company details page).
 router.get('/', auth, async (req, res) => {
   try {
+    const { companyId } = req.query
+    const where = companyId ? { companyId } : { ownerId: req.user.id }
     const deals = await prisma.deal.findMany({
-      where: { ownerId: req.user.id },
-      include: { contact: { select: { id: true, name: true, company: true } } },
+      where,
+      include: {
+        contact: { select: { id: true, name: true, company: true } },
+        company: { select: { id: true, name: true } },
+      },
       orderBy: { createdAt: 'desc' },
     })
     res.json(deals)
@@ -23,10 +30,19 @@ router.get('/', auth, async (req, res) => {
 // POST /api/deals
 router.post('/', auth, async (req, res) => {
   try {
-    const { title, value, stage, contactId, closeDate, notes } = req.body
+    const { title, value, stage, contactId, companyId, closeDate, notes } = req.body
     if (!title) return res.status(400).json({ message: 'Title is required.' })
     const deal = await prisma.deal.create({
-      data: { title, value: Number(value) || 0, stage: stage || 'New', contactId, closeDate: closeDate ? new Date(closeDate) : null, notes, ownerId: req.user.id },
+      data: {
+        title,
+        value: Number(value) || 0,
+        stage: stage || 'New',
+        contactId: contactId || null,
+        companyId: companyId || null,
+        closeDate: closeDate ? new Date(closeDate) : null,
+        notes,
+        ownerId: req.user.id,
+      },
     })
     res.status(201).json(deal)
   } catch (err) {

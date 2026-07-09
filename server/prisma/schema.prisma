@@ -90,6 +90,7 @@ model Company {
   emails                Json?
   phones                Json?
   activities     Activity[]
+  deals          Deal[]
   owner          User?      @relation(fields: [ownerId], references: [id])
 
   @@index([email])
@@ -102,15 +103,18 @@ model Deal {
   value     Float     @default(0)
   stage     String    @default("New")
   contactId String?
+  companyId String?
   ownerId   String
   closeDate DateTime?
   notes     String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   contact   Contact?  @relation(fields: [contactId], references: [id])
+  company   Company?  @relation(fields: [companyId], references: [id])
   owner     User      @relation(fields: [ownerId], references: [id])
 
   @@index([ownerId])
+  @@index([companyId])
 }
 
 model Activity {
