@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   FileText, Mail, Phone, Calendar, CheckSquare,
   Search, SlidersHorizontal, AlertTriangle, ChevronDown, ChevronRight,
-  Video, ArrowUpRight, ArrowDownLeft, ExternalLink, RefreshCw,
+  Video, ArrowUpRight, ArrowDownLeft, ExternalLink, RefreshCw, Eye,
 } from 'lucide-react'
 import api from '../../api/client'
 import '../../styles/activity-modals.css'
@@ -114,6 +114,55 @@ function groupByDate(items) {
   return Object.entries(groups)
 }
 
+function fmtDateTime(iso) {
+  if (!iso) return ''
+  return `${formatDate(iso)} ${formatTime(iso)}`
+}
+
+// Open-tracking readout for outbound emails: count + first/last opened + history.
+function OpenTracking({ act, showHistory = false }) {
+  if (!act || act.direction !== 'outbound') return null
+  const count = act.openCount || 0
+
+  if (count === 0) {
+    return (
+      <div className="af-meta" style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#94a3b8' }}>
+        <Eye size={12} /> Not opened yet
+      </div>
+    )
+  }
+
+  const history = Array.isArray(act.openHistory) ? act.openHistory : []
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#16a34a' }}>
+          <Eye size={12} /> Opened {count}×
+        </span>
+        {act.firstOpenedAt && (
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>first {fmtDateTime(act.firstOpenedAt)}</span>
+        )}
+        {act.lastOpenedAt && count > 1 && (
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>· last {fmtDateTime(act.lastOpenedAt)}</span>
+        )}
+      </div>
+      {showHistory && history.length > 0 && (
+        <div style={{ marginTop: 6, paddingLeft: 6, borderLeft: '2px solid #e2e8f0' }}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', margin: '0 0 3px 8px' }}>
+            Open history
+          </div>
+          {history.slice().reverse().map((h, i) => (
+            <div key={i} style={{ fontSize: 11, color: '#64748b', padding: '2px 0 2px 8px' }}>
+              {fmtDateTime(h.at)}{h.ip ? ` · ${h.ip}` : ''}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EmailStatusBadge({ status }) {
   const colors = {
     sent:      { bg: '#eff6ff', text: '#3b82f6' },
@@ -168,6 +217,11 @@ function ThreadMessage({ msg, isLast }) {
             {isInbound ? msg.fromEmail : msg.toEmail}
           </span>
           <EmailStatusBadge status={msg.emailStatus} />
+          {!isInbound && msg.openCount > 0 && (
+            <span title={`Opened ${msg.openCount}×`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: '#16a34a', flexShrink: 0 }}>
+              <Eye size={11} /> {msg.openCount}
+            </span>
+          )}
         </div>
         <span style={{ fontSize: 11, color: '#94a3b8', flexShrink: 0 }}>
           {formatDate(msg.createdAt)} {formatTime(msg.createdAt)}
@@ -188,6 +242,11 @@ function ThreadMessage({ msg, isLast }) {
       {open && !msg.body && (
         <div style={{ marginTop: 6, fontSize: 12, color: '#94a3b8', paddingLeft: 20 }}>
           (no message body)
+        </div>
+      )}
+      {open && !isInbound && (
+        <div style={{ paddingLeft: 20 }}>
+          <OpenTracking act={msg} showHistory={true} />
         </div>
       )}
     </div>
@@ -368,6 +427,7 @@ function ActivityCard({ act }) {
           <div style={{ fontSize: 12, color: '#475569', marginBottom: 3 }}>{subtitle}</div>
         )}
         {renderMeta()}
+        {act.type === 'email' && <OpenTracking act={act} showHistory={expanded} />}
         {expanded && act.body && (
           <div className="af-body">{act.body}</div>
         )}

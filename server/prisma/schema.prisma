@@ -136,6 +136,11 @@ model Activity {
   messageId     String?
   threadId      String?
   companyId     String?
+  trackingId    String?   @unique
+  openCount     Int       @default(0)
+  firstOpenedAt DateTime?
+  lastOpenedAt  DateTime?
+  openHistory   Json?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   company       Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)

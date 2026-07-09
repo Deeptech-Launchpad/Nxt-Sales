@@ -10,6 +10,7 @@ export const useNotifications = () => useContext(NotificationContext)
 const LS_LIST   = 'mwz_notifications'          // the notification list (with read flags)
 const LS_EMAILS = 'mwz_notif_known_emails'     // inbound email ids already accounted for
 const LS_MTGS   = 'mwz_notif_fired_meetings'   // meeting ids already reminded
+const LS_OPENS  = 'mwz_notif_known_opens'      // sent-email open events already alerted
 const POLL_MS   = 60_000
 const HOUR_MS   = 60 * 60 * 1000
 
@@ -29,7 +30,9 @@ export function NotificationProvider({ children }) {
   const [notifications, setNotifications] = useState(() => load(LS_LIST, []))
   const knownEmails    = useRef(new Set(load(LS_EMAILS, null) || []))
   const firedMeetings  = useRef(new Set(load(LS_MTGS, null) || []))
+  const knownOpens     = useRef(new Set(load(LS_OPENS, null) || []))
   const emailBaselined = useRef(load(LS_EMAILS, null) !== null) // first-ever run seeds silently
+  const opensBaselined = useRef(load(LS_OPENS, null) !== null)  // first-ever run seeds silently
 
   // Persist list whenever it changes
   useEffect(() => { save(LS_LIST, notifications) }, [notifications])
@@ -56,6 +59,7 @@ export function NotificationProvider({ children }) {
     try { ({ data } = await api.get('/notifications')) } catch { return }
     const meetings = data?.meetings || []
     const emails   = data?.emails   || []
+    const opens    = data?.opens    || []
     const now = Date.now()
     const fresh = []
 
@@ -101,6 +105,31 @@ export function NotificationProvider({ children }) {
       }
     }
     save(LS_EMAILS, [...knownEmails.current])
+
+    // Email opens — one alert per open event. Keyed by id+openCount so each new
+    // open (the count increments) fires once. Baseline silently on first run.
+    if (!opensBaselined.current) {
+      opens.forEach(o => knownOpens.current.add(`${o.id}:${o.openCount}`))
+      opensBaselined.current = true
+    } else {
+      for (const o of opens) {
+        const key = `${o.id}:${o.openCount}`
+        if (knownOpens.current.has(key)) continue
+        knownOpens.current.add(key)
+        const who = o.contact?.name || o.company?.name || o.toEmail || 'the recipient'
+        const times = o.openCount > 1 ? ` (${o.openCount}×)` : ''
+        fresh.push({
+          id: `open_${o.id}_${o.openCount}`,
+          type: 'email',
+          title: 'Email opened',
+          description: `${who} opened "${o.subject || '(no subject)'}"${times}`,
+          datetime: o.lastOpenedAt || new Date().toISOString(),
+          read: false,
+          link: linkFor(o),
+        })
+      }
+    }
+    save(LS_OPENS, [...knownOpens.current])
 
     if (fresh.length) {
       setNotifications(prev => {

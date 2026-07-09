@@ -1,7 +1,22 @@
 const router = require('express').Router()
 const auth = require('../middleware/authMiddleware')
+const crypto = require('crypto')
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
+
+// ── Email open tracking ──────────────────────────────────────────────────────
+// Public base the recipient's mail client can reach. In production this is the
+// app domain (nginx proxies /api to the backend); in dev it falls back to Vite.
+const TRACK_BASE = process.env.PUBLIC_URL || process.env.CLIENT_URL || 'http://localhost:3000'
+
+// 1x1 transparent GIF returned by the tracking pixel.
+const PIXEL_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64')
+
+// Hidden tracking pixel appended to outbound HTML. Loading it (when the
+// recipient opens the email) hits /track/open/:token and records the open.
+function trackingPixel(token) {
+  return `<img src="${TRACK_BASE}/api/email/track/open/${token}.gif" width="1" height="1" alt="" style="display:none;max-height:0;max-width:0;opacity:0;overflow:hidden" />`
+}
 
 // Recursively extract plain-text body from nested MIME parts.
 // Gmail wraps text/plain inside multipart/alternative inside multipart/mixed,
@@ -213,6 +228,46 @@ function buildRawEmail({ from, to, cc, bcc, subject, htmlBody, attachments = [],
   return Buffer.from([...headers, '', body].join('\r\n')).toString('base64url')
 }
 
+// GET /api/email/track/open/:token — email open tracking pixel.
+// PUBLIC (no auth) — it is loaded by the recipient's mail client. Records the
+// open against the matching activity, then always returns a 1x1 transparent GIF.
+// Recording is best-effort and never blocks or errors the image response.
+router.get('/track/open/:token', async (req, res) => {
+  const token = String(req.params.token || '').replace(/\.(gif|png)$/i, '')
+  try {
+    const activity = await prisma.activity.findFirst({ where: { trackingId: token } })
+    if (activity) {
+      const now     = new Date()
+      const history = Array.isArray(activity.openHistory) ? activity.openHistory : []
+      history.push({
+        at: now.toISOString(),
+        ip: (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null,
+        ua: (req.headers['user-agent'] || '').toString().slice(0, 200) || null,
+      })
+      await prisma.activity.update({
+        where: { id: activity.id },
+        data: {
+          openCount:     (activity.openCount || 0) + 1,
+          firstOpenedAt: activity.firstOpenedAt || now,
+          lastOpenedAt:  now,
+          openHistory:   history.slice(-50),
+          // reflect the open in the email status (keeps existing 'opened' badge)
+          ...(activity.direction === 'outbound' && { emailStatus: 'opened' }),
+        },
+      })
+    }
+  } catch (err) {
+    console.error('[Email Track] open record error:', err.message)
+  }
+
+  // Never cache — so re-opens can register (subject to the mail client's own proxy)
+  res.set('Content-Type', 'image/gif')
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+  res.set('Pragma', 'no-cache')
+  res.set('Expires', '0')
+  res.end(PIXEL_GIF)
+})
+
 // POST /api/email/send — send email via Gmail API
 // Accepts: to, subject, body (plain) OR htmlBody (html), cc, bcc,
 //          attachments: [{ filename, content (base64), mimeType }]
@@ -251,8 +306,13 @@ router.post('/send', auth, async (req, res) => {
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
 
     // Use htmlBody if provided; otherwise convert plain body to a simple HTML wrapper
-    const effectiveHtml = htmlBody
+    const baseHtml = htmlBody
       || (body ? `<div style="font-family:sans-serif;line-height:1.6">${body.replace(/\n/g, '<br>')}</div>` : '')
+
+    // Open-tracking: unique token embedded as a hidden pixel; when the recipient
+    // opens the email the pixel loads and /track/open records it against this id.
+    const trackingId  = crypto.randomUUID()
+    const effectiveHtml = `${baseHtml}${trackingPixel(trackingId)}`
 
     // ── Thread continuation ─────────────────────────────────
     // If a prior email thread already exists between this user and the
@@ -335,6 +395,7 @@ router.post('/send', auth, async (req, res) => {
         direction: 'outbound',
         messageId: sent.data.id,
         threadId: sent.data.threadId,
+        trackingId,
       },
       include: { user: { select: { id: true, name: true, email: true } } },
     })

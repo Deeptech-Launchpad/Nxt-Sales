@@ -9,6 +9,7 @@ const prisma = new PrismaClient()
 // these into notifications and tracks read/cleared state locally.
 //   - meetings: upcoming meetings in the next 24h (for 1-hour-before reminders)
 //   - emails:   recent inbound emails in the last 7 days (for new-email alerts)
+//   - opens:    the user's sent emails opened by the recipient in the last 7 days
 router.get('/', auth, async (req, res) => {
   try {
     const now     = new Date()
@@ -20,7 +21,7 @@ router.get('/', auth, async (req, res) => {
       company: { select: { id: true, name: true } },
     }
 
-    const [meetings, emails] = await Promise.all([
+    const [meetings, emails, opens] = await Promise.all([
       prisma.activity.findMany({
         where: {
           userId: req.user.id,
@@ -41,9 +42,26 @@ router.get('/', auth, async (req, res) => {
         take: 50,
         include: relations,
       }),
+      prisma.activity.findMany({
+        where: {
+          userId: req.user.id,
+          type: 'email',
+          direction: 'outbound',
+          openCount: { gt: 0 },
+          lastOpenedAt: { gte: weekAgo },
+        },
+        orderBy: { lastOpenedAt: 'desc' },
+        take: 50,
+        select: {
+          id: true, subject: true, toEmail: true, openCount: true,
+          firstOpenedAt: true, lastOpenedAt: true, contactId: true, companyId: true,
+          contact: { select: { id: true, name: true } },
+          company: { select: { id: true, name: true } },
+        },
+      }),
     ])
 
-    res.json({ meetings, emails })
+    res.json({ meetings, emails, opens })
   } catch (err) {
     console.error('[Notifications] error:', err.message)
     res.status(500).json({ message: 'Failed to load notifications.' })
