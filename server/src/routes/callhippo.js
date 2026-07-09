@@ -10,6 +10,25 @@ const CALLHIPPO_BASE = 'https://web.callhippo.com/v1'
 const CALLHIPPO_KEY  = process.env.CALLHIPPO_API_KEY
 const EMOTIONSENSE_URL = process.env.EMOTIONSENSE_URL || 'http://localhost:8000'
 
+// ── EmotionSense analysis tunables ───────────────────────────────────────────
+const ANALYSIS_MAX_ATTEMPTS   = 3          // total tries before marking failed
+const ANALYSIS_RETRY_DELAY_MS = 5000       // base backoff between retries (×attempt)
+const DOWNLOAD_TIMEOUT_MS      = 120000    // 2 min to pull the recording audio
+const ANALYZE_TIMEOUT_MS       = 900000    // 15 min for the ML pipeline response
+const STALE_ANALYZING_MS       = 20 * 60 * 1000  // requeue analyses stuck this long
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+
+// A failure worth retrying: transient network/DNS issues, aborts (timeouts),
+// or 5xx from the analysis service. A 4xx or programmer error is not retried.
+function isTransientError(err) {
+  const code = err?.code
+  if (['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'ECONNREFUSED', 'EAI_AGAIN', 'ENOTFOUND', 'EPIPE'].includes(code)) return true
+  const st = err?.response?.status
+  if (st && st >= 500) return true
+  return false
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 function chHeaders() {
@@ -185,7 +204,7 @@ router.post('/sync', auth, async (req, res) => {
       }
     }
 
-    // Trigger background auto-analysis for all pending records
+    // Recover any analyses orphaned by a restart, then run the pending queue
     triggerPendingAnalysis().catch(e => console.error('[CallHippo] auto-analysis error:', e.message))
 
     console.log(`[CallHippo] Sync complete: ${synced} upserted, ${skipped} skipped`)
@@ -229,52 +248,95 @@ router.get('/analysis/:id', auth, async (req, res) => {
   }
 })
 
-// ── internal: run EmotionSense analysis ─────────────────────────────────────
+// ── internal: one analysis attempt (download → analyse → save) ──────────────
+async function analyzeOnce(callLogId, recordingUrl) {
+  // Download recording audio from CallHippo URL
+  const audioRes = await axios.get(recordingUrl, {
+    responseType: 'arraybuffer',
+    timeout: DOWNLOAD_TIMEOUT_MS,
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+  })
+
+  const audioBuffer = Buffer.from(audioRes.data)
+  const contentType = audioRes.headers['content-type'] || 'audio/mpeg'
+  const ext = contentType.includes('wav') ? 'wav' : 'mp3'
+
+  // Build multipart form for EmotionSense Python service
+  const form = new FormData()
+  form.append('file', audioBuffer, { filename: `call_${callLogId}.${ext}`, contentType })
+
+  const analysisRes = await axios.post(`${EMOTIONSENSE_URL}/analyze`, form, {
+    headers: form.getHeaders(),
+    timeout: ANALYZE_TIMEOUT_MS,
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity,
+  })
+
+  return analysisRes.data
+}
+
+// ── internal: run EmotionSense analysis with retry/backoff ──────────────────
+// The record stays in the "analyzing" (Processing) state across retries and is
+// only marked "failed" after all attempts are exhausted — so a transient blip
+// or a slow service never shows a premature Failed.
 async function runAnalysis(callLogId, recordingUrl) {
-  try {
-    console.log(`[EmotionSense] Downloading recording for call ${callLogId}`)
+  let lastErr
+  for (let attempt = 1; attempt <= ANALYSIS_MAX_ATTEMPTS; attempt++) {
+    try {
+      console.log(`[EmotionSense] Call ${callLogId}: attempt ${attempt}/${ANALYSIS_MAX_ATTEMPTS}`)
+      const result = await analyzeOnce(callLogId, recordingUrl)
+      await prisma.callLog.update({
+        where: { id: callLogId },
+        data: { analysisStatus: 'completed', analysisResult: result, analysisError: null },
+      })
+      console.log(`[EmotionSense] Analysis complete for call ${callLogId}`)
+      return
+    } catch (err) {
+      lastErr = err
+      const transient = isTransientError(err)
+      console.error(`[EmotionSense] Call ${callLogId} attempt ${attempt} failed: ${err.message} (transient=${transient})`)
 
-    // Download recording audio from CallHippo URL
-    const audioRes = await axios.get(recordingUrl, {
-      responseType: 'arraybuffer',
-      timeout: 60000,
-    })
-
-    const audioBuffer = Buffer.from(audioRes.data)
-    const contentType = audioRes.headers['content-type'] || 'audio/mpeg'
-    const ext = contentType.includes('wav') ? 'wav' : 'mp3'
-
-    // Build multipart form for EmotionSense Python service
-    const form = new FormData()
-    form.append('file', audioBuffer, { filename: `call_${callLogId}.${ext}`, contentType })
-
-    console.log(`[EmotionSense] Sending to analysis service at ${EMOTIONSENSE_URL}`)
-    const analysisRes = await axios.post(`${EMOTIONSENSE_URL}/analyze`, form, {
-      headers: form.getHeaders(),
-      timeout: 600000, // 10 min — CPU-heavy ML pipeline
-    })
-
-    const result = analysisRes.data
-    console.log(`[EmotionSense] Analysis complete for call ${callLogId}`)
-
-    await prisma.callLog.update({
-      where: { id: callLogId },
-      data: {
-        analysisStatus: 'completed',
-        analysisResult: result,
-      },
-    })
-  } catch (err) {
-    console.error(`[EmotionSense] Failed for call ${callLogId}:`, err.message)
-    await prisma.callLog.update({
-      where: { id: callLogId },
-      data: { analysisStatus: 'failed' },
-    })
+      // Retry only transient failures, and only while attempts remain.
+      if (transient && attempt < ANALYSIS_MAX_ATTEMPTS) {
+        // keep it visibly "Processing" while we back off and retry
+        await prisma.callLog.update({
+          where: { id: callLogId },
+          data: { analysisStatus: 'analyzing' },
+        }).catch(() => {})
+        await sleep(ANALYSIS_RETRY_DELAY_MS * attempt)
+        continue
+      }
+      break // non-transient, or out of attempts
+    }
   }
+
+  const reason = (lastErr?.message || 'Analysis failed').slice(0, 300)
+  await prisma.callLog.update({
+    where: { id: callLogId },
+    data: { analysisStatus: 'failed', analysisError: reason },
+  }).catch(() => {})
+}
+
+// ── internal: recover analyses orphaned by a restart/deploy ─────────────────
+// A record left in "analyzing" longer than STALE_ANALYZING_MS has lost its
+// background worker (e.g. server restarted mid-run) — requeue it so it retries
+// instead of hanging on Processing forever.
+async function requeueStaleAnalyzing() {
+  const cutoff = new Date(Date.now() - STALE_ANALYZING_MS)
+  const { count } = await prisma.callLog.updateMany({
+    where: { analysisStatus: 'analyzing', updatedAt: { lt: cutoff } },
+    data:  { analysisStatus: 'pending' },
+  })
+  if (count > 0) console.log(`[EmotionSense] Recovered ${count} stalled analysis record(s)`)
+  return count
 }
 
 // ── internal: auto-analyze all pending records (sequential queue) ────────────
 async function triggerPendingAnalysis() {
+  // Self-heal first: bring back any analyses orphaned by a restart/deploy.
+  await requeueStaleAnalyzing().catch(e => console.error('[EmotionSense] recovery error:', e.message))
+
   const pending = await prisma.callLog.findMany({
     where: { analysisStatus: 'pending', recordingUrl: { not: null } },
   })
@@ -282,7 +344,9 @@ async function triggerPendingAnalysis() {
   console.log(`[EmotionSense] Queue started: ${pending.length} recording(s) to process`)
   for (const log of pending) {
     await prisma.callLog.update({ where: { id: log.id }, data: { analysisStatus: 'analyzing' } })
-    await runAnalysis(log.id, log.recordingUrl) // wait for completion before next
+    // runAnalysis handles its own errors/retries and never throws, so one bad
+    // recording can't stall the rest of the queue.
+    await runAnalysis(log.id, log.recordingUrl)
     console.log(`[EmotionSense] Queue: finished ${log.id}, moving to next`)
   }
   console.log('[EmotionSense] Queue complete')

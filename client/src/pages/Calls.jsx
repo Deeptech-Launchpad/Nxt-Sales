@@ -49,17 +49,20 @@ function StatusBadge({ status }) {
   )
 }
 
-function AnalysisBadge({ status }) {
+function AnalysisBadge({ status, title }) {
   if (!status) return null
   const map = {
-    pending:   { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#64748b', label: 'Pending'    },
-    analyzing: { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#2563eb', label: 'Analyzing…' },
+    pending:   { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#64748b', label: 'Queued'      },
+    analyzing: { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#2563eb', label: 'Processing…' },
     completed: { icon: <CheckCircle size={11} />,  color: '#16a34a', label: 'Analyzed'   },
     failed:    { icon: <XCircle size={11} />,      color: '#dc2626', label: 'Failed'     },
   }
   const c = map[status] || map.pending
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: c.color }}>
+    <span
+      title={title || undefined}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: c.color, cursor: title ? 'help' : 'default' }}
+    >
       {c.icon} {c.label}
     </span>
   )
@@ -461,12 +464,14 @@ function CallsInner() {
   // Clear selection whenever page changes
   useEffect(() => { setSelectedIds(new Set()) }, [page])
 
-  // Poll for analyzing records (10-minute interval)
+  // While anything is still processing/queued, poll every 15s so a finished
+  // analysis flips to Analyzed (or Failed) almost immediately instead of
+  // looking stuck. Polling stops automatically once nothing is in progress.
   useEffect(() => {
-    const analyzing = logs.filter(l => l.analysisStatus === 'analyzing' || l.analysisStatus === 'pending')
-    if (analyzing.length === 0) return
-    const timer = setTimeout(() => fetchLogs(page), 600000)
-    return () => clearTimeout(timer)
+    const active = logs.some(l => l.analysisStatus === 'analyzing' || l.analysisStatus === 'pending')
+    if (!active) return
+    const timer = setInterval(() => fetchLogs(page), 15000)
+    return () => clearInterval(timer)
   }, [logs, fetchLogs, page])
 
   const goToPage = (pg) => {
@@ -670,7 +675,10 @@ function CallsInner() {
                       </td>
                       <td>
                         {log.recordingUrl ? (
-                          <AnalysisBadge status={log.analysisStatus} />
+                          <AnalysisBadge
+                            status={log.analysisStatus}
+                            title={log.analysisStatus === 'failed' ? log.analysisError : undefined}
+                          />
                         ) : (
                           <span style={{ fontSize: 11, color: '#94a3b8' }}>—</span>
                         )}
