@@ -26,6 +26,7 @@ import Chat from './pages/Chat'
 import EmailTool from './pages/EmailTool'
 import UserManagement from './pages/UserManagement'
 import AcceptInvite from './pages/AcceptInvite'
+import AuthCallback from './pages/AuthCallback'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -43,6 +44,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/" element={<PrivateRoute><NotificationProvider><Layout /></NotificationProvider></PrivateRoute>}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />

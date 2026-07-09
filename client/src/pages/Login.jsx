@@ -90,7 +90,8 @@ export default function Login() {
 
   const handleGoogle = () => {
     setGoogleLoading(true)
-    window.location.href = '/auth/google'
+    // Backend Google OAuth start route is mounted under /api/auth
+    window.location.href = '/api/auth/google'
   }
 
   return (
