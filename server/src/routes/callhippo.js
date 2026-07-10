@@ -29,6 +29,47 @@ function isTransientError(err) {
   return false
 }
 
+// ── FIFO analysis queue ──────────────────────────────────────────────────────
+// EmotionSense processes one recording at a time (its own semaphore). Running
+// two analyses concurrently from here would collide with that limit and get
+// rejected with 429, so every analysis — whether auto-detected after Sync or
+// manually triggered via Analyze/Retry — goes through this single in-memory
+// queue and one worker, guaranteeing only one request is ever in flight.
+const analysisQueue = []          // FIFO list of { callLogId, recordingUrl }
+const queuedIds     = new Set()   // ids currently queued or being processed
+let   queueRunning  = false
+
+async function enqueueAnalysis(callLogId, recordingUrl) {
+  if (queuedIds.has(callLogId)) return // already queued or in progress
+  queuedIds.add(callLogId)
+  analysisQueue.push({ callLogId, recordingUrl })
+  await prisma.callLog.update({
+    where: { id: callLogId },
+    data:  { analysisStatus: 'pending' },
+  }).catch(() => {})
+  processQueue() // fire-and-forget; no-op if a worker is already running
+}
+
+async function processQueue() {
+  if (queueRunning) return
+  queueRunning = true
+  try {
+    while (analysisQueue.length > 0) {
+      const { callLogId, recordingUrl } = analysisQueue.shift()
+      await prisma.callLog.update({
+        where: { id: callLogId },
+        data:  { analysisStatus: 'analyzing' },
+      }).catch(() => {})
+      // runAnalysis handles its own retries/errors and never throws, so one
+      // bad recording can't stall the rest of the queue.
+      await runAnalysis(callLogId, recordingUrl)
+      queuedIds.delete(callLogId)
+    }
+  } finally {
+    queueRunning = false
+  }
+}
+
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 function chHeaders() {
@@ -217,21 +258,17 @@ router.post('/sync', auth, async (req, res) => {
   }
 })
 
-// ── POST /api/callhippo/analyze/:id — run EmotionSense on a recording ────────
+// ── POST /api/callhippo/analyze/:id — queue EmotionSense analysis ────────────
+// Enqueues onto the shared FIFO queue rather than starting immediately, so a
+// manual Analyze/Retry click can never collide with another in-flight analysis.
 router.post('/analyze/:id', auth, async (req, res) => {
   const { id } = req.params
   const log = await prisma.callLog.findUnique({ where: { id } })
   if (!log) return res.status(404).json({ message: 'Call log not found.' })
   if (!log.recordingUrl) return res.status(400).json({ message: 'No recording URL for this call.' })
 
-  // Set status to analyzing immediately
-  await prisma.callLog.update({ where: { id }, data: { analysisStatus: 'analyzing' } })
-  res.json({ message: 'Analysis started.', analysisStatus: 'analyzing' })
-
-  // Run in background — don't await
-  runAnalysis(id, log.recordingUrl).catch(e =>
-    console.error(`[EmotionSense] analysis failed for ${id}:`, e.message)
-  )
+  await enqueueAnalysis(id, log.recordingUrl)
+  res.json({ message: 'Analysis queued.', analysisStatus: 'pending' })
 })
 
 // ── GET /api/callhippo/analysis/:id — get analysis result ────────────────────
@@ -332,7 +369,9 @@ async function requeueStaleAnalyzing() {
   return count
 }
 
-// ── internal: auto-analyze all pending records (sequential queue) ────────────
+// ── internal: enqueue all pending records for analysis ───────────────────────
+// Feeds the same shared FIFO queue used by manual Analyze/Retry, so an
+// auto-detected call and a manually retried call can never run concurrently.
 async function triggerPendingAnalysis() {
   // Self-heal first: bring back any analyses orphaned by a restart/deploy.
   await requeueStaleAnalyzing().catch(e => console.error('[EmotionSense] recovery error:', e.message))
@@ -341,15 +380,10 @@ async function triggerPendingAnalysis() {
     where: { analysisStatus: 'pending', recordingUrl: { not: null } },
   })
   if (!pending.length) return
-  console.log(`[EmotionSense] Queue started: ${pending.length} recording(s) to process`)
+  console.log(`[EmotionSense] Enqueuing ${pending.length} recording(s) for analysis`)
   for (const log of pending) {
-    await prisma.callLog.update({ where: { id: log.id }, data: { analysisStatus: 'analyzing' } })
-    // runAnalysis handles its own errors/retries and never throws, so one bad
-    // recording can't stall the rest of the queue.
-    await runAnalysis(log.id, log.recordingUrl)
-    console.log(`[EmotionSense] Queue: finished ${log.id}, moving to next`)
+    await enqueueAnalysis(log.id, log.recordingUrl)
   }
-  console.log('[EmotionSense] Queue complete')
 }
 
 module.exports = router
