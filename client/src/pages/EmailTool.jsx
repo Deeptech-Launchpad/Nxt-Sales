@@ -297,7 +297,7 @@ Then, starting on the next line, output the full HTML email body exactly as inst
 // AI PDP Audit Generator
 // ─────────────────────────────────────────────────────────
 async function generateAiEmail(clientName, beforeFile, afterFile, settings, clientType = 'ecommerce') {
-  const { aiProvider, aiKey } = settings
+  const { aiProvider, aiKey, aiModel } = settings
   if (!aiKey) throw new Error('AI API Key missing. Add it in Settings.')
 
   // Prompt is selected by client type; the subject-output instruction is appended
@@ -309,7 +309,8 @@ async function generateAiEmail(clientName, beforeFile, afterFile, settings, clie
   let emailText = ''
 
   if (aiProvider === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${aiKey}`
+    const model = aiModel || 'gemini-2.5-flash'
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiKey}`
     const parts = [{ text: 'Generate the detailed PDP audit HTML pitch email based on system rules.' }]
     if (beforeFile) parts.push({ inlineData: { mimeType: beforeFile.type, data: beforeFile.data } })
     if (afterFile)  parts.push({ inlineData: { mimeType: afterFile.type,  data: afterFile.data  } })
@@ -614,6 +615,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
   const getSettings = () => ({
     aiProvider: localStorage.getItem('ai_provider') || 'gemini',
     aiKey:      localStorage.getItem('ai_key') || '',
+    aiModel:    localStorage.getItem('ai_model') || 'gemini-2.5-flash',
   })
 
   // auto=true → silent auto-generation (no recipient required, no success toast).
@@ -1435,6 +1437,7 @@ function SettingsSection({ onGmailChange }) {
   const [googleClientId, setGoogleClientId] = useState(localStorage.getItem('google_client_id') || '')
   const [aiProvider, setAiProvider]         = useState(localStorage.getItem('ai_provider') || 'gemini')
   const [aiKey, setAiKey]                   = useState(localStorage.getItem('ai_key') || '')
+  const [aiModel, setAiModel]               = useState(localStorage.getItem('ai_model') || 'gemini-2.5-flash')
   const [connecting, setConnecting]         = useState(false)
 
   const localToken  = localStorage.getItem('gmail_access_token')
@@ -1445,6 +1448,7 @@ function SettingsSection({ onGmailChange }) {
     localStorage.setItem('google_client_id', googleClientId.trim())
     localStorage.setItem('ai_provider', aiProvider)
     localStorage.setItem('ai_key', aiKey.trim())
+    localStorage.setItem('ai_model', aiModel)
     showToast('Settings saved successfully!', 'success')
   }
 
@@ -1525,6 +1529,21 @@ function SettingsSection({ onGmailChange }) {
               <option value="anthropic">Anthropic Claude</option>
             </select>
           </div>
+
+          {aiProvider === 'gemini' && (
+            <div className="et-form-group">
+              <label className="et-label">AI Model</label>
+              <select className="et-input" value={aiModel} onChange={e => setAiModel(e.target.value)}>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+              </select>
+              <div className="et-help-text">
+                Used for PDP Audit AI email generation (Template 3). If Google retires a model,
+                switch it here — no code change needed.
+              </div>
+            </div>
+          )}
 
           <div className="et-form-group">
             <label className="et-label">AI API Key</label>
