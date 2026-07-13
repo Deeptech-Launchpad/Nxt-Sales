@@ -198,6 +198,11 @@ export default function EmailModal({
   const [template,    setTemplate]    = useState('manual')
   const [clientName,  setClientName]  = useState('')
 
+  // Email Mode — controls thread continuation for this send only (Update 4).
+  // 'continue' looks up the latest conversation by sender+recipient email
+  // automatically; 'new' always sends a fresh, unthreaded conversation.
+  const [emailMode, setEmailMode] = useState('continue')
+
   // Files
   const [beforeFile,       setBeforeFile]       = useState(null)
   const [afterFile,        setAfterFile]        = useState(null)
@@ -265,6 +270,7 @@ export default function EmailModal({
     setToEmail(contactEmail || '')
     setTemplate('manual')
     setClientName('')
+    setEmailMode('continue')
     setSubject('')
     setBody('')
     setCc(''); setBcc(''); setShowCc(false); setShowBcc(false)
@@ -322,7 +328,7 @@ export default function EmailModal({
     drafts.unshift({
       id: Date.now(),
       savedAt: new Date().toISOString(),
-      template, clientName, to: toEmail, cc, bcc, subject, body,
+      template, clientName, to: toEmail, cc, bcc, subject, body, emailMode,
     })
     localStorage.setItem('nxts_email_drafts', JSON.stringify(drafts.slice(0, 50)))
     setError('Draft saved.')
@@ -356,6 +362,7 @@ export default function EmailModal({
         cc:  cc  || undefined,
         bcc: bcc || undefined,
         attachments,
+        emailMode,
         ...(contactId && { contactId }),
         ...(companyId && { companyId }),
       })
@@ -599,6 +606,15 @@ export default function EmailModal({
                     <input type="text" value={bcc} onChange={e => setBcc(e.target.value)} placeholder="bcc@example.com" />
                   </div>
                 )}
+
+                {/* Email Mode — controls thread continuation for this send only */}
+                <div className="act-form-group">
+                  <label>Email Mode</label>
+                  <select value={emailMode} onChange={e => setEmailMode(e.target.value)}>
+                    <option value="continue">Continue Existing Thread</option>
+                    <option value="new">New Conversation</option>
+                  </select>
+                </div>
 
                 {/* Subject */}
                 <div className="act-form-group">

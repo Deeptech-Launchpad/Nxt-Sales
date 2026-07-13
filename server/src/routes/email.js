@@ -274,12 +274,43 @@ router.get('/track/open/:token', async (req, res) => {
   res.end(PIXEL_GIF)
 })
 
+// Shared helper: fetch a Gmail thread's latest message headers so a reply can
+// continue it. Used by both the legacy contactId/companyId auto-thread path
+// and the new Email Mode "continue" lookup. Never throws — falls back to
+// threadId-only continuation if the thread's headers can't be read.
+async function resolveThreadMeta(gmail, threadId) {
+  try {
+    const threadRes = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'metadata',
+      metadataHeaders: ['Message-ID', 'Subject', 'References'],
+    })
+    const tMsgs   = threadRes.data.messages || []
+    const lastMsg = tMsgs[tMsgs.length - 1]
+    const h       = lastMsg?.payload?.headers || []
+    const getH    = (n) => h.find(x => x.name.toLowerCase() === n)?.value
+    const msgId   = getH('message-id')
+    const subjHdr = getH('subject')
+    const refsHdr = getH('references')
+    return {
+      subject:    subjHdr || null,
+      inReplyTo:  msgId || null,
+      references: msgId ? (refsHdr ? `${refsHdr} ${msgId}` : msgId) : null,
+    }
+  } catch (metaErr) {
+    console.warn('[Email Send] Thread metadata unavailable, threading by id only:', metaErr.message)
+    return { subject: null, inReplyTo: null, references: null }
+  }
+}
+
 // POST /api/email/send — send email via Gmail API
 // Accepts: to, subject, body (plain) OR htmlBody (html), cc, bcc,
 //          attachments: [{ filename, content (base64), mimeType }]
 //          contactId, companyId
+//          emailMode: 'new' | 'continue' (optional) — see Thread continuation below
 router.post('/send', auth, async (req, res) => {
-  const { to, subject, body, htmlBody, cc, bcc, attachments = [], contactId, companyId } = req.body
+  const { to, subject, body, htmlBody, cc, bcc, attachments = [], contactId, companyId, emailMode } = req.body
   if (!to || !subject) return res.status(400).json({ message: 'To and Subject are required.' })
 
   const account = await prisma.emailAccount.findFirst({
@@ -321,16 +352,45 @@ router.post('/send', auth, async (req, res) => {
     const effectiveHtml = `${baseHtml}${trackingPixel(trackingId)}`
 
     // ── Thread continuation ─────────────────────────────────
-    // If a prior email thread already exists between this user and the
-    // contact/company, continue it. Gmail keeps a message in a thread only when
-    // threadId is supplied AND the Subject matches the thread's — so we reuse the
-    // thread's Subject and set In-Reply-To/References to its latest message.
-    // When no prior thread exists these stay null → a new thread, exactly as before.
+    // Three ways this resolves, in priority order:
+    //   1. emailMode === 'new'      → always a fresh conversation (no lookup at all).
+    //   2. emailMode === 'continue' → look up the latest thread by sender+recipient
+    //      email (Email Mode dropdown — Update 4). No contactId/companyId needed,
+    //      so this works from the standalone Email Composer too.
+    //   3. neither provided         → the ORIGINAL contactId/companyId auto-thread
+    //      behavior, byte-for-byte unchanged, for any caller that predates Email Mode.
+    // In all cases, if no matching thread is found these stay null → new thread,
+    // exactly as before. Subject is never altered to defeat Gmail's own grouping.
     let threadId    = null
     let sendSubject = subject
     let inReplyTo   = null
     let references  = null
-    if (contactId || companyId) {
+
+    if (emailMode === 'new') {
+      // explicit: skip all lookup, send completely fresh
+
+    } else if (emailMode === 'continue') {
+      const lastEmail = await prisma.activity.findFirst({
+        where: {
+          type: 'email',
+          threadId: { not: null },
+          userId: req.user.id,
+          OR: [
+            { fromEmail: account.email, toEmail: to },
+            { fromEmail: to, toEmail: account.email },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+      if (lastEmail?.threadId) {
+        threadId = lastEmail.threadId
+        const meta = await resolveThreadMeta(gmail, threadId)
+        if (meta.subject) sendSubject = meta.subject
+        inReplyTo  = meta.inReplyTo
+        references = meta.references
+      }
+
+    } else if (contactId || companyId) {
       const lastEmail = await prisma.activity.findFirst({
         where: {
           type: 'email',
@@ -343,29 +403,10 @@ router.post('/send', auth, async (req, res) => {
       })
       if (lastEmail?.threadId) {
         threadId = lastEmail.threadId
-        try {
-          const threadRes = await gmail.users.threads.get({
-            userId: 'me',
-            id: threadId,
-            format: 'metadata',
-            metadataHeaders: ['Message-ID', 'Subject', 'References'],
-          })
-          const tMsgs   = threadRes.data.messages || []
-          const lastMsg = tMsgs[tMsgs.length - 1]
-          const h       = lastMsg?.payload?.headers || []
-          const getH    = (n) => h.find(x => x.name.toLowerCase() === n)?.value
-          const msgId   = getH('message-id')
-          const subjHdr = getH('subject')
-          const refsHdr = getH('references')
-          if (subjHdr) sendSubject = subjHdr   // match thread subject so Gmail keeps the thread
-          if (msgId) {
-            inReplyTo  = msgId
-            references = refsHdr ? `${refsHdr} ${msgId}` : msgId
-          }
-        } catch (metaErr) {
-          // If the thread can't be read, fall back to threadId-only (still usually threads)
-          console.warn('[Email Send] Thread metadata unavailable, threading by id only:', metaErr.message)
-        }
+        const meta = await resolveThreadMeta(gmail, threadId)
+        if (meta.subject) sendSubject = meta.subject
+        inReplyTo  = meta.inReplyTo
+        references = meta.references
       }
     }
 

@@ -496,6 +496,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
   const [cc, setCc]         = useState(initialDraft?.cc || '')
   const [bcc, setBcc]       = useState(initialDraft?.bcc || '')
   const [clientName, setClientName] = useState(initialDraft?.clientName || '')
+  const [emailMode, setEmailMode]   = useState(initialDraft?.emailMode || 'continue')
   const [clientType, setClientType] = useState(initialDraft?.clientType || 'ecommerce')
   const [template, setTemplate]     = useState(initialDraft?.template || '1')
   const [subject, setSubject]       = useState(initialDraft?.subject || '')
@@ -696,7 +697,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
   const saveDraft = () => {
     const draft = {
       id: 'draft_' + Date.now(),
-      to, cc, bcc, subject, body, template, clientType, clientName,
+      to, cc, bcc, subject, body, template, clientType, clientName, emailMode,
       timestamp: Date.now(),
       attachmentNames: []
     }
@@ -774,6 +775,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
           to, cc: cc || undefined, bcc: bcc || undefined,
           subject: previewSubject || subject,
           htmlBody: previewHtml,
+          emailMode,
           attachments: attachments.map(a => ({
             filename: a.name,
             content: a.data,
@@ -865,6 +867,17 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
               <input className="et-input" type="email" placeholder="bcc@company.com"
                 value={bcc} onChange={e => setBcc(e.target.value)} />
             </div>
+          </div>
+
+          {/* Email Mode — controls thread continuation for this send only.
+              "Continue Existing Thread" looks up the latest conversation by
+              sender+recipient email automatically; no manual thread picking. */}
+          <div className="et-form-group">
+            <label className="et-label">Email Mode</label>
+            <select className="et-input" value={emailMode} onChange={e => setEmailMode(e.target.value)}>
+              <option value="continue">Continue Existing Thread</option>
+              <option value="new">New Conversation</option>
+            </select>
           </div>
 
           {/* Client Type — selects which template set (Static vs E-commerce) loads */}
