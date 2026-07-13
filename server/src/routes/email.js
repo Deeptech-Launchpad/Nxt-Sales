@@ -188,6 +188,12 @@ function popupHtml(status, clientUrl) {
 // ── helper: build a proper RFC 2822 MIME message ─────────
 // inReplyTo / references (RFC 2822 Message-ID header values) are set only when
 // continuing an existing Gmail thread; when null the message behaves as before.
+// Returns the raw message as a Buffer (NOT base64url-encoded). This lets the
+// caller pick the most efficient transport: Gmail's multipart media upload
+// (used for attachment emails, see /send) takes these raw bytes directly, while
+// the plain JSON `raw` field path (no-attachment emails — unchanged) base64url-
+// encodes it once at the call site. Either way the message content is byte-for-
+// byte identical; only how it's handed to the Gmail API differs.
 function buildRawEmail({ from, to, cc, bcc, subject, htmlBody, attachments = [], inReplyTo = null, references = null }) {
   const boundary = `nxts_${Date.now()}`
   const encSubject = `=?UTF-8?B?${Buffer.from(subject || '').toString('base64')}?=`
@@ -231,7 +237,7 @@ function buildRawEmail({ from, to, cc, bcc, subject, htmlBody, attachments = [],
     body = Buffer.from(htmlBody || '').toString('base64')
   }
 
-  return Buffer.from([...headers, '', body].join('\r\n')).toString('base64url')
+  return Buffer.from([...headers, '', body].join('\r\n'))
 }
 
 // GET /api/email/track/open/:token — email open tracking pixel.
@@ -410,7 +416,7 @@ router.post('/send', auth, async (req, res) => {
       }
     }
 
-    const rawEmail = buildRawEmail({
+    const rawBuffer = buildRawEmail({
       from: account.email,
       to,
       cc:  cc  || null,
@@ -422,10 +428,35 @@ router.post('/send', auth, async (req, res) => {
       references,
     })
 
-    const sent = await gmail.users.messages.send({
-      userId: 'me',
-      requestBody: { raw: rawEmail, ...(threadId && { threadId }) },
-    })
+    // ── Send ──────────────────────────────────────────────
+    // Attachment emails: use Gmail's documented multipart media upload
+    // (uploadType=multipart, media MIME type message/rfc822) so the raw bytes
+    // go straight to Gmail without the extra base64url encoding pass the plain
+    // JSON `raw` field requires — this is the main built-in inefficiency for
+    // large attachments, and Gmail's own API docs recommend media upload over
+    // inlining large messages as JSON. If anything about this path fails for
+    // any reason, we fall back to the exact same proven JSON `raw` call used
+    // today, so a send can only ever be slower here, never fail because of it.
+    // No-attachment emails are untouched — they always use the original path.
+    let sent
+    const hasAttachments = Array.isArray(attachments) && attachments.length > 0
+    if (hasAttachments) {
+      try {
+        sent = await gmail.users.messages.send({
+          userId: 'me',
+          requestBody: { ...(threadId && { threadId }) },
+          media: { mimeType: 'message/rfc822', body: rawBuffer },
+        })
+      } catch (mediaErr) {
+        console.warn('[Email Send] Multipart upload failed, falling back to simple send:', mediaErr.message)
+      }
+    }
+    if (!sent) {
+      sent = await gmail.users.messages.send({
+        userId: 'me',
+        requestBody: { raw: rawBuffer.toString('base64url'), ...(threadId && { threadId }) },
+      })
+    }
 
     const activity = await prisma.activity.create({
       data: {
