@@ -30,40 +30,61 @@ function normalize(contacts) {
   }))
 }
 
-export function exportCSV(contacts, filename = 'contacts') {
-  const rows = normalize(contacts)
-  const header = COLUMNS.map(c => c.header).join(',')
+// Generic row normalizer for an arbitrary field list (used by Companies export
+// via a dynamic column set). Formats owner/date fields sensibly; everything
+// else is read straight off the record.
+function normalizeGeneric(records, columns) {
+  return records.map(r => {
+    const out = {}
+    for (const c of columns) {
+      let v = r[c.key]
+      if (c.key === 'ownerId') v = r.owner?.name || '--'
+      else if (v instanceof Date || c.key === 'createdAt' || c.key === 'updatedAt') {
+        v = v ? new Date(v).toLocaleString() : '--'
+      } else if (Array.isArray(v)) v = v.join('; ')
+      out[c.key] = (v === undefined || v === null || v === '') ? '--' : v
+    }
+    return out
+  })
+}
+
+// `columns` is optional — defaults to the existing Contacts column set so
+// Contacts export behaviour is completely unchanged. Pass a custom [{key,
+// header}] list (e.g. the dynamic Company field list) to export other entities.
+export function exportCSV(contacts, filename = 'contacts', columns = COLUMNS) {
+  const rows = columns === COLUMNS ? normalize(contacts) : normalizeGeneric(contacts, columns)
+  const header = columns.map(c => c.header).join(',')
   const lines  = rows.map(r =>
-    COLUMNS.map(c => `"${String(r[c.key] || '').replace(/"/g, '""')}"`).join(',')
+    columns.map(c => `"${String(r[c.key] || '').replace(/"/g, '""')}"`).join(',')
   )
   const csv = [header, ...lines].join('\n')
   download(new Blob([csv], { type: 'text/csv' }), `${filename}.csv`)
 }
 
-export function exportXLSX(contacts, filename = 'contacts') {
-  const rows = normalize(contacts)
+export function exportXLSX(contacts, filename = 'contacts', columns = COLUMNS, sheetName = 'Contacts') {
+  const rows = columns === COLUMNS ? normalize(contacts) : normalizeGeneric(contacts, columns)
   const ws   = XLSX.utils.json_to_sheet(rows.map(r =>
-    Object.fromEntries(COLUMNS.map(c => [c.header, r[c.key] || '']))
+    Object.fromEntries(columns.map(c => [c.header, r[c.key] || '']))
   ))
   const wb   = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'Contacts')
+  XLSX.utils.book_append_sheet(wb, ws, sheetName)
   XLSX.writeFile(wb, `${filename}.xlsx`)
 }
 
-export function exportJSON(contacts, filename = 'contacts') {
-  const rows = normalize(contacts)
+export function exportJSON(contacts, filename = 'contacts', columns = COLUMNS) {
+  const rows = columns === COLUMNS ? normalize(contacts) : normalizeGeneric(contacts, columns)
   download(new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' }), `${filename}.json`)
 }
 
-export function exportPDF(contacts, filename = 'contacts') {
-  const rows = normalize(contacts)
+export function exportPDF(contacts, filename = 'contacts', columns = COLUMNS, title = 'Contacts Export — NXT MarketingWiz') {
+  const rows = columns === COLUMNS ? normalize(contacts) : normalizeGeneric(contacts, columns)
   const doc  = new jsPDF({ orientation: 'landscape' })
   doc.setFontSize(14)
-  doc.text('Contacts Export — NXT MarketingWiz', 14, 15)
+  doc.text(title, 14, 15)
   autoTable(doc, {
     startY: 22,
-    head:   [COLUMNS.map(c => c.header)],
-    body:   rows.map(r => COLUMNS.map(c => r[c.key] || '')),
+    head:   [columns.map(c => c.header)],
+    body:   rows.map(r => columns.map(c => r[c.key] || '')),
     styles: { fontSize: 8, cellPadding: 3 },
     headStyles: { fillColor: [230, 51, 41] },
     alternateRowStyles: { fillColor: [248, 250, 252] },

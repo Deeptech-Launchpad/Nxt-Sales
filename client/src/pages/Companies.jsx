@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, LayoutGrid, List, Download, Plus,
@@ -10,6 +10,7 @@ import FilterDropdown from '../components/filters/FilterDropdown'
 import CreateCompanyModal from '../components/modals/CreateCompanyModal'
 import ImportModal from '../components/modals/ImportModal'
 import { valueList } from '../utils/multiValue'
+import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUtils'
 import '../styles/contacts.css'
 
 // "+N" badge when a company has more than one email.
@@ -17,6 +18,105 @@ const moreCount = (primary, arr) => Math.max(0, valueList(primary, arr).length -
 const MoreBadge = ({ n }) => n > 0
   ? <span style={{ marginLeft: 6, fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>+{n}</span>
   : null
+
+const COLUMNS_STORAGE_KEY = 'mwz_companies_visible_columns'
+const DEFAULT_COLUMNS = ['country', 'industryType', 'email', 'mobile', 'linkedinUrl'] // matches the original hardcoded table
+
+// ── Export dropdown — mirrors Contacts' ExportMenu, but always fetches the
+// FULL filtered dataset from the server first (Update 6: export must cover
+// every matching record, not just the current page).
+function CompanyExportMenu({ fetchAllForExport, columns }) {
+  const [open, setOpen]       = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  const run = async (fn, extraArgs = []) => {
+    setOpen(false); setExporting(true)
+    try {
+      const records = await fetchAllForExport()
+      fn(records, 'companies', columns, ...extraArgs)
+    } catch {
+      // fetch failed — nothing to export; silently no-op (matches existing
+      // lightweight error handling style used elsewhere on this page)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div style={{ position: 'relative' }} ref={ref}>
+      <button className="btn-action btn-sm" onClick={() => setOpen(o => !o)} disabled={exporting}>
+        <Upload size={13} /> {exporting ? 'Exporting…' : 'Export'} <ChevronDown size={11} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 3000, minWidth: 170, overflow: 'hidden' }}>
+          {[
+            { label: 'Export as CSV',   fn: () => run(exportCSV) },
+            { label: 'Export as Excel', fn: () => run(exportXLSX, ['Companies']) },
+            { label: 'Export as JSON',  fn: () => run(exportJSON) },
+            { label: 'Export as PDF',   fn: () => run(exportPDF, ['Companies Export — NXT MarketingWiz']) },
+          ].map(item => (
+            <button key={item.label} onClick={item.fn}
+              style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', textAlign: 'left', fontSize: 13, color: '#334155', cursor: 'pointer', fontFamily: 'DM Sans,system-ui,sans-serif' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Edit Columns dropdown — shows every Create-Company field as a checkbox;
+// Save updates the visible table columns and remembers the choice.
+function EditColumnsMenu({ fields, visibleColumns, onSave }) {
+  const [open, setOpen]   = useState(false)
+  const [draft, setDraft] = useState(visibleColumns)
+  const ref = useRef(null)
+
+  useEffect(() => { if (open) setDraft(visibleColumns) }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  const toggle = (key) => setDraft(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
+  const save   = () => { onSave(draft); setOpen(false) }
+
+  const toggleable = fields.filter(f => f.key !== 'name') // Company name column is always shown
+
+  return (
+    <div style={{ position: 'relative' }} ref={ref}>
+      <button className="btn-action btn-sm" onClick={() => setOpen(o => !o)}>
+        <Columns size={13} /> Edit columns
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 3000, minWidth: 240, maxHeight: 340, overflowY: 'auto', padding: 8 }}>
+          {toggleable.map(f => (
+            <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', fontSize: 13, color: '#334155', cursor: 'pointer', borderRadius: 4 }}>
+              <input type="checkbox" checked={draft.includes(f.key)} onChange={() => toggle(f.key)} />
+              {f.label}
+            </label>
+          ))}
+          <div style={{ borderTop: '1px solid #f1f5f9', marginTop: 6, paddingTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn-primary" style={{ fontSize: 12, padding: '6px 14px' }} onClick={save}>Save</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 const PAGE_SIZE = 25
 
@@ -69,9 +169,30 @@ export default function Companies() {
   const [leadStatusFilter, setLeadStatusFilter] = useState([])
   const [users, setUsers]                       = useState([])
 
+  // Dynamic field list (all Create-Company fields) + user's chosen visible columns
+  const [companyFields, setCompanyFields]     = useState([])
+  const [visibleColumns, setVisibleColumns]   = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY))
+      return Array.isArray(saved) && saved.length ? saved : DEFAULT_COLUMNS
+    } catch {
+      return DEFAULT_COLUMNS
+    }
+  })
+
+  const saveVisibleColumns = (cols) => {
+    setVisibleColumns(cols)
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(cols))
+  }
+
   // Load users for Company Owner filter
   useEffect(() => {
     api.get('/users').then(r => setUsers(r.data)).catch(() => {})
+  }, [])
+
+  // Load the dynamic Company field list (same one Create/Import already use)
+  useEffect(() => {
+    api.get('/companies/import-fields').then(r => setCompanyFields(r.data.fields || [])).catch(() => {})
   }, [])
 
   const ownerOptions = [
@@ -107,6 +228,21 @@ export default function Companies() {
 
   useEffect(() => { fetchCompanies() }, [fetchCompanies])
 
+  // Export: fetch EVERY company matching the current filters/search (no page
+  // limit) — the dedicated /companies/export endpoint mirrors the same filter
+  // logic as the paginated list so "current filters" always matches exactly.
+  const fetchAllForExport = useCallback(async () => {
+    const params = {
+      view: activeTab === 'all' ? undefined : activeTab,
+      ...(search && { search }),
+      ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
+      ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
+      ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
+    }
+    const { data } = await api.get('/companies/export', { params })
+    return data.companies || []
+  }, [activeTab, search, ownerFilter, leadStatusFilter, createDateFilter])
+
   // Tab change resets page
   const switchTab = (key) => { setActiveTab(key); setPage(1); setSelected([]) }
 
@@ -117,6 +253,26 @@ export default function Companies() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const hasFilters = ownerFilter.length > 0 || createDateFilter.length > 0 || leadStatusFilter.length > 0
+
+  // Export always includes every Company field (a superset of the visible
+  // table columns), matching the same precedent as the existing Contacts export.
+  const exportColumns = companyFields.map(f => ({ key: f.key, header: f.label }))
+  // Table columns shown, in the field list's canonical order (not toggle order)
+  const orderedVisibleFields = companyFields.filter(f => visibleColumns.includes(f.key))
+
+  function renderCompanyCell(f, c) {
+    if (f.key === 'email') {
+      return <>{c.email || '--'}<MoreBadge n={moreCount(c.email, c.emails)} /></>
+    }
+    if (f.key === 'linkedinUrl') {
+      return c.linkedinUrl
+        ? <a href={c.linkedinUrl} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }} onClick={e => e.stopPropagation()}>LinkedIn</a>
+        : '--'
+    }
+    const v = c[f.key]
+    if (Array.isArray(v)) return v.length ? v.join(', ') : '--'
+    return (v === null || v === undefined || v === '') ? '--' : String(v)
+  }
 
   return (
     <div className="contacts-container">
@@ -191,8 +347,8 @@ export default function Companies() {
               onChange={e => { setSearch(e.target.value); setPage(1) }}
             />
           </div>
-          <button className="btn-action btn-sm"><Upload size={13} /> Export</button>
-          <button className="btn-action btn-sm"><Columns size={13} /> Edit columns</button>
+          <CompanyExportMenu fetchAllForExport={fetchAllForExport} columns={exportColumns} />
+          <EditColumnsMenu fields={companyFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} />
           <div className="view-toggle">
             <button className={`view-btn ${view === 'table' ? 'active' : ''}`} onClick={() => setView('table')}><List size={14} /></button>
             <button className={`view-btn ${view === 'grid'  ? 'active' : ''}`} onClick={() => setView('grid')}><LayoutGrid size={14} /></button>
@@ -206,37 +362,25 @@ export default function Companies() {
           <thead>
             <tr>
               <th><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
-              <th>COUNTRY OF ORIGIN</th>
               <th>COMPANY</th>
-              <th>INDUSTRY TYPE</th>
-              <th>EMAIL</th>
-              <th>MOBILE</th>
-              <th>LINKEDIN URL</th>
+              {orderedVisibleFields.map(f => <th key={f.key}>{f.label.toUpperCase()}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading...</td></tr>
+              <tr><td colSpan={2 + orderedVisibleFields.length} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading...</td></tr>
             ) : companies.length === 0 ? (
-              <tr><td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No companies found</td></tr>
+              <tr><td colSpan={2 + orderedVisibleFields.length} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No companies found</td></tr>
             ) : companies.map(c => (
               <tr key={c.id}>
                 <td><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} /></td>
-                <td>{c.country || '--'}</td>
                 <td className="name-cell">
                   <span className="avatar" style={{ fontSize: '10px', letterSpacing: '-0.5px' }}>
                     {(c.name || '??').slice(0, 2).toUpperCase()}
                   </span>
                   <span className="link-style" onClick={() => navigate(`/companies/${c.id}`)}>{c.name}</span>
                 </td>
-                <td>{c.industryType || '--'}</td>
-                <td style={{ color: c.email ? '#3b82f6' : undefined }}>{c.email || '--'}<MoreBadge n={moreCount(c.email, c.emails)} /></td>
-                <td style={{ color: c.mobile ? '#3b82f6' : undefined }}>{c.mobile || '--'}</td>
-                <td>
-                  {c.linkedinUrl
-                    ? <a href={c.linkedinUrl} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }} onClick={e => e.stopPropagation()}>LinkedIn</a>
-                    : '--'}
-                </td>
+                {orderedVisibleFields.map(f => <td key={f.key}>{renderCompanyCell(f, c)}</td>)}
               </tr>
             ))}
           </tbody>

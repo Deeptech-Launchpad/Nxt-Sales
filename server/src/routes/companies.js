@@ -42,50 +42,53 @@ function dateRangeFor(key) {
   return map[key] || null
 }
 
+// Shared filter builder — used by both the paginated list and the export
+// endpoint so "export with applied filters" always matches the on-screen list.
+function buildCompanyWhere(query, userId) {
+  const { search, view, owners, leadStatuses, createDate } = query
+  const where = {}
+
+  if (view === 'mine')       where.ownerId = userId
+  if (view === 'unassigned') where.ownerId = null
+
+  if (owners) {
+    const ownerList     = owners.split(',')
+    const hasUnassigned = ownerList.includes('unassigned')
+    const realOwners    = ownerList.filter(o => o !== 'unassigned')
+
+    if (hasUnassigned && realOwners.length > 0) {
+      const ownerOr = [{ ownerId: { in: realOwners } }, { ownerId: null }]
+      where.OR = where.OR ? [...where.OR, ...ownerOr] : ownerOr
+    } else if (hasUnassigned) {
+      where.ownerId = null
+    } else {
+      where.ownerId = { in: realOwners }
+    }
+  }
+
+  if (leadStatuses) where.leadStatus = { in: leadStatuses.split(',') }
+
+  if (createDate) {
+    const range = dateRangeFor(createDate)
+    if (range) where.createdAt = { gte: range[0], lte: range[1] }
+  }
+
+  if (search) {
+    where.OR = [
+      { name:    { contains: search, mode: 'insensitive' } },
+      { email:   { contains: search, mode: 'insensitive' } },
+      { website: { contains: search, mode: 'insensitive' } },
+    ]
+  }
+
+  return where
+}
+
 // ── GET /api/companies ─────────────────────────────────────
 router.get('/', auth, async (req, res) => {
   try {
-    const { search, view, owners, leadStatuses, createDate, page = 1, limit = 100 } = req.query
-
-    const where = {}
-
-    // Tab view filter
-    if (view === 'mine')       where.ownerId = req.user.id
-    if (view === 'unassigned') where.ownerId = null
-
-    // Owner filter (comma-separated IDs — 'unassigned' maps to null)
-    if (owners) {
-      const ownerList    = owners.split(',')
-      const hasUnassigned = ownerList.includes('unassigned')
-      const realOwners   = ownerList.filter(o => o !== 'unassigned')
-
-      if (hasUnassigned && realOwners.length > 0) {
-        const ownerOr = [{ ownerId: { in: realOwners } }, { ownerId: null }]
-        where.OR = where.OR ? [...where.OR, ...ownerOr] : ownerOr
-      } else if (hasUnassigned) {
-        where.ownerId = null
-      } else {
-        where.ownerId = { in: realOwners }
-      }
-    }
-
-    // Lead status filter (comma-separated values)
-    if (leadStatuses) where.leadStatus = { in: leadStatuses.split(',') }
-
-    // Create date filter
-    if (createDate) {
-      const range = dateRangeFor(createDate)
-      if (range) where.createdAt = { gte: range[0], lte: range[1] }
-    }
-
-    // Search
-    if (search) {
-      where.OR = [
-        { name:     { contains: search, mode: 'insensitive' } },
-        { email:    { contains: search, mode: 'insensitive' } },
-        { website:  { contains: search, mode: 'insensitive' } },
-      ]
-    }
+    const { page = 1, limit = 100 } = req.query
+    const where = buildCompanyWhere(req.query, req.user.id)
 
     const [companies, total] = await Promise.all([
       prisma.company.findMany({
@@ -107,6 +110,24 @@ router.get('/', auth, async (req, res) => {
 
 // ── GET /api/companies/import-fields (before /:id so it isn't captured) ────────
 router.get('/import-fields', auth, (req, res) => res.json(getImportFields('Company')))
+
+// ── GET /api/companies/export (before /:id) ─────────────────────────────────
+// Returns EVERY company matching the current filters/search — no pagination —
+// so Export always captures the full filtered set, not just the visible page.
+router.get('/export', auth, async (req, res) => {
+  try {
+    const where = buildCompanyWhere(req.query, req.user.id)
+    const companies = await prisma.company.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { owner: { select: { id: true, name: true, email: true } } },
+    })
+    res.json({ companies, total: companies.length })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
 
 // ── POST /api/companies/check-duplicates — bulk pre-import duplicate preview ──
 // Read-only: creates/modifies nothing. For each row, checks the same fields as
