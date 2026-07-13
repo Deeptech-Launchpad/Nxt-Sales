@@ -274,6 +274,30 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
             />
           </div>
 
+          {/* Duplicate warning — placed right after the top identifying fields
+              (Name/Email) so it's visible without scrolling. Detection logic
+              is unchanged; this only moved the existing banner up in the form. */}
+          {duplicate && (
+            <div style={{
+              background: '#fef9c3', border: '1.5px solid #eab308', borderRadius: 8,
+              padding: '12px 14px', marginTop: -4, marginBottom: 4,
+            }}>
+              <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: '#713f12' }}>
+                Duplicate company detected
+              </p>
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#78350f' }}>
+                <strong>{duplicate.name}</strong> already exists with the same name, email, phone, or website.
+              </p>
+              <a
+                href={`/companies/${duplicate.id}`}
+                style={{ fontSize: 13, color: '#1d4ed8', fontWeight: 600, textDecoration: 'underline' }}
+                onClick={() => { reset(); onClose() }}
+              >
+                View existing company →
+              </a>
+            </div>
+          )}
+
           {/* Phones — one or more, first is primary */}
           <div className="form-group">
             <label>Phone number</label>
@@ -430,27 +454,6 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
             <label>Description</label>
             <textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)} placeholder="" />
           </div>
-
-          {duplicate && (
-            <div style={{
-              background: '#fef9c3', border: '1.5px solid #eab308', borderRadius: 8,
-              padding: '12px 14px', marginTop: 8,
-            }}>
-              <p style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: '#713f12' }}>
-                Duplicate company detected
-              </p>
-              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#78350f' }}>
-                <strong>{duplicate.name}</strong> already exists with the same name, email, phone, or website.
-              </p>
-              <a
-                href={`/companies/${duplicate.id}`}
-                style={{ fontSize: 13, color: '#1d4ed8', fontWeight: 600, textDecoration: 'underline' }}
-                onClick={() => { reset(); onClose() }}
-              >
-                View existing company →
-              </a>
-            </div>
-          )}
 
           {error && (
             <p style={{ color: '#ef4444', fontSize: 12, margin: '4px 0 0', fontWeight: 500 }}>{error}</p>
