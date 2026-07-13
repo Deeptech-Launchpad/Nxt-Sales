@@ -18,7 +18,7 @@ const CONFIG = {
   },
   Company: {
     requiredKey: 'name',
-    exclude: ['id', 'createdAt', 'updatedAt', 'status', 'ownerId', 'notes'],
+    exclude: ['id', 'createdAt', 'updatedAt', 'status', 'ownerId'],
     labels: {
       name: 'Company Name', email: 'Email', phone: 'Phone Number', mobile: 'Mobile',
       website: 'Website', domain: 'Company Domain Name', industry: 'Industry',
@@ -28,11 +28,12 @@ const CONFIG = {
       postalCode: 'Postal Code', timeZone: 'Time Zone',
       originalTrafficSource: 'Original Traffic Source', linkedinUrl: 'LinkedIn URL',
       description: 'Description', lifecycleStage: 'Lifecycle Stage', leadStatus: 'Lead Status',
+      notes: 'Notes',
     },
     order: ['name', 'email', 'phone', 'mobile', 'website', 'domain', 'industry', 'industryType',
       'companyType', 'leadType', 'employeeCount', 'revenue', 'country', 'city', 'stateRegion',
       'postalCode', 'timeZone', 'originalTrafficSource', 'linkedinUrl', 'description',
-      'lifecycleStage', 'leadStatus'],
+      'lifecycleStage', 'leadStatus', 'notes'],
   },
 }
 

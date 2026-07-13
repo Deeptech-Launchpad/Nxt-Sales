@@ -108,6 +108,41 @@ router.get('/', auth, async (req, res) => {
 // ── GET /api/companies/import-fields (before /:id so it isn't captured) ────────
 router.get('/import-fields', auth, (req, res) => res.json(getImportFields('Company')))
 
+// ── POST /api/companies/check-duplicates — bulk pre-import duplicate preview ──
+// Read-only: creates/modifies nothing. For each row, checks the same fields as
+// single-company duplicate detection (name/email/phone/website) plus domain,
+// and reports the matching existing company, if any, so the Import modal can
+// preview and let the user skip/remove duplicate rows before anything is created.
+router.post('/check-duplicates', auth, async (req, res) => {
+  try {
+    const { companies } = req.body
+    if (!Array.isArray(companies)) return res.status(400).json({ message: 'companies array required.' })
+
+    const results = []
+    for (const c of companies) {
+      const name = c.name ? String(c.name).trim() : ''
+      if (!name) { results.push({ isDuplicate: false, existing: null }); continue }
+
+      const dupConditions = [{ name: { equals: name, mode: 'insensitive' } }]
+      if (c.email)   dupConditions.push({ email: String(c.email).toLowerCase().trim() })
+      if (c.phone)   dupConditions.push({ phone: String(c.phone).trim() })
+      if (c.website) dupConditions.push({ website: String(c.website).trim() })
+      if (c.domain)  dupConditions.push({ domain: String(c.domain).trim() })
+
+      const existing = await prisma.company.findFirst({ where: { OR: dupConditions } })
+      results.push({
+        isDuplicate: !!existing,
+        existing: existing ? { id: existing.id, name: existing.name } : null,
+      })
+    }
+
+    res.json({ results })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
 // ── POST /api/companies/bulk (import) ─────────────────────────────────────────
 router.post('/bulk', auth, async (req, res) => {
   try {
@@ -127,7 +162,7 @@ router.post('/bulk', auth, async (req, res) => {
     for (const c of companies) {
       try {
         if (!c.name || !String(c.name).trim()) { errors.push('Missing company name — row skipped'); failed++; continue }
-        await prisma.company.create({
+        const newCompany = await prisma.company.create({
           data: {
             name:                  String(c.name).trim(),
             email:                 c.email ? String(c.email).toLowerCase().trim() : null,
@@ -158,6 +193,22 @@ router.post('/bulk', auth, async (req, res) => {
           },
         })
         created++
+
+        // If the import row has a Notes column, save it as a Note Activity —
+        // reusing the same Activity table manual notes use (Company → Activities
+        // → Notes), not the Company's own unrelated `notes` column.
+        const noteText = c.notes || c['Notes']
+        if (noteText && String(noteText).trim()) {
+          await prisma.activity.create({
+            data: {
+              type:      'note',
+              companyId: newCompany.id,
+              userId:    req.user.id,
+              title:     'Imported Note',
+              body:      String(noteText).trim(),
+            },
+          }).catch(e => console.error(`Import note creation failed for ${newCompany.id}:`, e.message))
+        }
       } catch (rowErr) {
         failed++
         errors.push(`${c.name || 'unknown'}: ${rowErr.message}`)

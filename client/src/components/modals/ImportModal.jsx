@@ -21,6 +21,12 @@ export default function ImportModal({ entity, isOpen, onClose, onSuccess }) {
   const [requiredKey, setRequiredKey] = useState('email')
   const inputRef = useRef(null)
 
+  // Companies-only duplicate preview (Part B). dupInfo is parallel to rows:
+  // dupInfo[i] = { isDuplicate, existing } or undefined before checked.
+  // Contacts import never touches these — behaviour there is unchanged.
+  const [dupInfo, setDupInfo]                   = useState([])
+  const [selectedForRemoval, setSelectedForRemoval] = useState(new Set())
+
   const noun    = entity === 'companies' ? 'company'   : 'contact'
   const nounCap = entity === 'companies' ? 'Companies' : 'Contacts'
 
@@ -32,20 +38,60 @@ export default function ImportModal({ entity, isOpen, onClose, onSuccess }) {
       .catch(() => {})
   }, [isOpen, entity])
 
-  const reset = () => { setStep(0); setFile(null); setRows([]); setError(''); setResult(null) }
+  const reset = () => {
+    setStep(0); setFile(null); setRows([]); setError(''); setResult(null)
+    setDupInfo([]); setSelectedForRemoval(new Set())
+  }
 
   const handleFile = async (f) => {
     setError(''); setFile(f); setLoading(true)
     try {
       const raw = await parseRawFile(f)
       if (raw.length === 0) throw new Error('No data rows found in file.')
-      setRows(mapRowsToFields(raw, fields))
+      const mapped = mapRowsToFields(raw, fields)
+      setRows(mapped)
+
+      // Companies-only: preview duplicates before anything is imported.
+      // Failure here is non-fatal — it just means no duplicate preview, the
+      // import itself still works exactly as before.
+      if (entity === 'companies') {
+        try {
+          const { data } = await api.post('/companies/check-duplicates', { companies: mapped })
+          const info = data.results || []
+          setDupInfo(info)
+          setSelectedForRemoval(new Set(info.map((r, i) => (r.isDuplicate ? i : null)).filter(i => i !== null)))
+        } catch {
+          setDupInfo([]); setSelectedForRemoval(new Set())
+        }
+      } else {
+        setDupInfo([]); setSelectedForRemoval(new Set())
+      }
+
       setStep(1)
     } catch (e) {
       setError(e.message || 'Failed to parse file.')
     } finally {
       setLoading(false)
     }
+  }
+
+  // Duplicate-row actions (companies only) ────────────────────────────────
+  const toggleRemoval = (i) => {
+    setSelectedForRemoval(prev => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
+  }
+
+  const skipAllDuplicates = () => {
+    setSelectedForRemoval(new Set(dupInfo.map((r, i) => (r.isDuplicate ? i : null)).filter(i => i !== null)))
+  }
+
+  const removeSelectedDuplicates = () => {
+    setRows(prev => prev.filter((_, i) => !selectedForRemoval.has(i)))
+    setDupInfo(prev => prev.filter((_, i) => !selectedForRemoval.has(i)))
+    setSelectedForRemoval(new Set())
   }
 
   const handleDrop = (e) => {
@@ -70,9 +116,10 @@ export default function ImportModal({ entity, isOpen, onClose, onSuccess }) {
 
   if (!isOpen) return null
 
-  const validRows   = rows.filter(r => r[requiredKey])
-  const missingRows = rows.length - validRows.length
-  const previewCols = fields.slice(0, 7) // keep the preview table readable
+  const validRows      = rows.filter(r => r[requiredKey])
+  const missingRows    = rows.length - validRows.length
+  const previewCols    = fields.slice(0, 7) // keep the preview table readable
+  const duplicateCount = dupInfo.filter(d => d?.isDuplicate).length
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) { reset(); onClose() } }}>
@@ -156,29 +203,83 @@ export default function ImportModal({ entity, isOpen, onClose, onSuccess }) {
                 </div>
               )}
 
+              {entity === 'companies' && duplicateCount > 0 && (
+                <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 6, padding: 10, marginBottom: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#854d0e', marginBottom: 8 }}>
+                    <AlertCircle size={14} color="#ca8a04" style={{ flexShrink: 0 }} />
+                    {duplicateCount} row(s) match an existing company (by name, email, phone, website, or domain) — highlighted below.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" className="btn-modal-secondary" style={{ fontSize: 12, padding: '5px 10px' }} onClick={skipAllDuplicates}>
+                      Skip all duplicates
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-modal-secondary"
+                      style={{ fontSize: 12, padding: '5px 10px' }}
+                      onClick={removeSelectedDuplicates}
+                      disabled={selectedForRemoval.size === 0}
+                    >
+                      Remove selected ({selectedForRemoval.size})
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 6, maxHeight: 360 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
                     <tr>
+                      {entity === 'companies' && duplicateCount > 0 && (
+                        <th style={{ padding: '8px 6px', borderBottom: '1px solid #e2e8f0', width: 30 }} />
+                      )}
                       <th style={{ padding: '8px 10px', textAlign: 'left', color: '#64748b', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>#</th>
                       {previewCols.map(f => (
                         <th key={f.key} style={{ padding: '8px 10px', textAlign: 'left', color: '#64748b', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
                           {f.label}{f.key === requiredKey && <span style={{ color: '#ef4444' }}>*</span>}
                         </th>
                       ))}
+                      {entity === 'companies' && duplicateCount > 0 && (
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#64748b', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Status</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map((r, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: !r[requiredKey] ? '#fef2f2' : 'transparent' }}>
-                        <td style={{ padding: '7px 10px', color: '#94a3b8' }}>{i + 1}</td>
-                        {previewCols.map(f => (
-                          <td key={f.key} style={{ padding: '7px 10px', color: f.key === requiredKey && !r[f.key] ? '#ef4444' : '#334155', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {r[f.key] || (f.key === requiredKey ? '⚠ missing' : <span style={{ color: '#cbd5e1' }}>--</span>)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
+                    {rows.map((r, i) => {
+                      const dup = entity === 'companies' ? dupInfo[i] : null
+                      const rowBg = !r[requiredKey] ? '#fef2f2' : (dup?.isDuplicate ? '#fefce8' : 'transparent')
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: rowBg }}>
+                          {entity === 'companies' && duplicateCount > 0 && (
+                            <td style={{ padding: '7px 6px', textAlign: 'center' }}>
+                              {dup?.isDuplicate && (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedForRemoval.has(i)}
+                                  onChange={() => toggleRemoval(i)}
+                                  title="Select to remove this duplicate row"
+                                />
+                              )}
+                            </td>
+                          )}
+                          <td style={{ padding: '7px 10px', color: '#94a3b8' }}>{i + 1}</td>
+                          {previewCols.map(f => (
+                            <td key={f.key} style={{ padding: '7px 10px', color: f.key === requiredKey && !r[f.key] ? '#ef4444' : '#334155', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {r[f.key] || (f.key === requiredKey ? '⚠ missing' : <span style={{ color: '#cbd5e1' }}>--</span>)}
+                            </td>
+                          ))}
+                          {entity === 'companies' && duplicateCount > 0 && (
+                            <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                              {dup?.isDuplicate && (
+                                <span style={{ fontSize: 11, fontWeight: 600, color: '#a16207' }}>
+                                  Duplicate of {dup.existing?.name}
+                                </span>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
