@@ -20,7 +20,7 @@ const menuStructure = [
     section: 'CRM',
     icon: LayoutDashboard,
     items: [
-      { to: '/contacts', label: 'Contacts', icon: Users },
+      // { to: '/contacts', label: 'Contacts', icon: Users },              // hidden — client requested it hidden for now; route/API/DB untouched
       { to: '/companies', label: 'Companies', icon: Building2 },
       { to: '/deals', label: 'Deals', icon: TrendingUp },
       // { to: '/tickets', label: 'Tickets', icon: Ticket },              // hidden — not implemented yet
