@@ -95,6 +95,9 @@ model Company {
 
   @@index([email])
   @@index([ownerId])
+  @@index([createdAt])
+  @@index([leadStatus])
+  @@index([name])
 }
 
 model Deal {

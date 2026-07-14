@@ -118,7 +118,15 @@ function EditColumnsMenu({ fields, visibleColumns, onSave }) {
   )
 }
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 100
+
+// Compact page-number window (current ±2, plus first/last) so the pager stays
+// fast to render even with thousands of pages — showing every page number
+// individually (as the old 25/page control did) doesn't scale to 10,000+ records.
+function pageWindow(current, total) {
+  const pages = new Set([1, total, current - 2, current - 1, current, current + 1, current + 2])
+  return [...pages].filter(p => p >= 1 && p <= total).sort((a, b) => a - b)
+}
 
 const DATE_OPTIONS = [
   { value: 'today',      label: 'Today'          },
@@ -391,8 +399,11 @@ export default function Companies() {
       <div className="contacts-pagination">
         <div className="page-nav">
           <button className="page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-            <button key={n} className={`page-btn ${n === page ? 'active' : ''}`} onClick={() => setPage(n)}>{n}</button>
+          {pageWindow(page, totalPages).map((n, i, arr) => (
+            <span key={n} style={{ display: 'contents' }}>
+              {i > 0 && n - arr[i - 1] > 1 && <span className="page-ellipsis" style={{ padding: '0 4px', color: '#94a3b8' }}>…</span>}
+              <button className={`page-btn ${n === page ? 'active' : ''}`} onClick={() => setPage(n)}>{n}</button>
+            </span>
           ))}
           <button className="page-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
         </div>
