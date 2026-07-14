@@ -4,7 +4,31 @@ const { PrismaClient } = require('@prisma/client')
 
 const prisma = new PrismaClient()
 
-const STAGES = ['New', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost']
+const STAGES = ['Discussion', 'Pilot', 'Proposal', 'Qualified', 'Negotiation', 'Won', 'Lost']
+
+// Extended Deal fields (Update 9). Value/stage are the pre-existing columns,
+// reused as "Estimated Deal Value (USD)" / "Deal Stage" rather than adding
+// duplicate columns.
+const TEXT_FIELDS = [
+  'country', 'companyName', 'domainName', 'clientType', 'contactPerson',
+  'contactPhone', 'contactEmail', 'serviceRequirement', 'clientWebsiteUrl',
+  'opportunityType', 'strategicImportance', 'expectedOutcome',
+]
+
+function buildDealData(body) {
+  const data = {}
+  for (const f of TEXT_FIELDS) {
+    if (body[f] !== undefined) data[f] = body[f] || null
+  }
+  if (body.title !== undefined) data.title = body.title
+  if (body.value !== undefined) data.value = Number(body.value) || 0
+  if (body.stage !== undefined) data.stage = body.stage || 'Discussion'
+  if (body.notes !== undefined) data.notes = body.notes || null
+  if (body.contactId !== undefined) data.contactId = body.contactId || null
+  if (body.companyId !== undefined) data.companyId = body.companyId || null
+  if (body.closeDate !== undefined) data.closeDate = body.closeDate ? new Date(body.closeDate) : null
+  return data
+}
 
 // GET /api/deals
 // No params → the logged-in user's deals (global Deals dashboard, unchanged).
@@ -30,19 +54,9 @@ router.get('/', auth, async (req, res) => {
 // POST /api/deals
 router.post('/', auth, async (req, res) => {
   try {
-    const { title, value, stage, contactId, companyId, closeDate, notes } = req.body
-    if (!title) return res.status(400).json({ message: 'Title is required.' })
+    if (!req.body.title) return res.status(400).json({ message: 'Title is required.' })
     const deal = await prisma.deal.create({
-      data: {
-        title,
-        value: Number(value) || 0,
-        stage: stage || 'New',
-        contactId: contactId || null,
-        companyId: companyId || null,
-        closeDate: closeDate ? new Date(closeDate) : null,
-        notes,
-        ownerId: req.user.id,
-      },
+      data: { ...buildDealData(req.body), ownerId: req.user.id },
     })
     res.status(201).json(deal)
   } catch (err) {
@@ -53,8 +67,9 @@ router.post('/', auth, async (req, res) => {
 // PUT /api/deals/:id
 router.put('/:id', auth, async (req, res) => {
   try {
-    await prisma.deal.updateMany({ where: { id: req.params.id, ownerId: req.user.id }, data: req.body })
-    res.json({ success: true })
+    await prisma.deal.updateMany({ where: { id: req.params.id, ownerId: req.user.id }, data: buildDealData(req.body) })
+    const deal = await prisma.deal.findUnique({ where: { id: req.params.id } })
+    res.json(deal)
   } catch (err) {
     res.status(500).json({ message: 'Server error.' })
   }

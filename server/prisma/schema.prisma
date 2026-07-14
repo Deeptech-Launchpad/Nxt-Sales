@@ -104,7 +104,7 @@ model Deal {
   id        String    @id @default(cuid())
   title     String
   value     Float     @default(0)
-  stage     String    @default("New")
+  stage     String    @default("Discussion")
   contactId String?
   companyId String?
   ownerId   String
@@ -112,6 +112,18 @@ model Deal {
   notes     String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  country             String?
+  companyName         String?
+  domainName          String?
+  clientType          String?
+  contactPerson       String?
+  contactPhone        String?
+  contactEmail        String?
+  serviceRequirement  String?
+  clientWebsiteUrl    String?
+  opportunityType     String?
+  strategicImportance String?
+  expectedOutcome     String?
   contact   Contact?  @relation(fields: [contactId], references: [id])
   company   Company?  @relation(fields: [companyId], references: [id])
   owner     User      @relation(fields: [ownerId], references: [id])

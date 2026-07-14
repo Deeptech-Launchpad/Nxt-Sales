@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ChevronDown, ChevronLeft, FileText, Mail, Phone,
   CheckSquare, Calendar, MoreHorizontal, Search,
-  Plus, ExternalLink, Loader2
+  Plus, ExternalLink, Loader2, Pencil, Trash2
 } from 'lucide-react'
 import api from '../../api/client'
 import NoteModal    from '../../components/activities/NoteModal'
@@ -129,6 +129,7 @@ export default function CompanyDetail() {
   const [editOpen,        setEditOpen]        = useState(false)
   const [deals,           setDeals]           = useState([])
   const [showDealModal,   setShowDealModal]   = useState(false)
+  const [editDeal,        setEditDeal]        = useState(null)
 
   useEffect(() => {
     setLoading(true); setNotFound(false)
@@ -146,6 +147,16 @@ export default function CompanyDetail() {
       .catch(() => setDeals([]))
   }
   useEffect(() => { fetchDeals() }, [id])
+
+  const handleDeleteDeal = async (dealId) => {
+    if (!window.confirm('Delete this deal? This action cannot be undone.')) return
+    try {
+      await api.delete(`/deals/${dealId}`)
+      setDeals(prev => prev.filter(d => d.id !== dealId))
+    } catch {
+      // no-op — matches existing lightweight error handling style on this page
+    }
+  }
 
   useEffect(() => {
     if (!id) return
@@ -352,9 +363,13 @@ export default function CompanyDetail() {
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div>
                       <div style={{ fontSize: 11, color: '#64748b' }}>{d.stage}</div>
                     </div>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a', flexShrink: 0 }}>
-                      {d.value > 0 ? Number(d.value).toLocaleString() : '--'}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>
+                        {d.value > 0 ? Number(d.value).toLocaleString() : '--'}
+                      </span>
+                      <button onClick={() => setEditDeal(d)} title="Edit deal" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', padding: 2 }}><Pencil size={13} /></button>
+                      <button onClick={() => handleDeleteDeal(d.id)} title="Delete deal" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444', padding: 2 }}><Trash2 size={13} /></button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -401,6 +416,14 @@ export default function CompanyDetail() {
         <CreateDealModal
           companyId={id}
           onClose={() => setShowDealModal(false)}
+          onSaved={() => fetchDeals()}
+        />
+      )}
+
+      {editDeal && (
+        <CreateDealModal
+          deal={editDeal}
+          onClose={() => setEditDeal(null)}
           onSaved={() => fetchDeals()}
         />
       )}
