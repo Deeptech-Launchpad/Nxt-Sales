@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed,
   RefreshCw, Play, Brain, ExternalLink, ChevronDown, ChevronRight,
-  CheckCircle, XCircle, Loader2, AlertCircle, BarChart2, X
+  CheckCircle, XCircle, Loader2, AlertCircle, BarChart2, X, Search
 } from 'lucide-react'
 import api from '../api/client'
 
@@ -439,6 +440,7 @@ export default function Calls() {
 const PAGE_SIZE = 25
 
 function CallsInner() {
+  const navigate = useNavigate()
   const [logs,         setLogs]         = useState([])
   const [total,        setTotal]        = useState(0)
   const [loading,      setLoading]      = useState(true)
@@ -448,18 +450,29 @@ function CallsInner() {
   const [analyzingIds, setAnalyzingIds] = useState(new Set())
   const [page,         setPage]         = useState(1)
   const [selectedIds,  setSelectedIds]  = useState(new Set())
+  const [search,           setSearch]           = useState('')
+  const [debouncedSearch,  setDebouncedSearch]   = useState('')
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
-  const fetchLogs = useCallback((pg) => {
+  const fetchLogs = useCallback((pg, searchTerm = '') => {
     setLoading(true)
-    api.get(`/callhippo/logs?limit=${PAGE_SIZE}&page=${pg}`)
+    const params = { limit: PAGE_SIZE, page: pg, ...(searchTerm && { search: searchTerm }) }
+    api.get('/callhippo/logs', { params })
       .then(r => { setLogs(r.data.logs || []); setTotal(r.data.total || 0) })
       .catch(() => setLogs([]))
       .finally(() => setLoading(false))
   }, [])
 
-  useEffect(() => { fetchLogs(page) }, [fetchLogs, page])
+  // Debounce phone-number search so we don't fire a request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 350)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => { setPage(1) }, [debouncedSearch])
+
+  useEffect(() => { fetchLogs(page, debouncedSearch) }, [fetchLogs, page, debouncedSearch])
 
   // Clear selection whenever page changes
   useEffect(() => { setSelectedIds(new Set()) }, [page])
@@ -510,7 +523,7 @@ function CallsInner() {
       const { data } = await api.post('/callhippo/sync')
       setSyncMsg(`${data.synced} calls synced`)
       setPage(1)
-      fetchLogs(1)
+      fetchLogs(1, debouncedSearch)
     } catch (err) {
       setSyncMsg(err?.response?.data?.message || 'Sync failed.')
     } finally {
@@ -561,6 +574,16 @@ function CallsInner() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', borderRadius: 6, padding: '5px 10px', background: '#fff' }}>
+              <Search size={13} color="#94a3b8" />
+              <input
+                type="text"
+                placeholder="Search by phone number"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', width: 170 }}
+              />
+            </div>
             {syncMsg && (
               <span style={{ fontSize: 12, color: syncMsg.includes('failed') || syncMsg.includes('Failed') ? '#ef4444' : '#16a34a' }}>
                 {syncMsg}
@@ -615,6 +638,7 @@ function CallsInner() {
                     <th>Direction</th>
                     <th>From</th>
                     <th>To</th>
+                    <th>Company Name</th>
                     <th>Status</th>
                     <th>Duration</th>
                     <th>Recording</th>
@@ -656,6 +680,18 @@ function CallsInner() {
                       </td>
                       <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{log.fromNumber || '—'}</td>
                       <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{log.toNumber   || '—'}</td>
+                      <td>
+                        {log.company ? (
+                          <span
+                            style={{ color: '#3b82f6', fontWeight: 600, cursor: 'pointer' }}
+                            onClick={() => navigate(`/companies/${log.company.id}`)}
+                          >
+                            {log.company.name}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
+                        )}
+                      </td>
                       <td><StatusBadge status={log.status} /></td>
                       <td style={{ fontWeight: 600, color: '#374151' }}>{fmtDuration(log.duration)}</td>
                       <td>

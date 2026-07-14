@@ -91,6 +91,7 @@ model Company {
   phones                Json?
   activities     Activity[]
   deals          Deal[]
+  callLogs       CallLog[]
   owner          User?      @relation(fields: [ownerId], references: [id])
 
   @@index([email])
@@ -164,6 +165,8 @@ model Activity {
   firstOpenedAt DateTime?
   lastOpenedAt  DateTime?
   openHistory   Json?
+  recordingUrl  String?
+  callLogId     String?   @unique
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   company       Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -192,11 +195,14 @@ model CallLog {
   analysisStatus  String?
   analysisResult  Json?
   analysisError   String?
+  companyId       String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  company         Company?  @relation(fields: [companyId], references: [id])
 
   @@index([callDate])
   @@index([analysisStatus])
+  @@index([companyId])
 }
 
 model ChatMessage {

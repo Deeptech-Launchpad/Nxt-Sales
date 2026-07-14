@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   FileText, Mail, Phone, Calendar, CheckSquare,
   Search, SlidersHorizontal, AlertTriangle, ChevronDown, ChevronRight,
-  Video, ArrowUpRight, ArrowDownLeft, ExternalLink, RefreshCw, Eye,
+  Video, ArrowUpRight, ArrowDownLeft, ExternalLink, RefreshCw, Eye, Play,
 } from 'lucide-react'
 import api from '../../api/client'
 import '../../styles/activity-modals.css'
@@ -363,9 +363,22 @@ function ActivityCard({ act }) {
     }
     if (act.type === 'call') {
       return (
-        <div className="af-meta">
-          {act.direction === 'inbound' ? '↙ Inbound' : '↗ Outbound'} · {fmtDuration(act.duration)}
-          {act.outcome && <span style={{ marginLeft: 8 }}>· {act.outcome.replace(/_/g, ' ')}</span>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="af-meta">
+            {act.direction === 'inbound' ? '↙ Inbound' : '↗ Outbound'} · {fmtDuration(act.duration)}
+            {act.outcome && <span style={{ marginLeft: 8 }}>· {act.outcome.replace(/_/g, ' ')}</span>}
+          </div>
+          {act.recordingUrl && (
+            <a href={act.recordingUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                fontSize: 12, color: '#16a34a', fontWeight: 500,
+                textDecoration: 'none', padding: '3px 8px',
+                background: '#f0fdf4', borderRadius: 4, width: 'fit-content',
+              }}>
+              <Play size={11} /> Play recording
+            </a>
+          )}
         </div>
       )
     }

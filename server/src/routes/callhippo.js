@@ -103,18 +103,55 @@ function parseDuration(str) {
   return Number(str) || 0
 }
 
+// Digits-only comparison key so "+1 (555) 123-4567" matches "5551234567"
+// regardless of formatting differences between CallHippo and company records.
+function normalizePhone(raw) {
+  if (!raw) return ''
+  const digits = String(raw).replace(/\D/g, '')
+  return digits.slice(-10) // compare by last 10 digits (national number)
+}
+
+// Build a normalized-phone → company lookup once per sync (rather than
+// querying per call) so "To" numbers can be matched regardless of formatting
+// differences between CallHippo and company records (dashes, spaces, +country).
+async function buildCompanyPhoneIndex() {
+  const companies = await prisma.company.findMany({
+    where: { OR: [{ phone: { not: null } }, { mobile: { not: null } }, { phones: { not: null } }] },
+    select: { id: true, name: true, phone: true, mobile: true, phones: true },
+  })
+  const index = new Map()
+  for (const c of companies) {
+    const keys = [c.phone, c.mobile, ...(Array.isArray(c.phones) ? c.phones : [])]
+    for (const raw of keys) {
+      const key = normalizePhone(raw)
+      if (key && !index.has(key)) index.set(key, { id: c.id, name: c.name })
+    }
+  }
+  return index
+}
+
 // ── GET /api/callhippo/logs — return synced call logs from DB ────────────────
+// ?search= filters by phone number (matches From or To, substring). Company
+// name is included via the companyId set during Sync (Update 10).
 router.get('/logs', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 50 } = req.query
+    const { page = 1, limit = 50, search } = req.query
     const skip = (Number(page) - 1) * Number(limit)
+    const where = search ? {
+      OR: [
+        { fromNumber: { contains: search } },
+        { toNumber:   { contains: search } },
+      ],
+    } : {}
     const [logs, total] = await Promise.all([
       prisma.callLog.findMany({
+        where,
         orderBy: { callDate: 'desc' },
         skip,
         take: Number(limit),
+        include: { company: { select: { id: true, name: true } } },
       }),
-      prisma.callLog.count(),
+      prisma.callLog.count({ where }),
     ])
     res.json({ logs, total, page: Number(page), limit: Number(limit) })
   } catch (err) {
@@ -171,6 +208,10 @@ router.post('/sync', auth, async (req, res) => {
     let synced = 0
     let skipped = 0
 
+    // Company Name column (Update 10): match each call's "To" number against
+    // company phone/mobile once up front, reused for every call in this sync.
+    const companyPhoneIndex = await buildCompanyPhoneIndex()
+
     for (const call of callsArray) {
       const callhippoId  = String(call._id || call.id || call.callId || call.callSid || '')
       if (!callhippoId) { skipped++; continue }
@@ -205,7 +246,11 @@ router.post('/sync', auth, async (req, res) => {
       const agentName = call.caller || call.userName || call.agentName || null
       const agentId   = call.callerEmail || call.userId || call.agentId || null
 
-      await prisma.callLog.upsert({
+      // Match the "To" number against a company (Update 10) — if found, the
+      // call gets linked to that company and mirrored as a Company Activity.
+      const matchedCompany = companyPhoneIndex.get(normalizePhone(toNumber)) || null
+
+      const savedLog = await prisma.callLog.upsert({
         where:  { callhippoId },
         create: {
           callhippoId,
@@ -218,6 +263,7 @@ router.post('/sync', auth, async (req, res) => {
           recordingUrl,
           agentName,
           agentId,
+          companyId: matchedCompany?.id || null,
         },
         update: {
           callDate,
@@ -229,9 +275,37 @@ router.post('/sync', auth, async (req, res) => {
           recordingUrl,
           agentName,
           agentId,
+          companyId: matchedCompany?.id || null,
         },
       })
       synced++
+
+      // Mirror the call onto the matched company's Activity feed (Company →
+      // Activities → Calls) so it shows alongside recording + call details.
+      // Upserted by callLogId so re-syncing the same call (e.g. a recording
+      // arriving later) updates the same activity instead of duplicating it.
+      if (matchedCompany) {
+        await prisma.activity.upsert({
+          where:  { callLogId: savedLog.id },
+          create: {
+            type:      'call',
+            companyId: matchedCompany.id,
+            userId:    req.user.id,
+            title:     `${direction === 'outbound' ? 'Outbound' : 'Inbound'} call – ${matchedCompany.name}`,
+            direction,
+            duration,
+            outcome:   status,
+            recordingUrl,
+            callLogId: savedLog.id,
+          },
+          update: {
+            direction,
+            duration,
+            outcome: status,
+            recordingUrl,
+          },
+        }).catch(e => console.error(`[CallHippo] Activity link failed for call ${callhippoId}:`, e.message))
+      }
 
       // Auto-analyze recordings longer than 90 seconds
       if (recordingUrl && duration > 90) {
