@@ -6,6 +6,7 @@
 // Everything here is ADVISORY — it estimates inbox placement, never guarantees it.
 // ─────────────────────────────────────────────────────────────────────────────
 import api from '../api/client'
+import { callGeminiWithFallback } from './geminiModel'
 
 // Common spam-trigger phrases (kept practical, not exhaustive).
 const SPAM_KEYWORDS = [
@@ -176,7 +177,7 @@ export function analyzeContent({ subject = '', html = '' }) {
 }
 
 // ── AI pass (optional; reuses the composer's AI key) ─────────────────────────
-export async function analyzeWithAI({ subject = '', html = '', provider = 'gemini', key = '' }) {
+export async function analyzeWithAI({ subject = '', html = '', provider = 'gemini', key = '', model = '' }) {
   if (!key) return { available: false }
   const text = stripHtml(html).slice(0, 6000)
   const instruction =
@@ -191,13 +192,8 @@ BODY (text): ${text}`
   let raw = ''
   try {
     if (provider === 'gemini') {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`
-      const r = await fetch(url, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: instruction }] }] }),
-      })
-      if (!r.ok) throw new Error((await r.json()).error?.message || 'Gemini error')
-      raw = (await r.json()).candidates?.[0]?.content?.parts?.[0]?.text || ''
+      const d = await callGeminiWithFallback(key, model, { contents: [{ parts: [{ text: instruction }] }] })
+      raw = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
     } else if (provider === 'openai') {
       const r = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST', headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
@@ -246,10 +242,10 @@ export async function fetchAuthCheck(email) {
 }
 
 // ── Orchestrator: run everything and return one combined report ──────────────
-export async function runDeliverabilityAnalysis({ subject, html, fromEmail, aiProvider, aiKey }) {
+export async function runDeliverabilityAnalysis({ subject, html, fromEmail, aiProvider, aiKey, aiModel }) {
   const content = analyzeContent({ subject, html })
   const [ai, auth] = await Promise.all([
-    analyzeWithAI({ subject, html, provider: aiProvider, key: aiKey }),
+    analyzeWithAI({ subject, html, provider: aiProvider, key: aiKey, model: aiModel }),
     fetchAuthCheck(fromEmail),
   ])
 

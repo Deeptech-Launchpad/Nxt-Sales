@@ -5,6 +5,7 @@ import '../styles/email-tool.css'
 import DeliverabilityReport from '../components/activities/DeliverabilityReport'
 import { runDeliverabilityAnalysis } from '../utils/emailDeliverability'
 import { compressImageIfNeeded } from '../utils/imageCompress'
+import { discoverBestGeminiModel, callGeminiWithFallback } from '../utils/geminiModel'
 
 Chart.register(...registerables)
 
@@ -298,36 +299,6 @@ Then, starting on the next line, output the full HTML email body exactly as inst
 // AI PDP Audit Generator
 // ─────────────────────────────────────────────────────────
 
-// Ranked by capability/cost for this task — used both to pick the best model
-// for a key up front and as the fallback order if the configured model turns
-// out to be unavailable at generation time (retired, wrong API version, etc.).
-const GEMINI_MODEL_PRIORITY = [
-  'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro',
-  'gemini-1.5-flash', 'gemini-1.5-pro',
-]
-
-// Ask Google which Gemini models this specific API key can actually use, and
-// rank them by GEMINI_MODEL_PRIORITY — so the user never has to guess/enter a
-// model name themselves, and a model rename/retirement on Google's side just
-// picks the next best supported one automatically.
-async function discoverBestGeminiModel(apiKey) {
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
-  if (!resp.ok) {
-    const e = await resp.json().catch(() => ({}))
-    throw new Error(e.error?.message || 'Could not list Gemini models for this API key.')
-  }
-  const data = await resp.json()
-  const available = (data.models || [])
-    .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-    .map(m => m.name.replace(/^models\//, ''))
-  if (!available.length) throw new Error('No Gemini models are available for this API key.')
-
-  for (const preferred of GEMINI_MODEL_PRIORITY) {
-    if (available.includes(preferred)) return preferred
-  }
-  return available[0] // key supports Gemini but none of our preferred names — use whatever it does support
-}
-
 async function generateAiEmail(clientName, beforeFile, afterFile, settings, clientType = 'ecommerce') {
   const { aiProvider, aiKey, aiModel } = settings
   if (!aiKey) throw new Error('AI API Key missing. Add it in Settings.')
@@ -345,49 +316,11 @@ async function generateAiEmail(clientName, beforeFile, afterFile, settings, clie
     if (beforeFile) parts.push({ inlineData: { mimeType: beforeFile.type, data: beforeFile.data } })
     if (afterFile)  parts.push({ inlineData: { mimeType: afterFile.type,  data: afterFile.data  } })
 
-    // Try the configured/detected model first, then fall back through the
-    // priority list — but only for "model unavailable" style errors. A bad
-    // key, quota, or safety block applies identically to every model, so we
-    // fail fast on those instead of retrying pointlessly.
-    const candidates = [aiModel, ...GEMINI_MODEL_PRIORITY].filter((v, i, a) => v && a.indexOf(v) === i)
-    let lastErr = null
-    let responded = false
-
-    for (let i = 0; i < candidates.length; i++) {
-      const model = candidates[i]
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiKey}`
-      let resp
-      try {
-        resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts }],
-            systemInstruction: { parts: [{ text: systemPrompt }] }
-          })
-        })
-      } catch (networkErr) {
-        lastErr = networkErr
-        continue
-      }
-      if (resp.ok) {
-        const d = await resp.json()
-        emailText = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
-        responded = true
-        break
-      }
-      const e = await resp.json().catch(() => ({}))
-      const msg = e.error?.message || `Gemini API error (${resp.status})`
-      const modelUnavailable = resp.status === 404 || /not found|not supported|does not exist/i.test(msg)
-      lastErr = new Error(msg)
-      if (!modelUnavailable) break
-    }
-
-    if (!responded) {
-      throw new Error(candidates.length > 1
-        ? `${lastErr.message} (tried ${candidates.length} Gemini models — none worked, check your API key)`
-        : lastErr.message)
-    }
+    const d = await callGeminiWithFallback(aiKey, aiModel, {
+      contents: [{ parts }],
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+    })
+    emailText = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
   } else if (aiProvider === 'openai') {
     if (beforeFile?.type === 'application/pdf' || afterFile?.type === 'application/pdf')
@@ -802,6 +735,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
       fromEmail: gmailStatus?.email,
       aiProvider: localStorage.getItem('ai_provider') || 'gemini',
       aiKey: localStorage.getItem('ai_key') || '',
+      aiModel: localStorage.getItem('ai_model') || 'gemini-2.5-flash',
     })
     setReport(r); setAnalyzing(false)
   }

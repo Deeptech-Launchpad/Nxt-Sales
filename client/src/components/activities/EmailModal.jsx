@@ -9,6 +9,7 @@ import '../../styles/activity-modals.css'
 import DeliverabilityReport from './DeliverabilityReport'
 import { runDeliverabilityAnalysis } from '../../utils/emailDeliverability'
 import { compressImageIfNeeded } from '../../utils/imageCompress'
+import { discoverBestGeminiModel, callGeminiWithFallback } from '../../utils/geminiModel'
 
 // ── Templates ─────────────────────────────────────────────
 const TEMPLATES = [
@@ -98,7 +99,7 @@ function buildTemplateContent(template, clientName) {
 }
 
 // ── AI PDP Audit generator ────────────────────────────────
-async function generateAiPdpAudit(clientName, aiProvider, aiKey) {
+async function generateAiPdpAudit(clientName, aiProvider, aiKey, aiModel) {
   const prompt = `You are an expert eCommerce product data consultant writing a professional sales email.
 Write a detailed HTML email for a client named "${clientName || 'the client'}" about AltiusNXT Technologies' PDP (Product Detail Page) Audit service.
 The email should:
@@ -145,17 +146,9 @@ Format as clean HTML with <p>, <ul>, <li>, <strong> tags. No CSS needed.`
     return d.content[0].text
   }
 
-  // Default: Gemini
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${aiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-    }
-  )
-  const d = await r.json()
-  if (!r.ok) throw new Error(d.error?.message || 'Gemini error')
+  // Default: Gemini — auto-detected/fallback model, same as the standalone
+  // Email Tool's Template 3, instead of a single hardcoded model name.
+  const d = await callGeminiWithFallback(aiKey, aiModel, { contents: [{ parts: [{ text: prompt }] }] })
   return d.candidates?.[0]?.content?.parts?.[0]?.text || ''
 }
 
@@ -234,6 +227,10 @@ export default function EmailModal({
   const [aiKey, setAiKey] = useState(
     () => localStorage.getItem('nxts_ai_key') || ''
   )
+  const [aiModel, setAiModel] = useState(
+    () => localStorage.getItem('nxts_ai_model') || 'gemini-2.5-flash'
+  )
+  const [detectingModel, setDetectingModel] = useState(false)
 
   // Log-manual mode
   const [emailStatus, setEmailStatus] = useState('sent')
@@ -268,6 +265,7 @@ export default function EmailModal({
       fromEmail: gmailStatus?.email,
       aiProvider,
       aiKey,
+      aiModel,
     })
     setReport(r); setAnalyzing(false)
   }
@@ -306,10 +304,26 @@ export default function EmailModal({
   }, [template, clientName])
 
   // ── Save AI settings to localStorage ───────────────────
-  const saveAiSettings = () => {
+  // Auto-detects the best Gemini model for the pasted key — same behavior as
+  // the standalone Email Tool's Settings — so the user never has to guess one.
+  const saveAiSettings = async () => {
     localStorage.setItem('nxts_ai_provider', aiProvider)
     localStorage.setItem('nxts_ai_key', aiKey)
+    localStorage.setItem('nxts_ai_model', aiModel)
     setShowAiSettings(false)
+    if (aiProvider === 'gemini' && aiKey.trim()) {
+      setDetectingModel(true)
+      try {
+        const best = await discoverBestGeminiModel(aiKey.trim())
+        setAiModel(best)
+        localStorage.setItem('nxts_ai_model', best)
+      } catch {
+        // detection failure isn't fatal — generation still falls back through
+        // the priority list at call time
+      } finally {
+        setDetectingModel(false)
+      }
+    }
   }
 
   // ── Build preview ────────────────────────────────────────
@@ -318,7 +332,7 @@ export default function EmailModal({
       if (!aiKey) { setShowAiSettings(true); setError('Please set your AI API key in settings first.'); return }
       setGeneratingAI(true); setError('')
       try {
-        const html = await generateAiPdpAudit(clientName, aiProvider, aiKey)
+        const html = await generateAiPdpAudit(clientName, aiProvider, aiKey, aiModel)
         setBody(html)
         setPreviewHTML(wrapDefaultFont(html))
         if (!subject) setSubject(`AI PDP Audit – ${clientName || 'Your Store'}`)
@@ -581,6 +595,11 @@ export default function EmailModal({
                           <label style={{ fontSize: 11 }}>API Key</label>
                           <input type="password" value={aiKey} onChange={e => setAiKey(e.target.value)} placeholder="Paste your API key" style={{ fontSize: 12 }} />
                         </div>
+                        {aiProvider === 'gemini' && (
+                          <p style={{ margin: 0, fontSize: 11, color: '#64748b' }}>
+                            {detectingModel ? 'Detecting best Gemini model…' : `Model: ${aiModel} (auto-detected on save)`}
+                          </p>
+                        )}
                         <button onClick={saveAiSettings} style={{ padding: '5px 12px', background: '#0369a1', color: '#fff', border: 'none', borderRadius: 5, cursor: 'pointer', fontSize: 12, alignSelf: 'flex-end' }}>Save</button>
                       </div>
                     )}
