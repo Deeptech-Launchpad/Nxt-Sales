@@ -8,6 +8,7 @@ import { useDraggable } from '../../hooks/useDraggable'
 import '../../styles/activity-modals.css'
 import DeliverabilityReport from './DeliverabilityReport'
 import { runDeliverabilityAnalysis } from '../../utils/emailDeliverability'
+import { compressImageIfNeeded } from '../../utils/imageCompress'
 
 // ── Templates ─────────────────────────────────────────────
 const TEMPLATES = [
@@ -166,6 +167,15 @@ function fileToBase64(file) {
     reader.onerror = reject
     reader.readAsDataURL(file)
   })
+}
+
+// Attachment object builder — compresses images first (see imageCompress.js;
+// screenshots are often multi-MB and cross the network twice on send) so both
+// the filename/mimeType and the base64 content always describe the same
+// (possibly re-encoded) file. Non-image files pass through unchanged.
+async function buildAttachment(file) {
+  const f = await compressImageIfNeeded(file)
+  return { filename: f.name, content: await fileToBase64(f), mimeType: f.type }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -344,11 +354,11 @@ export default function EmailModal({
       const tplObj = TEMPLATES.find(t => t.value === template)
 
       if (tplObj?.needsBeforeAfter) {
-        if (beforeFile) attachments.push({ filename: beforeFile.name, content: await fileToBase64(beforeFile), mimeType: beforeFile.type })
-        if (afterFile)  attachments.push({ filename: afterFile.name,  content: await fileToBase64(afterFile),  mimeType: afterFile.type })
+        if (beforeFile) attachments.push(await buildAttachment(beforeFile))
+        if (afterFile)  attachments.push(await buildAttachment(afterFile))
       }
       for (const f of additionalFiles) {
-        attachments.push({ filename: f.name, content: await fileToBase64(f), mimeType: f.type })
+        attachments.push(await buildAttachment(f))
       }
 
       const htmlBody = template === 'manual'

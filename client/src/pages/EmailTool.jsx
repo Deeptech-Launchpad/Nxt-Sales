@@ -4,6 +4,7 @@ import api from '../api/client'
 import '../styles/email-tool.css'
 import DeliverabilityReport from '../components/activities/DeliverabilityReport'
 import { runDeliverabilityAnalysis } from '../utils/emailDeliverability'
+import { compressImageIfNeeded } from '../utils/imageCompress'
 
 Chart.register(...registerables)
 
@@ -559,13 +560,17 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
     lastAiKey.current = ''
   }
 
-  const readFile = (file, onDone) => {
+  // Images are downscaled/re-encoded before reading — see imageCompress.js for
+  // why (screenshots are often multi-MB and cross the network twice on send).
+  // Non-image files (PDFs, etc.) pass through unchanged.
+  const readFile = async (file, onDone) => {
+    const toRead = await compressImageIfNeeded(file)
     const reader = new FileReader()
     reader.onload = (ev) => {
       const b64 = ev.target.result.split(',')[1]
-      onDone({ name: file.name, type: file.type || 'application/octet-stream', size: file.size, data: b64 }, ev.target.result)
+      onDone({ name: toRead.name, type: toRead.type || 'application/octet-stream', size: toRead.size, data: b64 }, ev.target.result)
     }
-    reader.readAsDataURL(file)
+    reader.readAsDataURL(toRead)
   }
 
   const handleBefore = (e) => {
