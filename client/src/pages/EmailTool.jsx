@@ -297,6 +297,37 @@ Then, starting on the next line, output the full HTML email body exactly as inst
 // ─────────────────────────────────────────────────────────
 // AI PDP Audit Generator
 // ─────────────────────────────────────────────────────────
+
+// Ranked by capability/cost for this task — used both to pick the best model
+// for a key up front and as the fallback order if the configured model turns
+// out to be unavailable at generation time (retired, wrong API version, etc.).
+const GEMINI_MODEL_PRIORITY = [
+  'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro',
+  'gemini-1.5-flash', 'gemini-1.5-pro',
+]
+
+// Ask Google which Gemini models this specific API key can actually use, and
+// rank them by GEMINI_MODEL_PRIORITY — so the user never has to guess/enter a
+// model name themselves, and a model rename/retirement on Google's side just
+// picks the next best supported one automatically.
+async function discoverBestGeminiModel(apiKey) {
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
+  if (!resp.ok) {
+    const e = await resp.json().catch(() => ({}))
+    throw new Error(e.error?.message || 'Could not list Gemini models for this API key.')
+  }
+  const data = await resp.json()
+  const available = (data.models || [])
+    .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+    .map(m => m.name.replace(/^models\//, ''))
+  if (!available.length) throw new Error('No Gemini models are available for this API key.')
+
+  for (const preferred of GEMINI_MODEL_PRIORITY) {
+    if (available.includes(preferred)) return preferred
+  }
+  return available[0] // key supports Gemini but none of our preferred names — use whatever it does support
+}
+
 async function generateAiEmail(clientName, beforeFile, afterFile, settings, clientType = 'ecommerce') {
   const { aiProvider, aiKey, aiModel } = settings
   if (!aiKey) throw new Error('AI API Key missing. Add it in Settings.')
@@ -310,23 +341,53 @@ async function generateAiEmail(clientName, beforeFile, afterFile, settings, clie
   let emailText = ''
 
   if (aiProvider === 'gemini') {
-    const model = aiModel || 'gemini-2.5-flash'
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiKey}`
     const parts = [{ text: 'Generate the detailed PDP audit HTML pitch email based on system rules.' }]
     if (beforeFile) parts.push({ inlineData: { mimeType: beforeFile.type, data: beforeFile.data } })
     if (afterFile)  parts.push({ inlineData: { mimeType: afterFile.type,  data: afterFile.data  } })
 
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts }],
-        systemInstruction: { parts: [{ text: systemPrompt }] }
-      })
-    })
-    if (!resp.ok) { const e = await resp.json(); throw new Error(e.error?.message || 'Gemini API Error') }
-    const d = await resp.json()
-    emailText = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
+    // Try the configured/detected model first, then fall back through the
+    // priority list — but only for "model unavailable" style errors. A bad
+    // key, quota, or safety block applies identically to every model, so we
+    // fail fast on those instead of retrying pointlessly.
+    const candidates = [aiModel, ...GEMINI_MODEL_PRIORITY].filter((v, i, a) => v && a.indexOf(v) === i)
+    let lastErr = null
+    let responded = false
+
+    for (let i = 0; i < candidates.length; i++) {
+      const model = candidates[i]
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiKey}`
+      let resp
+      try {
+        resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts }],
+            systemInstruction: { parts: [{ text: systemPrompt }] }
+          })
+        })
+      } catch (networkErr) {
+        lastErr = networkErr
+        continue
+      }
+      if (resp.ok) {
+        const d = await resp.json()
+        emailText = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
+        responded = true
+        break
+      }
+      const e = await resp.json().catch(() => ({}))
+      const msg = e.error?.message || `Gemini API error (${resp.status})`
+      const modelUnavailable = resp.status === 404 || /not found|not supported|does not exist/i.test(msg)
+      lastErr = new Error(msg)
+      if (!modelUnavailable) break
+    }
+
+    if (!responded) {
+      throw new Error(candidates.length > 1
+        ? `${lastErr.message} (tried ${candidates.length} Gemini models — none worked, check your API key)`
+        : lastErr.message)
+    }
 
   } else if (aiProvider === 'openai') {
     if (beforeFile?.type === 'application/pdf' || afterFile?.type === 'application/pdf')
@@ -1457,17 +1518,38 @@ function SettingsSection({ onGmailChange }) {
   const [aiKey, setAiKey]                   = useState(localStorage.getItem('ai_key') || '')
   const [aiModel, setAiModel]               = useState(localStorage.getItem('ai_model') || 'gemini-2.5-flash')
   const [connecting, setConnecting]         = useState(false)
+  const [detecting, setDetecting]           = useState(false)
 
   const localToken  = localStorage.getItem('gmail_access_token')
   const localExpiry = parseInt(localStorage.getItem('gmail_token_expiry') || '0')
   const localValid  = localToken && Date.now() < localExpiry
 
-  const saveSettings = () => {
+  // Auto-detect the best supported Gemini model for whatever key the user
+  // pastes in — they should never have to know/guess a model name. Runs on
+  // Save (when a key is present) and can be re-run manually if needed.
+  const detectModel = async (key) => {
+    if (aiProvider !== 'gemini' || !key) return
+    setDetecting(true)
+    try {
+      const best = await discoverBestGeminiModel(key)
+      setAiModel(best)
+      localStorage.setItem('ai_model', best)
+      showToast(`Detected best Gemini model: ${best}`, 'success')
+    } catch (err) {
+      showToast(`Model auto-detection failed: ${err.message}`, 'error')
+    } finally {
+      setDetecting(false)
+    }
+  }
+
+  const saveSettings = async () => {
     localStorage.setItem('google_client_id', googleClientId.trim())
     localStorage.setItem('ai_provider', aiProvider)
-    localStorage.setItem('ai_key', aiKey.trim())
+    const trimmedKey = aiKey.trim()
+    localStorage.setItem('ai_key', trimmedKey)
     localStorage.setItem('ai_model', aiModel)
     showToast('Settings saved successfully!', 'success')
+    if (aiProvider === 'gemini' && trimmedKey) await detectModel(trimmedKey)
   }
 
   const connectGmail = async () => {
@@ -1551,14 +1633,28 @@ function SettingsSection({ onGmailChange }) {
           {aiProvider === 'gemini' && (
             <div className="et-form-group">
               <label className="et-label">AI Model</label>
-              <select className="et-input" value={aiModel} onChange={e => setAiModel(e.target.value)}>
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-              </select>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select className="et-input" value={aiModel} onChange={e => setAiModel(e.target.value)} style={{ flex: 1 }}>
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
+                  <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                  <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                </select>
+                <button
+                  type="button"
+                  className="et-btn et-btn-secondary"
+                  style={{ flex: 'none', whiteSpace: 'nowrap' }}
+                  disabled={detecting || !aiKey.trim()}
+                  onClick={() => detectModel(aiKey.trim())}
+                >
+                  {detecting ? 'Detecting…' : 'Auto-detect'}
+                </button>
+              </div>
               <div className="et-help-text">
-                Used for PDP Audit AI email generation (Template 3). If Google retires a model,
-                switch it here — no code change needed.
+                Auto-detected from your API key when you save — you shouldn't need to pick this
+                manually. If Template 3 generation fails because a model was retired, it automatically
+                retries with the next best supported model.
               </div>
             </div>
           )}
