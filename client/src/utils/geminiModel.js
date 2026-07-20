@@ -5,7 +5,15 @@
 // original "AI Composition Failed" bug happened, and a second, un-fixed copy
 // of it was found in the deliverability analyzer.
 
+// Google has been deprecating pinned model names (e.g. "gemini-2.5-flash")
+// for accounts created after a given cutoff, even while the /models list
+// endpoint still advertises them as generateContent-capable — confirmed via
+// a direct curl test against the live API key, which got 404 "no longer
+// available to new users" for every pinned name but succeeded immediately
+// on the rolling "-latest" alias. Lead with the aliases so newer accounts
+// resolve on the first attempt instead of exhausting the whole list.
 export const GEMINI_MODEL_PRIORITY = [
+  'gemini-flash-latest', 'gemini-pro-latest',
   'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro',
   'gemini-1.5-flash', 'gemini-1.5-pro',
 ]

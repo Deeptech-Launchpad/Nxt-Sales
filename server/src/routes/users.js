@@ -31,8 +31,8 @@ router.get('/', auth, async (req, res) => {
 // ── GET /api/users/me/signature — the logged-in user's saved email signature ─
 router.get('/me/signature', auth, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { signature: true } })
-    res.json({ signature: user?.signature || '' })
+    const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { signature: true, signatureImage: true } })
+    res.json({ signature: user?.signature || '', signatureImage: user?.signatureImage || '' })
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: 'Server error.' })
@@ -40,15 +40,19 @@ router.get('/me/signature', auth, async (req, res) => {
 })
 
 // ── PUT /api/users/me/signature — save the logged-in user's email signature ──
+// signatureImage is a data-URI string (already compressed client-side) or ''/null to clear it.
 router.put('/me/signature', auth, async (req, res) => {
   try {
-    const { signature } = req.body
+    const { signature, signatureImage } = req.body
     const user = await prisma.user.update({
       where: { id: req.user.id },
-      data: { signature: signature || null },
-      select: { signature: true },
+      data: {
+        signature: signature || null,
+        ...(signatureImage !== undefined ? { signatureImage: signatureImage || null } : {}),
+      },
+      select: { signature: true, signatureImage: true },
     })
-    res.json({ signature: user.signature || '' })
+    res.json({ signature: user.signature || '', signatureImage: user.signatureImage || '' })
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: 'Server error.' })

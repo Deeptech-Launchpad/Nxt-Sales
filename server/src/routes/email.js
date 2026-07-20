@@ -21,10 +21,13 @@ function trackingPixel(token) {
 // The signature is stored as plain text (a simple textarea in Settings) but
 // gets appended into an HTML email body — escape it and turn newlines into
 // <br> so it renders as typed instead of as raw/unsafe HTML.
-function signatureToHtml(text) {
-  const escaped = text
+// image is an optional data-URI string (already compressed client-side) rendered under the text.
+function signatureToHtml(text, image) {
+  const escaped = (text || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return `<div style="font-family:Verdana,Arial,sans-serif;font-size:13px;color:#444">${escaped.replace(/\n/g, '<br>')}</div>`
+  const textHtml = escaped ? escaped.replace(/\n/g, '<br>') : ''
+  const imgHtml = image ? `<div style="margin-top:6px"><img src="${image}" style="max-width:280px;max-height:120px" alt="" /></div>` : ''
+  return `<div style="font-family:Verdana,Arial,sans-serif;font-size:13px;color:#444">${textHtml}${imgHtml}</div>`
 }
 
 // Recursively extract plain-text body from nested MIME parts.
@@ -367,8 +370,10 @@ router.post('/send', auth, async (req, res) => {
     // "Log an email"). Never blocks a send if the lookup fails for any reason.
     let signatureHtml = ''
     try {
-      const sigUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { signature: true } })
-      if (sigUser?.signature?.trim()) signatureHtml = `<br>${signatureToHtml(sigUser.signature.trim())}`
+      const sigUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { signature: true, signatureImage: true } })
+      const sigText = sigUser?.signature?.trim() || ''
+      const sigImage = sigUser?.signatureImage || ''
+      if (sigText || sigImage) signatureHtml = `<br>${signatureToHtml(sigText, sigImage)}`
     } catch (sigErr) {
       console.warn('[Email Send] Signature lookup failed, sending without it:', sigErr.message)
     }

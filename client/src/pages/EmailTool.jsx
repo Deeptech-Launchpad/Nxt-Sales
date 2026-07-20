@@ -12,8 +12,6 @@ Chart.register(...registerables)
 // ─────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────
-const SIGNATURE_HTML = `<br><p><strong>Manoj S</strong><br>Digital Commerce Lead<br>m: +13134869697<br>e: <a href="mailto:Manoj@altiusnxt.com">Manoj@altiusnxt.com</a><br>w: <a href="https://www.altiusnxt.com" target="_blank">www.altiusnxt.com</a></p>`
-
 const AI_SYSTEM_PROMPT = (clientName) => `You are a Product Data Enrichment Sales Assistant for AltiusNXT Technologies.
 
 Your role is to generate a strong, professional, structured Before vs After explanation email based on:
@@ -112,7 +110,7 @@ function buildTemplate1(clientName) {
 ✅ Taxonomy design and attribute modeling<br>
 ✅ SEO-ready product specifications and content structuring<br>
 ✅ Data standardization across large and complex catalogs</p>
-<p>Would you be open to a 15–20 minute call this week to review the sample and discuss how product data enrichment can support your eCommerce growth goals?</p>` + SIGNATURE_HTML
+<p>Would you be open to a 15–20 minute call this week to review the sample and discuss how product data enrichment can support your eCommerce growth goals?</p>`
   return { subject, body }
 }
 
@@ -139,7 +137,7 @@ function buildTemplate2(clientName) {
 </ul>
 <p>We're also open to a retainer engagement model to ensure flexibility and alignment with your operational needs.</p>
 <p>Please take your time to review the references and feel free to reach out with any questions or clarifications.</p>
-<p>Wishing you a wonderful day ahead!</p>` + SIGNATURE_HTML
+<p>Wishing you a wonderful day ahead!</p>`
   return { subject, body }
 }
 
@@ -162,7 +160,7 @@ function buildTemplate4(clientName) {
 <p><strong>After POC Approval</strong></p>
 <p>Once you are satisfied with the Proof of Concept results, we will be happy to provide the enriched data in a format fully aligned with your platform requirements, enabling seamless upload into your store.</p>
 <p>I would welcome the opportunity to schedule a brief Google Meet call to discuss your requirements, answer any questions, and align on next steps.</p>
-<p>Looking forward to your feedback.</p>` + SIGNATURE_HTML
+<p>Looking forward to your feedback.</p>`
   return { subject, body }
 }
 
@@ -217,7 +215,7 @@ function buildStaticTemplate1(clientName) {
 </ul>
 <p>The attached Before/After sample clearly shows how this approach turns a static site into a discoverable, conversion-driven eCommerce store.</p>
 <p>I'd be happy to schedule a 15–20 minute call to walk you through the sample and discuss how we can help you move from a static presence to a revenue-generating eCommerce platform.</p>
-<p>Looking forward to your thoughts.</p>` + SIGNATURE_HTML
+<p>Looking forward to your thoughts.</p>`
   return { subject, body }
 }
 
@@ -236,7 +234,7 @@ function buildStaticTemplate4(clientName) {
 <p><strong>After the POC</strong></p>
 <p>Once you've reviewed the demo, we can discuss how your complete product catalog can be enriched and transformed into a fully functional eCommerce platform tailored to your business requirements.</p>
 <p>I would welcome the opportunity to schedule a brief Google Meet call to walk you through the demo, discuss your goals, and answer any questions.</p>
-<p>Looking forward to your feedback.</p>` + SIGNATURE_HTML
+<p>Looking forward to your feedback.</p>`
   return { subject, body }
 }
 
@@ -636,7 +634,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
       setPreviewHtml(`<div class="et-loading-block"><div class="et-spinner et-spinner-lg"></div><p style="color:#94a3b8">Generating the Audit email with AI...</p><span style="font-size:0.7rem;color:#64748b">This may take a few seconds...</span></div>`)
       try {
         const ai = await generateAiEmail(clientName, beforeFile, afterFile, getSettings(), clientType)
-        const finalBody = ai.body + SIGNATURE_HTML
+        const finalBody = ai.body
         // Subject is generated dynamically by the AI; fallback only if it omits one.
         const finalSubj = ai.subject || (clientType === 'static'
           ? `Digital Commerce & Revenue Growth Audit – ${clientName}`
@@ -1459,8 +1457,10 @@ function SettingsSection({ onGmailChange }) {
   const [connecting, setConnecting]         = useState(false)
   const [detecting, setDetecting]           = useState(false)
   const [signature, setSignature]           = useState('')
+  const [signatureImage, setSignatureImage] = useState('')
   const [savingSig, setSavingSig]           = useState(false)
   const [loadingSig, setLoadingSig]         = useState(true)
+  const [processingSigImage, setProcessingSigImage] = useState(false)
 
   const localToken  = localStorage.getItem('gmail_access_token')
   const localExpiry = parseInt(localStorage.getItem('gmail_token_expiry') || '0')
@@ -1471,7 +1471,10 @@ function SettingsSection({ onGmailChange }) {
   // the backend's single /email/send route, not per-device.
   useEffect(() => {
     api.get('/users/me/signature')
-      .then(r => setSignature(r.data.signature || ''))
+      .then(r => {
+        setSignature(r.data.signature || '')
+        setSignatureImage(r.data.signatureImage || '')
+      })
       .catch(() => {})
       .finally(() => setLoadingSig(false))
   }, [])
@@ -1479,12 +1482,36 @@ function SettingsSection({ onGmailChange }) {
   const saveSignature = async () => {
     setSavingSig(true)
     try {
-      await api.put('/users/me/signature', { signature })
+      await api.put('/users/me/signature', { signature, signatureImage })
       showToast('Signature saved — it will be added to every outgoing email.', 'success')
     } catch (err) {
       showToast('Failed to save signature: ' + (err?.response?.data?.message || err.message), 'error')
     } finally {
       setSavingSig(false)
+    }
+  }
+
+  // Compress (reusing the same attachment-compression logic) then convert to a
+  // data-URI, so the signature image stays small and needs no separate upload
+  // route/static-file infra — it's saved inline alongside the signature text.
+  const handleSigImagePick = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setProcessingSigImage(true)
+    try {
+      const compressed = await compressImageIfNeeded(file)
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result)
+        reader.onerror = reject
+        reader.readAsDataURL(compressed)
+      })
+      setSignatureImage(dataUrl)
+    } catch (err) {
+      showToast('Could not process that image: ' + err.message, 'error')
+    } finally {
+      setProcessingSigImage(false)
     }
   }
 
@@ -1674,6 +1701,26 @@ function SettingsSection({ onGmailChange }) {
             <div className="et-help-text">
               Saved once for your account and automatically added to every outgoing email —
               from the Email Tool, and from Contact/Company "Log an email" — no need to add it manually each time.
+            </div>
+          </div>
+          <div className="et-form-group">
+            <label className="et-label">Signature Image (optional)</label>
+            {signatureImage && (
+              <div style={{ marginBottom: 8 }}>
+                <img src={signatureImage} alt="Signature" style={{ maxWidth: 280, maxHeight: 120, display: 'block', border: '1px solid #e2e2e2', borderRadius: 4, padding: 4 }} />
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="file" accept="image/*" onChange={handleSigImagePick} disabled={processingSigImage || loadingSig} />
+              {signatureImage && (
+                <button type="button" className="et-btn" onClick={() => setSignatureImage('')} disabled={processingSigImage}>
+                  Remove
+                </button>
+              )}
+              {processingSigImage && <span className="et-help-text">Processing…</span>}
+            </div>
+            <div className="et-help-text">
+              e.g. a logo or handwritten-style signature. Shown below your signature text on every outgoing email.
             </div>
           </div>
           <div className="et-settings-actions">
