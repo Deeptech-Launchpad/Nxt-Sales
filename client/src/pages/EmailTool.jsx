@@ -685,6 +685,11 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
     aiModel:    localStorage.getItem('ai_model') || 'gemini-2.5-flash',
   })
 
+  // Verdana is the default font for every outgoing email (any template,
+  // including AI) unless the content already sets its own font.
+  const wrapDefaultFont = (html) =>
+    `<div style="font-family:Verdana,Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${html}</div>`
+
   // auto=true → silent auto-generation (no recipient required, no success toast).
   const compilePreview = async (auto = false) => {
     if (generating) return
@@ -703,7 +708,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
         const finalSubj = ai.subject || (clientType === 'static'
           ? `Digital Commerce & Revenue Growth Audit – ${clientName}`
           : `Product Data Enrichment Opportunity – ${clientName} | Before vs After Analysis`)
-        setPreviewHtml(finalBody)
+        setPreviewHtml(wrapDefaultFont(finalBody))
         setPreviewSubject(finalSubj)
         setSubject(finalSubj)
         setBody(finalBody.replace(/<[^>]*>/g, '\n').replace(/\n\n+/g, '\n\n').trim())
@@ -735,7 +740,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
     }
 
     setPreviewSubject(subj)
-    setPreviewHtml(bod)
+    setPreviewHtml(wrapDefaultFont(bod))
     setSubject(subj)
     if (template !== 'manual') setBody(bod.replace(/<[^>]*>/g, '\n').replace(/\n\n+/g, '\n\n').trim())
     if (!auto) showToast('Email preview compiled!', 'success')

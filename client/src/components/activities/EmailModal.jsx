@@ -247,10 +247,14 @@ export default function EmailModal({
   const [analyzing,  setAnalyzing]  = useState(false)
   const [report,     setReport]     = useState(null)
 
-  // Same HTML the send path uses, so the analysis matches what actually goes out.
-  const buildSendHtml = () => (template === 'manual'
-    ? `<div style="font-family:sans-serif;line-height:1.6">${body.replace(/\n/g, '<br>')}</div>`
-    : body)
+  // Verdana is the default font for every outgoing email (manual or
+  // templated, including AI) unless the content already sets its own font.
+  const wrapDefaultFont = (html) =>
+    `<div style="font-family:Verdana,Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${html}</div>`
+
+  // Same HTML the send path uses, so the analysis/preview always matches what
+  // actually goes out.
+  const buildSendHtml = () => wrapDefaultFont(template === 'manual' ? body.replace(/\n/g, '<br>') : body)
 
   // Intercept Send → analyze first, then show the report. Send happens only if
   // the user chooses "Send" inside the report (which calls sendViaGmail unchanged).
@@ -316,7 +320,7 @@ export default function EmailModal({
       try {
         const html = await generateAiPdpAudit(clientName, aiProvider, aiKey)
         setBody(html)
-        setPreviewHTML(html)
+        setPreviewHTML(wrapDefaultFont(html))
         if (!subject) setSubject(`AI PDP Audit – ${clientName || 'Your Store'}`)
       } catch (e) {
         setError(`AI generation failed: ${e.message}`)
@@ -324,10 +328,7 @@ export default function EmailModal({
         setGeneratingAI(false)
       }
     } else {
-      const rendered = template === 'manual'
-        ? (body ? `<div style="font-family:sans-serif;line-height:1.6">${body.replace(/\n/g, '<br>')}</div>` : '')
-        : body
-      setPreviewHTML(rendered)
+      setPreviewHTML(template === 'manual' && !body ? '' : buildSendHtml())
     }
     setShowPreview(true)
   }
@@ -361,9 +362,7 @@ export default function EmailModal({
         attachments.push(await buildAttachment(f))
       }
 
-      const htmlBody = template === 'manual'
-        ? `<div style="font-family:sans-serif;line-height:1.6">${body.replace(/\n/g, '<br>')}</div>`
-        : body
+      const htmlBody = buildSendHtml()
 
       const { data } = await api.post('/email/send', {
         to: toEmail,
