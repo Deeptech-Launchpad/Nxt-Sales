@@ -412,7 +412,14 @@ router.post('/send', auth, async (req, res) => {
       if (lastEmail?.threadId) {
         threadId = lastEmail.threadId
         const meta = await resolveThreadMeta(gmail, threadId)
-        if (meta.subject) sendSubject = meta.subject
+        // Prefer our own stored record of the thread's subject over the live
+        // Gmail fetch — the API call can transiently fail (resolveThreadMeta
+        // then returns subject: null), which previously left sendSubject
+        // silently on whatever was typed for *this* send instead of the
+        // thread's real subject. lastEmail.subject was captured when that
+        // email was originally sent/synced, so it doesn't depend on this
+        // request's network call succeeding.
+        sendSubject = lastEmail.subject || meta.subject || subject
         inReplyTo  = meta.inReplyTo
         references = meta.references
       }
@@ -431,7 +438,9 @@ router.post('/send', auth, async (req, res) => {
       if (lastEmail?.threadId) {
         threadId = lastEmail.threadId
         const meta = await resolveThreadMeta(gmail, threadId)
-        if (meta.subject) sendSubject = meta.subject
+        // Same reasoning as the "continue" branch above: prefer our own
+        // stored subject over the live (fallible) Gmail metadata fetch.
+        sendSubject = lastEmail.subject || meta.subject || subject
         inReplyTo  = meta.inReplyTo
         references = meta.references
       }
