@@ -18,6 +18,15 @@ function trackingPixel(token) {
   return `<img src="${TRACK_BASE}/api/email/track/open/${token}.gif" width="1" height="1" alt="" style="display:none;max-height:0;max-width:0;opacity:0;overflow:hidden" />`
 }
 
+// The signature is stored as plain text (a simple textarea in Settings) but
+// gets appended into an HTML email body — escape it and turn newlines into
+// <br> so it renders as typed instead of as raw/unsafe HTML.
+function signatureToHtml(text) {
+  const escaped = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return `<div style="font-family:Verdana,Arial,sans-serif;font-size:13px;color:#444">${escaped.replace(/\n/g, '<br>')}</div>`
+}
+
 // Recursively extract plain-text body from nested MIME parts.
 // Gmail wraps text/plain inside multipart/alternative inside multipart/mixed,
 // so a flat .parts.find() misses it on most real emails.
@@ -352,10 +361,22 @@ router.post('/send', auth, async (req, res) => {
     const baseHtml = htmlBody
       || (body ? `<div style="font-family:sans-serif;line-height:1.6">${body.replace(/\n/g, '<br>')}</div>` : '')
 
+    // Default signature (Update: Email Fix 5) — saved once per user, appended
+    // automatically to every send through this route, so it's covered no
+    // matter which UI surface sent the request (Email Tool, Contact/Company
+    // "Log an email"). Never blocks a send if the lookup fails for any reason.
+    let signatureHtml = ''
+    try {
+      const sigUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { signature: true } })
+      if (sigUser?.signature?.trim()) signatureHtml = `<br>${signatureToHtml(sigUser.signature.trim())}`
+    } catch (sigErr) {
+      console.warn('[Email Send] Signature lookup failed, sending without it:', sigErr.message)
+    }
+
     // Open-tracking: unique token embedded as a hidden pixel; when the recipient
     // opens the email the pixel loads and /track/open records it against this id.
     const trackingId  = crypto.randomUUID()
-    const effectiveHtml = `${baseHtml}${trackingPixel(trackingId)}`
+    const effectiveHtml = `${baseHtml}${signatureHtml}${trackingPixel(trackingId)}`
 
     // ── Thread continuation ─────────────────────────────────
     // Three ways this resolves, in priority order:

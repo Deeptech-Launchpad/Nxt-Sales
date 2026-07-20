@@ -28,6 +28,33 @@ router.get('/', auth, async (req, res) => {
   }
 })
 
+// ── GET /api/users/me/signature — the logged-in user's saved email signature ─
+router.get('/me/signature', auth, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user.id }, select: { signature: true } })
+    res.json({ signature: user?.signature || '' })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
+// ── PUT /api/users/me/signature — save the logged-in user's email signature ──
+router.put('/me/signature', auth, async (req, res) => {
+  try {
+    const { signature } = req.body
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { signature: signature || null },
+      select: { signature: true },
+    })
+    res.json({ signature: user.signature || '' })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
 // ── GET /api/users/manage — all users for User Management page ───────────
 router.get('/manage', auth, async (req, res) => {
   try {

@@ -1524,10 +1524,35 @@ function SettingsSection({ onGmailChange }) {
   const [aiModel, setAiModel]               = useState(localStorage.getItem('ai_model') || 'gemini-2.5-flash')
   const [connecting, setConnecting]         = useState(false)
   const [detecting, setDetecting]           = useState(false)
+  const [signature, setSignature]           = useState('')
+  const [savingSig, setSavingSig]           = useState(false)
+  const [loadingSig, setLoadingSig]         = useState(true)
 
   const localToken  = localStorage.getItem('gmail_access_token')
   const localExpiry = parseInt(localStorage.getItem('gmail_token_expiry') || '0')
   const localValid  = localToken && Date.now() < localExpiry
+
+  // Signature is saved server-side per user (not localStorage) so it applies
+  // consistently everywhere — Email Tool, Contact email, Company email — via
+  // the backend's single /email/send route, not per-device.
+  useEffect(() => {
+    api.get('/users/me/signature')
+      .then(r => setSignature(r.data.signature || ''))
+      .catch(() => {})
+      .finally(() => setLoadingSig(false))
+  }, [])
+
+  const saveSignature = async () => {
+    setSavingSig(true)
+    try {
+      await api.put('/users/me/signature', { signature })
+      showToast('Signature saved — it will be added to every outgoing email.', 'success')
+    } catch (err) {
+      showToast('Failed to save signature: ' + (err?.response?.data?.message || err.message), 'error')
+    } finally {
+      setSavingSig(false)
+    }
+  }
 
   // Auto-detect the best supported Gemini model for whatever key the user
   // pastes in — they should never have to know/guess a model name. Runs on
@@ -1696,6 +1721,31 @@ function SettingsSection({ onGmailChange }) {
                 {connecting ? 'Connecting...' : 'Connect Gmail Account'}
               </button>
             )}
+          </div>
+        </div>
+
+        <div className="et-settings-card">
+          <div className="et-settings-title">Email Signature</div>
+          <div className="et-form-group">
+            <label className="et-label">Default Signature</label>
+            <textarea
+              className="et-input"
+              rows={5}
+              placeholder="e.g. Your Name&#10;Your Title&#10;Company | Phone | Email"
+              value={signature}
+              disabled={loadingSig}
+              onChange={e => setSignature(e.target.value)}
+              style={{ resize: 'vertical', fontFamily: 'Verdana,Arial,sans-serif' }}
+            />
+            <div className="et-help-text">
+              Saved once for your account and automatically added to every outgoing email —
+              from the Email Tool, and from Contact/Company "Log an email" — no need to add it manually each time.
+            </div>
+          </div>
+          <div className="et-settings-actions">
+            <button className="et-btn et-btn-primary" style={{ flex: 'none', minWidth: 140 }} onClick={saveSignature} disabled={savingSig || loadingSig}>
+              {savingSig ? 'Saving…' : 'Save Signature'}
+            </button>
           </div>
         </div>
       </div>
