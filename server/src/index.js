@@ -15,6 +15,7 @@ const calendarRoutes  = require('./routes/calendar')
 const callhippoRoutes = require('./routes/callhippo')
 const chatRoutes      = require('./routes/chat')
 const notificationRoutes = require('./routes/notifications')
+const { startRecycleBinPurgeSweep } = require('./jobs/purgeRecycleBin')
 
 require('./config/passport')
 
@@ -47,6 +48,7 @@ app.get('/health', (_, res) => res.json({ status: 'ok', app: 'NXT Sales' }))
 
 const server = app.listen(PORT, () => {
   console.log(`✓ Server running on http://localhost:${PORT}`)
+  startRecycleBinPurgeSweep()
 })
 
 server.on('error', (err) => {

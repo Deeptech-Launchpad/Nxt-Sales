@@ -36,7 +36,12 @@ function buildDealData(body) {
 router.get('/', auth, async (req, res) => {
   try {
     const { companyId } = req.query
-    const where = companyId ? { companyId } : { ownerId: req.user.id }
+    // Dashboard listing (no explicit companyId) hides deals whose linked
+    // company is in the Recycle Bin — it should behave as if that company no
+    // longer exists. Deals with no company at all (companyId: null) are unaffected.
+    const where = companyId
+      ? { companyId }
+      : { ownerId: req.user.id, OR: [{ companyId: null }, { company: { deletedAt: null } }] }
     const deals = await prisma.deal.findMany({
       where,
       include: {

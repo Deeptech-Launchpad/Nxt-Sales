@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, LayoutGrid, List, Download, Plus,
-  ChevronDown, SlidersHorizontal, Pencil, Upload, Columns
+  ChevronDown, SlidersHorizontal, Pencil, Upload, Columns, Trash2
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
@@ -171,6 +171,8 @@ export default function Companies() {
 
   const [showCreate, setShowCreate]   = useState(false)
   const [showImport, setShowImport]   = useState(false)
+  const [deleting, setDeleting]       = useState(false)
+  const [recycleBinCount, setRecycleBinCount] = useState(0)
 
   const [ownerFilter,      setOwnerFilter]      = useState([])
   const [createDateFilter, setCreateDateFilter] = useState([])
@@ -197,6 +199,13 @@ export default function Companies() {
   useEffect(() => {
     api.get('/users').then(r => setUsers(r.data)).catch(() => {})
   }, [])
+
+  // Recycle Bin badge count — refreshed on mount and after any delete action
+  // on this page (deleting moves companies into the bin, changing the count).
+  const fetchRecycleBinCount = useCallback(() => {
+    api.get('/companies/recycle-bin').then(r => setRecycleBinCount(r.data.total || 0)).catch(() => {})
+  }, [])
+  useEffect(() => { fetchRecycleBinCount() }, [fetchRecycleBinCount])
 
   // Load the dynamic Company field list (same one Create/Import already use)
   useEffect(() => {
@@ -259,6 +268,22 @@ export default function Companies() {
   const toggleAll   = () => setSelected(allSelected ? [] : companies.map(c => c.id))
   const toggleOne   = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
 
+  const deleteSelected = async () => {
+    if (!selected.length) return
+    if (!window.confirm(`Move ${selected.length} selected compan${selected.length === 1 ? 'y' : 'ies'} to the Recycle Bin? You can restore them within 30 days.`)) return
+    setDeleting(true)
+    try {
+      await api.delete('/companies/bulk', { data: { ids: selected } })
+      setSelected([])
+      fetchCompanies()
+      fetchRecycleBinCount()
+    } catch {
+      // no-op — matches existing lightweight error handling style on this page
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const hasFilters = ownerFilter.length > 0 || createDateFilter.length > 0 || leadStatusFilter.length > 0
 
@@ -294,6 +319,19 @@ export default function Companies() {
           <span className="records-count">{total} records</span>
         </div>
         <div className="header-actions">
+          {selected.length > 0 && (
+            <button
+              className="btn-action"
+              style={{ color: '#ef4444', borderColor: '#fecaca' }}
+              onClick={deleteSelected}
+              disabled={deleting}
+            >
+              <Trash2 size={14} /> {deleting ? 'Moving…' : `Delete selected (${selected.length})`}
+            </button>
+          )}
+          <button className="btn-action" onClick={() => navigate('/companies/recycle-bin')}>
+            <Trash2 size={14} /> Recycle Bin{recycleBinCount > 0 ? ` (${recycleBinCount})` : ''}
+          </button>
           <button className="btn-action" onClick={() => setShowImport(true)}>
             <Download size={14} /> Import
           </button>
@@ -316,7 +354,7 @@ export default function Companies() {
       <div className="filter-chips-row">
         <div className="chips-left">
           <FilterDropdown
-            label="Company owner"
+            label="Lead Owner"
             options={ownerOptions}
             selected={ownerFilter}
             onChange={v => { setOwnerFilter(v); setPage(1) }}

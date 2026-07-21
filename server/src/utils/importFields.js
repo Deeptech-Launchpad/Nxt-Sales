@@ -28,12 +28,14 @@ const CONFIG = {
       postalCode: 'Postal Code', timeZone: 'Time Zone',
       originalTrafficSource: 'Original Traffic Source', linkedinUrl: 'LinkedIn URL',
       description: 'Description', lifecycleStage: 'Lifecycle Stage', leadStatus: 'Lead Status',
-      notes: 'Notes',
+      notes: 'Notes', endPdpUrl: 'End PDP URL', cms: 'CMS', remarks: 'Remarks',
+      contactPersons: 'Contact Person', linkedProfiles: 'Linked Profile',
     },
     order: ['name', 'email', 'phone', 'mobile', 'website', 'domain', 'industry', 'industryType',
       'companyType', 'leadType', 'employeeCount', 'revenue', 'country', 'city', 'stateRegion',
       'postalCode', 'timeZone', 'originalTrafficSource', 'linkedinUrl', 'description',
-      'lifecycleStage', 'leadStatus', 'notes'],
+      'lifecycleStage', 'leadStatus', 'notes', 'endPdpUrl', 'cms', 'remarks',
+      'contactPersons', 'linkedProfiles'],
   },
 }
 

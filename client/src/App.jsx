@@ -11,6 +11,7 @@ import Companies from './pages/Companies'
 import Deals from './pages/Deals'
 import Tickets from './pages/Tickets'
 import CompanyDetail from './pages/companies/CompanyDetail'
+import CompanyRecycleBin from './pages/companies/CompanyRecycleBin'
 import ContactDetail from './pages/contacts/ContactDetail'
 import Inbox from './pages/Inbox'
 import Calls from './pages/Calls'
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="contacts" element={<Contacts />} />
             <Route path="contacts/:id" element={<ContactDetail />} />
             <Route path="companies" element={<Companies />} />
+            <Route path="companies/recycle-bin" element={<CompanyRecycleBin />} />
             <Route path="companies/:id" element={<CompanyDetail />} />
             <Route path="deals" element={<Deals />} />
             <Route path="tickets" element={<Tickets />} />

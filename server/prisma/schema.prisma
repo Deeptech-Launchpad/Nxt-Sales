@@ -91,12 +91,19 @@ model Company {
   mobile                String?
   emails                Json?
   phones                Json?
+  endPdpUrl             String?
+  cms                   String?
+  remarks               String?
+  contactPersons        Json?
+  linkedProfiles        Json?
+  deletedAt             DateTime?
   activities     Activity[]
   deals          Deal[]
   callLogs       CallLog[]
   owner          User?      @relation(fields: [ownerId], references: [id])
 
   @@index([email])
+  @@index([deletedAt])
   @@index([ownerId])
   @@index([createdAt])
   @@index([leadStatus])

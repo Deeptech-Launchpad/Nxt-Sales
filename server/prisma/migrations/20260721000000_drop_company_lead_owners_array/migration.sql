@@ -1,0 +1,1 @@
+ALTER TABLE "Company" DROP COLUMN IF EXISTS "leadOwners";

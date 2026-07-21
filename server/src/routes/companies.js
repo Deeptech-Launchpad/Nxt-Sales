@@ -23,6 +23,22 @@ function cleanArr(a, fallback) {
   return out
 }
 
+// Split a "/"-separated import cell into a clean, de-duped list — the bulk
+// import template uses "/" so a single cell can carry multiple Emails, Phone
+// numbers, or Contact Persons for one company.
+function splitMulti(v) {
+  if (!v) return []
+  return cleanArr(String(v).split('/'))
+}
+
+// Linked Profile uses "^" instead of "/" — LinkedIn URLs contain "/" naturally
+// (e.g. https://www.linkedin.com/in/name), so splitting on "/" would break a
+// single URL into fragments. "^" never appears in a URL, so it splits cleanly.
+function splitCaret(v) {
+  if (!v) return []
+  return cleanArr(String(v).split('^'))
+}
+
 function dateRangeFor(key) {
   const now   = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -46,7 +62,9 @@ function dateRangeFor(key) {
 // endpoint so "export with applied filters" always matches the on-screen list.
 function buildCompanyWhere(query, userId) {
   const { search, view, owners, leadStatuses, createDate } = query
-  const where = {}
+  // Companies in the Recycle Bin are archived — excluded from every normal
+  // list/search/export view. Only the dedicated Recycle Bin routes look past this.
+  const where = { deletedAt: null }
 
   if (view === 'mine')       where.ownerId = userId
   if (view === 'unassigned') where.ownerId = null
@@ -150,7 +168,9 @@ router.post('/check-duplicates', auth, async (req, res) => {
       if (c.website) dupConditions.push({ website: String(c.website).trim() })
       if (c.domain)  dupConditions.push({ domain: String(c.domain).trim() })
 
-      const existing = await prisma.company.findFirst({ where: { OR: dupConditions } })
+      // Recycle-Binned companies are archived — they must never block a new
+      // company from being created/imported with the same identity.
+      const existing = await prisma.company.findFirst({ where: { deletedAt: null, OR: dupConditions } })
       results.push({
         isDuplicate: !!existing,
         existing: existing ? { id: existing.id, name: existing.name } : null,
@@ -180,16 +200,49 @@ router.post('/bulk', auth, async (req, res) => {
       return Number.isFinite(n) ? n : null
     }
 
+    // Lead Owner is the same single-owner field Companies always had (ownerId,
+    // a real system user) — the import column is a name, matched case-
+    // insensitively against real users. No match falls back to the importing
+    // user, same as the previous always-import-as-me default.
+    const allUsers = await prisma.user.findMany({ select: { id: true, name: true } })
+    const userIdByName = new Map(allUsers.map(u => [u.name.toLowerCase().trim(), u.id]))
+
     for (const c of companies) {
       try {
         if (!c.name || !String(c.name).trim()) { errors.push('Missing company name — row skipped'); failed++; continue }
+
+        // Multi-value columns (Email, Co. Phone no., Contact Person) use "/" as
+        // the separator in the standard template — split into arrays exactly
+        // like manually clicking "Add Another". Linked Profile uses "^" instead,
+        // since LinkedIn URLs already contain "/".
+        const emailList         = splitMulti(c.email)
+        const phoneList         = splitMulti(c.phone)
+        const contactPersonList = splitMulti(c.contactPersons)
+        const linkedProfileList = splitCaret(c.linkedProfiles)
+
+        const leadOwnerName = c.leadOwnerName ? String(c.leadOwnerName).trim() : ''
+        const matchedOwnerId = leadOwnerName ? userIdByName.get(leadOwnerName.toLowerCase()) : null
+
+        // Duplicate detection during bulk import — same fields/logic as
+        // /check-duplicates and the single-company create route, so a row that
+        // matches an existing company (by name, email, phone, website, or
+        // domain) is skipped here too, not just flagged in the preview step.
+        const dupConditions = [{ name: { equals: String(c.name).trim(), mode: 'insensitive' } }]
+        if (emailList[0])  dupConditions.push({ email: emailList[0].toLowerCase() })
+        if (phoneList[0])  dupConditions.push({ phone: phoneList[0] })
+        if (c.website && String(c.website).trim()) dupConditions.push({ website: String(c.website).trim() })
+        if (c.domain  && String(c.domain).trim())  dupConditions.push({ domain: String(c.domain).trim() })
+        // Recycle-Binned companies are archived — never block a fresh import row.
+        const existingDup = await prisma.company.findFirst({ where: { deletedAt: null, OR: dupConditions } })
+        if (existingDup) { errors.push(`${c.name}: duplicate of existing company "${existingDup.name}" — row skipped`); failed++; continue }
+
         const newCompany = await prisma.company.create({
           data: {
             name:                  String(c.name).trim(),
-            email:                 c.email ? String(c.email).toLowerCase().trim() : null,
-            emails:                c.email ? [String(c.email).toLowerCase().trim()] : null,
-            phone:                 c.phone || null,
-            phones:                c.phone ? [String(c.phone).trim()] : null,
+            email:                 emailList[0] ? emailList[0].toLowerCase() : null,
+            emails:                emailList.length ? emailList : null,
+            phone:                 phoneList[0] || null,
+            phones:                phoneList.length ? phoneList : null,
             mobile:                c.mobile || null,
             website:               c.website || null,
             domain:                c.domain || null,
@@ -210,15 +263,20 @@ router.post('/bulk', auth, async (req, res) => {
             lifecycleStage:        c.lifecycleStage || 'Lead',
             leadStatus:            c.leadStatus || null,
             status:                'Lead',
-            ownerId:               req.user.id,
+            ownerId:               matchedOwnerId || req.user.id,
+            endPdpUrl:             c.endPdpUrl || null,
+            cms:                   c.cms || null,
+            remarks:               c.remarks || null,
+            contactPersons:        contactPersonList.length ? contactPersonList : null,
+            linkedProfiles:        linkedProfileList.length ? linkedProfileList : null,
           },
         })
         created++
 
-        // If the import row has a Notes column, save it as a Note Activity —
-        // reusing the same Activity table manual notes use (Company → Activities
-        // → Notes), not the Company's own unrelated `notes` column.
-        const noteText = c.notes || c['Notes']
+        // If the import row has a Notes/Task column, save it as an Activity —
+        // reusing the same Activity table manual Notes/Tasks use (Company →
+        // Activities), not new scalar Company columns.
+        const noteText = c.notes
         if (noteText && String(noteText).trim()) {
           await prisma.activity.create({
             data: {
@@ -230,6 +288,18 @@ router.post('/bulk', auth, async (req, res) => {
             },
           }).catch(e => console.error(`Import note creation failed for ${newCompany.id}:`, e.message))
         }
+        const taskText = c.task
+        if (taskText && String(taskText).trim()) {
+          await prisma.activity.create({
+            data: {
+              type:       'task',
+              companyId:  newCompany.id,
+              userId:     req.user.id,
+              title:      String(taskText).trim(),
+              taskStatus: 'not_started',
+            },
+          }).catch(e => console.error(`Import task creation failed for ${newCompany.id}:`, e.message))
+        }
       } catch (rowErr) {
         failed++
         errors.push(`${c.name || 'unknown'}: ${rowErr.message}`)
@@ -237,6 +307,33 @@ router.post('/bulk', auth, async (req, res) => {
     }
 
     res.json({ created, failed, errors })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
+// ── GET /api/companies/recycle-bin — list soft-deleted companies ─────────
+// Must be registered before /:id so "recycle-bin" isn't captured as an :id param.
+router.get('/recycle-bin', auth, async (req, res) => {
+  try {
+    const { search } = req.query
+    const where = {
+      deletedAt: { not: null },
+      ...(search && {
+        OR: [
+          { name:    { contains: search, mode: 'insensitive' } },
+          { email:   { contains: search, mode: 'insensitive' } },
+          { website: { contains: search, mode: 'insensitive' } },
+        ],
+      }),
+    }
+    const companies = await prisma.company.findMany({
+      where,
+      orderBy: { deletedAt: 'desc' },
+      include: { owner: { select: { id: true, name: true, email: true } } },
+    })
+    res.json({ companies, total: companies.length })
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: 'Server error.' })
@@ -252,7 +349,9 @@ router.get('/:id', auth, async (req, res) => {
       include: { owner: { select: { id: true, name: true, email: true } } },
     })
 
-    if (!company) return res.status(404).json({ message: 'Company not found.' })
+    // A Recycle-Binned company behaves as if it no longer exists to every
+    // normal view — including direct-link access to its detail page.
+    if (!company || company.deletedAt) return res.status(404).json({ message: 'Company not found.' })
     res.json(company)
   } catch (err) {
     console.error(err)
@@ -264,11 +363,14 @@ router.get('/:id', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { name, email, phone, website, industry, employeeCount, revenue, lifecycleStage, leadStatus, status, ownerId,
-            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, mobile, emails, phones } = req.body
+            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, mobile, emails, phones,
+            endPdpUrl, cms, remarks, contactPersons, linkedProfiles } = req.body
     if (!name) return res.status(400).json({ message: 'Company name is required.' })
 
     const emailList = cleanArr(emails, email)
     const phoneList = cleanArr(phones, phone)
+    const contactPersonList = cleanArr(contactPersons)
+    const linkedProfileList = cleanArr(linkedProfiles)
     const primaryEmail = emailList[0] ? emailList[0].toLowerCase() : null
     const primaryPhone = phoneList[0] || null
 
@@ -278,7 +380,8 @@ router.post('/', auth, async (req, res) => {
     if (primaryPhone) dupConditions.push({ phone: primaryPhone })
     if (website && website.trim()) dupConditions.push({ website: website.trim() })
 
-    const existing = await prisma.company.findFirst({ where: { OR: dupConditions } })
+    // Recycle-Binned companies are archived — never block creating a new one.
+    const existing = await prisma.company.findFirst({ where: { deletedAt: null, OR: dupConditions } })
     if (existing) {
       return res.status(409).json({
         message: 'A company with this name, email, phone, or website already exists.',
@@ -315,6 +418,11 @@ router.post('/', auth, async (req, res) => {
         originalTrafficSource: originalTrafficSource || null,
         country:               country               || null,
         mobile:                mobile                || null,
+        endPdpUrl:             endPdpUrl             || null,
+        cms:                   cms                   || null,
+        remarks:               remarks               || null,
+        contactPersons:        contactPersonList.length ? contactPersonList : null,
+        linkedProfiles:        linkedProfileList.length ? linkedProfileList : null,
       },
       include: { owner: { select: { id: true, name: true, email: true } } },
     })
@@ -329,12 +437,22 @@ router.post('/', auth, async (req, res) => {
 router.put('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params
+
+    // A Recycle-Binned company behaves as if it no longer exists to every
+    // normal operation — editing must go through restore first, same as the
+    // detail view already 404s.
+    const existingRecord = await prisma.company.findUnique({ where: { id }, select: { deletedAt: true } })
+    if (!existingRecord || existingRecord.deletedAt) return res.status(404).json({ message: 'Company not found.' })
+
     const { name, email, phone, website, industry, employeeCount, revenue, lifecycleStage, leadStatus, status, ownerId,
-            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, mobile, emails, phones } = req.body
+            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, mobile, emails, phones,
+            endPdpUrl, cms, remarks, contactPersons, linkedProfiles } = req.body
 
     // Recompute the multi-value lists + primary only when arrays were sent.
     const emailList = emails !== undefined ? cleanArr(emails, email) : null
     const phoneList = phones !== undefined ? cleanArr(phones, phone) : null
+    const contactPersonList = contactPersons !== undefined ? cleanArr(contactPersons) : null
+    const linkedProfileList = linkedProfiles !== undefined ? cleanArr(linkedProfiles) : null
 
     const company = await prisma.company.update({
       where: { id },
@@ -365,6 +483,11 @@ router.put('/:id', auth, async (req, res) => {
         ...(originalTrafficSource !== undefined && { originalTrafficSource: originalTrafficSource || null }),
         ...(country !== undefined && { country: country || null }),
         ...(mobile !== undefined && { mobile: mobile || null }),
+        ...(endPdpUrl !== undefined && { endPdpUrl: endPdpUrl || null }),
+        ...(cms !== undefined && { cms: cms || null }),
+        ...(remarks !== undefined && { remarks: remarks || null }),
+        ...(contactPersonList && { contactPersons: contactPersonList.length ? contactPersonList : null }),
+        ...(linkedProfileList && { linkedProfiles: linkedProfileList.length ? linkedProfileList : null }),
       },
       include: { owner: { select: { id: true, name: true, email: true } } },
     })
@@ -376,12 +499,87 @@ router.put('/:id', auth, async (req, res) => {
   }
 })
 
-// ── DELETE /api/companies/:id ─────────────────────────────
+// ── DELETE /api/companies/bulk — must be registered before /:id so "bulk"
+// isn't swallowed as an :id param. Soft delete: moves companies to the
+// Recycle Bin (deletedAt set) instead of removing them immediately. ───────
+router.delete('/bulk', auth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ message: 'ids array required.' })
+    const { count } = await prisma.company.updateMany({
+      where: { id: { in: ids }, deletedAt: null },
+      data: { deletedAt: new Date() },
+    })
+    res.json({ message: `${count} compan${count === 1 ? 'y' : 'ies'} moved to Recycle Bin.`, count })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: err.message || 'Server error.' })
+  }
+})
+
+// ── POST /api/companies/recycle-bin/restore ───────────────────────────────
+// Restores each id unless an ACTIVE company already exists with the same
+// name/email/phone/website/domain — in that case the row stays in the bin
+// and the conflict is reported back so the user can decide, rather than
+// silently overwriting or merging anything.
+router.post('/recycle-bin/restore', auth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ message: 'ids array required.' })
+
+    const restored = []
+    const conflicts = []
+
+    for (const id of ids) {
+      const company = await prisma.company.findUnique({ where: { id } })
+      if (!company || !company.deletedAt) continue // not in the bin — skip
+
+      const dupConditions = [{ name: { equals: company.name, mode: 'insensitive' } }]
+      if (company.email)   dupConditions.push({ email: company.email })
+      if (company.phone)   dupConditions.push({ phone: company.phone })
+      if (company.website) dupConditions.push({ website: company.website })
+      if (company.domain)  dupConditions.push({ domain: company.domain })
+
+      const conflict = await prisma.company.findFirst({ where: { deletedAt: null, OR: dupConditions } })
+      if (conflict) {
+        conflicts.push({ id: company.id, name: company.name, conflictWith: { id: conflict.id, name: conflict.name } })
+        continue
+      }
+
+      await prisma.company.update({ where: { id }, data: { deletedAt: null } })
+      restored.push({ id: company.id, name: company.name })
+    }
+
+    res.json({ restored, conflicts })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: err.message || 'Server error.' })
+  }
+})
+
+// ── POST /api/companies/recycle-bin/permanent-delete ──────────────────────
+// Hard-deletes — only companies already in the bin can be targeted here, so
+// this can never bypass the Recycle Bin as a shortcut for normal delete.
+router.post('/recycle-bin/permanent-delete', auth, async (req, res) => {
+  try {
+    const { ids } = req.body
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ message: 'ids array required.' })
+    const { count } = await prisma.company.deleteMany({ where: { id: { in: ids }, deletedAt: { not: null } } })
+    res.json({ message: `${count} compan${count === 1 ? 'y' : 'ies'} permanently deleted.`, count })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: err.message || 'Server error.' })
+  }
+})
+
+// ── DELETE /api/companies/:id — soft delete (single). Not currently wired to
+// any UI, kept consistent with the bulk route's Recycle Bin behavior. ─────
 router.delete('/:id', auth, async (req, res) => {
   try {
     const { id } = req.params
-    await prisma.company.delete({ where: { id } })
-    res.json({ message: 'Company deleted.' })
+    const { count } = await prisma.company.updateMany({ where: { id, deletedAt: null }, data: { deletedAt: new Date() } })
+    if (!count) return res.status(404).json({ message: 'Company not found.' })
+    res.json({ message: 'Company moved to Recycle Bin.' })
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: err.message || 'Server error.' })

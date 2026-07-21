@@ -28,10 +28,15 @@ const LEFT_FIELDS = [
   { label: 'Email',           key: 'email',        isEmail: true },
   { label: 'Phone number',    key: 'phone',        isPhone: true  },
   { label: 'Website',         key: 'website'                     },
-  { label: 'Company owner',   key: '_ownerName'                  },
+  { label: 'Lead Owner',      key: '_ownerName'                  },
   { label: 'Industry',        key: 'industry'                    },
   { label: 'Lifecycle stage', key: 'lifecycleStage'              },
   { label: 'Lead status',     key: 'leadStatus'                  },
+  { label: 'Contact Person',  key: 'contactPersons', isMulti: true },
+  { label: 'Linked Profile',  key: 'linkedProfiles',  isMulti: true },
+  { label: 'End PDP URL',     key: 'endPdpUrl'                    },
+  { label: 'CMS',             key: 'cms'                          },
+  { label: 'Remarks',         key: 'remarks'                      },
 ]
 
 const CENTER_TABS = ['Overview', 'Activities', 'Intelligence']
@@ -296,6 +301,24 @@ export default function CompanyDetail() {
                               >
                                 <Phone size={14} />
                               </button>
+                              {i === 0 && list.length > 1 && <span style={PRIMARY_TAG}>Primary</span>}
+                            </span>
+                          ))
+                        : '--'}
+                    </span>
+                  </div>
+                )
+              }
+              if (f.isMulti) {
+                const list = Array.isArray(enriched[f.key]) ? enriched[f.key].filter(Boolean) : []
+                return (
+                  <div key={f.key} className="detail-field-row">
+                    <span className="detail-field-label">{f.label}</span>
+                    <span className="detail-field-value" style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
+                      {list.length
+                        ? list.map((v, i) => (
+                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                              {v}
                               {i === 0 && list.length > 1 && <span style={PRIMARY_TAG}>Primary</span>}
                             </span>
                           ))

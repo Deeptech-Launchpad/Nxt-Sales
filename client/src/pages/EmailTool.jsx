@@ -6,6 +6,7 @@ import DeliverabilityReport from '../components/activities/DeliverabilityReport'
 import { runDeliverabilityAnalysis } from '../utils/emailDeliverability'
 import { compressImageIfNeeded } from '../utils/imageCompress'
 import { discoverBestGeminiModel, callGeminiWithFallback } from '../utils/geminiModel'
+import { stripInlineFontSize } from '../utils/sanitizeEmailHtml'
 
 Chart.register(...registerables)
 
@@ -378,7 +379,7 @@ async function generateAiEmail(clientName, beforeFile, afterFile, settings, clie
     raw = raw.replace(/.*SUBJECT:\s*.+(\r?\n)?/i, '').trim()
   }
 
-  return { subject, body: raw.trim() }
+  return { subject, body: stripInlineFontSize(raw.trim()) }
 }
 
 // ─────────────────────────────────────────────────────────

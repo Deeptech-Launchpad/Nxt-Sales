@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Save, Loader2 } from 'lucide-react'
 import api from '../api/client'
 import { INDUSTRIES, COUNTRIES } from '../constants/formOptions'
@@ -12,7 +12,7 @@ const LIFECYCLE_STAGES = ['Lead', 'Marketing Qualified Lead', 'Sales Qualified L
 const LEAD_STATUSES    = ['New', 'Open', 'In Progress', 'Open Deal', 'Unqualified', 'Attempted to Contact', 'Connected', 'Bad Timing']
 
 // ── Company edit fields ───────────────────────────────────────
-function CompanyForm({ data, onChange }) {
+function CompanyForm({ data, onChange, users }) {
   const f = (key) => ({ value: data[key] || '', onChange: e => onChange(key, e.target.value) })
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -51,6 +51,27 @@ function CompanyForm({ data, onChange }) {
           <option value="">Select status</option>
           {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
+      </FormRow>
+      <FormRow label="End PDP URL">
+        <input className="er-input" {...f('endPdpUrl')} placeholder="https://..." />
+      </FormRow>
+      <FormRow label="CMS">
+        <input className="er-input" {...f('cms')} placeholder="" />
+      </FormRow>
+      <FormRow label="Remarks">
+        <input className="er-input" {...f('remarks')} placeholder="e.g. Static / Less data / Partnership" />
+      </FormRow>
+      <FormRow label="Contact Person">
+        <MultiValueInput values={data.contactPersons} onChange={v => onChange('contactPersons', v)} type="text" placeholder="Name - Role" addLabel="Add contact person" inputStyle={ER_INPUT_STYLE} />
+      </FormRow>
+      <FormRow label="Lead Owner">
+        <select className="er-input" {...f('ownerId')}>
+          <option value="">No owner</option>
+          {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+      </FormRow>
+      <FormRow label="Linked Profile">
+        <MultiValueInput values={data.linkedProfiles} onChange={v => onChange('linkedProfiles', v)} type="text" placeholder="Profile URL or label" addLabel="Add linked profile" inputStyle={ER_INPUT_STYLE} />
       </FormRow>
     </div>
   )
@@ -127,9 +148,20 @@ export default function EditRecordModal({ type, id, record, onClose, onSaved }) 
     ...record,
     emails: editList(record.email, record.emails),
     phones: editList(record.phone, record.phones),
+    ...(type === 'company' && {
+      contactPersons: editList(null, record.contactPersons),
+      linkedProfiles: editList(null, record.linkedProfiles),
+    }),
   }))
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
+  const [users,   setUsers]   = useState([])
+
+  // Lead Owner dropdown — same "load all system users" behavior Company Owner
+  // used to have, now the single owner field for Companies.
+  useEffect(() => {
+    if (isCompany) api.get('/users').then(r => setUsers(r.data)).catch(() => {})
+  }, [isCompany])
 
   const handleChange = (key, value) => setData(prev => ({ ...prev, [key]: value }))
 
@@ -141,7 +173,13 @@ export default function EditRecordModal({ type, id, record, onClose, onSaved }) 
     setSaving(true); setError('')
     try {
       const endpoint = isCompany ? `/companies/${id}` : `/contacts/${id}`
-      const payload  = { ...data, emails, phones, email: emails[0] || null, phone: phones[0] || null }
+      const payload  = {
+        ...data, emails, phones, email: emails[0] || null, phone: phones[0] || null,
+        ...(isCompany && {
+          contactPersons: cleanList(data.contactPersons),
+          linkedProfiles: cleanList(data.linkedProfiles),
+        }),
+      }
       const { data: updated } = await api.put(endpoint, payload)
       onSaved(updated)
       onClose()
@@ -185,7 +223,7 @@ export default function EditRecordModal({ type, id, record, onClose, onSaved }) 
         {/* Body */}
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
           {isCompany
-            ? <CompanyForm data={data} onChange={handleChange} />
+            ? <CompanyForm data={data} onChange={handleChange} users={users} />
             : <ContactForm data={data} onChange={handleChange} />
           }
           {error && (

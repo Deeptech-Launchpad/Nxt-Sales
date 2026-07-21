@@ -131,6 +131,8 @@ const EMPTY = {
   domain: '', mobile: '', country: '', city: '', stateRegion: '', postalCode: '',
   timeZone: '', description: '', linkedinUrl: '',
   companyType: '', industryType: '', leadType: '', originalTrafficSource: '',
+  endPdpUrl: '', cms: '', remarks: '',
+  contactPersons: [''], linkedProfiles: [''],
 }
 
 export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
@@ -194,6 +196,8 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
     try {
       const emails = cleanList(form.emails)
       const phones = cleanList(form.phones)
+      const contactPersons = cleanList(form.contactPersons)
+      const linkedProfiles = cleanList(form.linkedProfiles)
       await onSave({
         name:            form.name.trim(),
         email:           emails[0] || null,
@@ -220,6 +224,11 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
         originalTrafficSource: form.originalTrafficSource || null,
         country:               form.country || null,
         mobile:                form.mobile || null,
+        endPdpUrl:             form.endPdpUrl || null,
+        cms:                   form.cms || null,
+        remarks:               form.remarks || null,
+        contactPersons,
+        linkedProfiles,
       })
       if (addAnother) {
         reset()
@@ -321,9 +330,10 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
             />
           </div>
 
-          {/* Company owner — dynamic from DB, searchable */}
+          {/* Lead owner — dynamic from DB, searchable (formerly "Company owner";
+              merged into a single owner field per Update: only one owner concept) */}
           <div className="form-group">
-            <label>Company owner</label>
+            <label>Lead Owner</label>
             <SearchableSelect
               value={form.ownerId}
               onChange={v => set('ownerId', v)}
@@ -453,6 +463,43 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
           <div className="form-group">
             <label>Description</label>
             <textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)} placeholder="" />
+          </div>
+
+          <div className="form-group">
+            <label>End PDP URL</label>
+            <input type="url" value={form.endPdpUrl} onChange={e => set('endPdpUrl', e.target.value)} placeholder="https://..." />
+          </div>
+
+          <div className="form-group">
+            <label>CMS</label>
+            <input type="text" value={form.cms} onChange={e => set('cms', e.target.value)} placeholder="" />
+          </div>
+
+          <div className="form-group">
+            <label>Remarks</label>
+            <input type="text" value={form.remarks} onChange={e => set('remarks', e.target.value)} placeholder="e.g. Static / Less data / Partnership" />
+          </div>
+
+          <div className="form-group">
+            <label>Contact Person</label>
+            <MultiValueInput
+              values={form.contactPersons}
+              onChange={v => set('contactPersons', v)}
+              type="text"
+              placeholder="Name - Role"
+              addLabel="Add contact person"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Linked Profile</label>
+            <MultiValueInput
+              values={form.linkedProfiles}
+              onChange={v => set('linkedProfiles', v)}
+              type="text"
+              placeholder="Profile URL or label"
+              addLabel="Add linked profile"
+            />
           </div>
 
           {error && (

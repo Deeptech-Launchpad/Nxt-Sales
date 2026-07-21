@@ -3,16 +3,29 @@
 // Industry and Country options stay in sync everywhere.
 
 export const INDUSTRIES = [
+  'Electronic Components',
+  'Electrical Supplies & Lighting',
+  'Fasteners & Hardwares',
+  'Plumbing & PVF (Pipe, Valve, Fitting)',
+  'Medical Devices & Supplies',
+  'Fluid Power & Mechanical Power Transmission',
+  'Industrial Supply',
+  'MRO',
+  'Gas & Welding',
+  'Construction, Building Materials',
+  'Paints & Coatings ( Chemicals)',
+  'Safety & PPE',
+  'Security Surveillance',
+  'Food Service & Catering Supplies',
+  'Home Appliances',
+  'Industrial Automation',
+  'Hand, Power & Machine Tools',
+  'HVACR',
+  'Janitorial & Sanitation Supplies',
+  'Dental Supplies',
+  'Veterinary Supplies',
   'Office Supplies',
-  'Industrial Tools',
-  'Electrical',
-  'Bathroom Supplies',
-  'Lighting',
-  'Hand Tools',
-  'Safety & Security',
-  'Power Tools',
-  'Fasteners',
-  'Plumbing',
+  'Fire Protection & Safety Supplies',
 ]
 
 export const COUNTRIES = [

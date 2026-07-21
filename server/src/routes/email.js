@@ -331,6 +331,15 @@ router.post('/send', auth, async (req, res) => {
   const { to, subject, body, htmlBody, cc, bcc, attachments = [], contactId, companyId, emailMode } = req.body
   if (!to || !subject) return res.status(400).json({ message: 'To and Subject are required.' })
 
+  // Never trust the frontend on this — a bin'd company should reject writes
+  // (Activity creation) even if a stale UI surface still has its id in hand.
+  if (companyId) {
+    const company = await prisma.company.findUnique({ where: { id: companyId }, select: { deletedAt: true } })
+    if (!company || company.deletedAt) {
+      return res.status(400).json({ message: 'This company has been moved to the Recycle Bin. Please restore it before sending or syncing emails.' })
+    }
+  }
+
   const account = await prisma.emailAccount.findFirst({
     where: { userId: req.user.id, provider: 'gmail' },
   })
@@ -524,6 +533,15 @@ router.post('/send', auth, async (req, res) => {
 router.post('/sync', auth, async (req, res) => {
   const { contactEmail, contactId, companyId } = req.body
   if (!contactEmail) return res.status(400).json({ message: 'contactEmail required' })
+
+  // Never trust the frontend on this — a bin'd company should reject writes
+  // (Activity creation) even if a stale UI surface still has its id in hand.
+  if (companyId) {
+    const company = await prisma.company.findUnique({ where: { id: companyId }, select: { deletedAt: true } })
+    if (!company || company.deletedAt) {
+      return res.status(400).json({ message: 'This company has been moved to the Recycle Bin. Please restore it before sending or syncing emails.' })
+    }
+  }
 
   const account = await prisma.emailAccount.findFirst({
     where: { userId: req.user.id, provider: 'gmail' },

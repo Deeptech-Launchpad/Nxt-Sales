@@ -6,6 +6,87 @@ import '../../styles/modal.css'
 
 const STEPS = ['Upload File', 'Preview & Map', 'Import']
 
+// Exact-header aliases for the standard Company bulk-import template. The
+// spreadsheet's literal headers ("Co. Phone no.", "Company - Url", etc.) are
+// deliberately different from the friendlier UI labels used for table columns
+// and the Create/Edit forms ("Phone Number", "Website") — this maps the
+// template's exact text to our internal field labels so mapRowsToFields'
+// label matching resolves them, without changing those UI-facing labels.
+// "S No" has no matching field and is intentionally left out (ignored on import).
+// "Lead Owner" also has no matching dynamic field — it's not a free-text array,
+// it resolves to the single ownerId dropdown (matched by name server-side), so
+// it's extracted as a raw column below, same as "Task".
+const COMPANY_TEMPLATE_HEADER_ALIASES = {
+  'company name':    'Company Name',
+  'industry':        'Industry',
+  'country':         'Country of Origin',
+  'company - url':   'Website',
+  'end- pdp - url':  'End PDP URL',
+  'email':           'Email',
+  'co. phone no.':   'Phone Number',
+  'contact person':  'Contact Person',
+  'linked profile':  'Linked Profile',
+  'cms':             'CMS',
+  'remarks':         'Remarks',
+  'notes':           'Notes',
+}
+
+// Strip a trailing "(...)" annotation (e.g. "Remarks (Static / Less data /
+// Partnership)" → "Remarks") before alias lookup, then lowercase + trim.
+function normalizeTemplateHeader(h) {
+  return String(h || '').replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase()
+}
+
+// Rewrite a parsed row's keys from the template's exact headers to our
+// internal field labels, so the generic mapRowsToFields matching (which
+// compares against field.label) resolves every column correctly.
+function remapCompanyTemplateHeaders(raw) {
+  return raw.map(row => {
+    const out = {}
+    for (const [k, v] of Object.entries(row)) {
+      const alias = COMPANY_TEMPLATE_HEADER_ALIASES[normalizeTemplateHeader(k)]
+      out[alias || k] = v
+    }
+    return out
+  })
+}
+
+// "Task" and "Lead Owner" have no matching entry in the dynamic `fields` list
+// (Task becomes an Activity record like Notes; Lead Owner resolves to the
+// single ownerId dropdown by name-matching server-side) — extract their raw
+// text directly from the parsed file by normalized header name.
+function extractRawColumn(raw, normalizedHeaderName) {
+  return raw.map(row => {
+    const key = Object.keys(row).find(k => normalizeTemplateHeader(k) === normalizedHeaderName)
+    return key ? String(row[key] || '').trim() : ''
+  })
+}
+
+// The Company import template is a FIXED, hand-designed business document —
+// exactly these 15 columns, in this exact order and text — completely
+// decoupled from the full Company schema (which the Create/Edit form and
+// Edit Columns selector still expose in full). This is what "Download
+// Template" generates and what the Preview & Map step displays; it is NOT
+// derived from the dynamic /companies/import-fields list. `key: null` means
+// the column isn't persisted (S No is a spreadsheet artifact only).
+const COMPANY_IMPORT_TEMPLATE_COLUMNS = [
+  { header: 'S No',                                              key: null },
+  { header: 'Industry',                                          key: 'industry' },
+  { header: 'Country',                                           key: 'country' },
+  { header: 'Company Name',                                      key: 'name' },
+  { header: 'Remarks (Static / Less data / Partnership)',        key: 'remarks' },
+  { header: 'Company - Url',                                     key: 'website' },
+  { header: 'END- PDP - URL',                                    key: 'endPdpUrl' },
+  { header: 'Email',                                             key: 'email' },
+  { header: 'Co. Phone no.',                                     key: 'phone' },
+  { header: 'Contact Person',                                    key: 'contactPersons' },
+  { header: 'Lead Owner',                                        key: 'leadOwnerName' },
+  { header: 'Linked Profile',                                    key: 'linkedProfiles' },
+  { header: 'CMS',                                                key: 'cms' },
+  { header: 'Notes',                                             key: 'notes' },
+  { header: 'Task',                                              key: 'task' },
+]
+
 // Generic import modal — works for any entity whose backend exposes
 // GET /api/<entity>/import-fields and POST /api/<entity>/bulk.
 // entity: 'contacts' | 'companies'
@@ -48,7 +129,13 @@ export default function ImportModal({ entity, isOpen, onClose, onSuccess }) {
     try {
       const raw = await parseRawFile(f)
       if (raw.length === 0) throw new Error('No data rows found in file.')
-      const mapped = mapRowsToFields(raw, fields)
+      const normalizedRaw = entity === 'companies' ? remapCompanyTemplateHeaders(raw) : raw
+      const mapped = mapRowsToFields(normalizedRaw, fields)
+      if (entity === 'companies') {
+        const taskValues = extractRawColumn(raw, 'task')
+        const leadOwnerValues = extractRawColumn(raw, 'lead owner')
+        mapped.forEach((r, i) => { r.task = taskValues[i]; r.leadOwnerName = leadOwnerValues[i] })
+      }
       setRows(mapped)
 
       // Companies-only: preview duplicates before anything is imported.
@@ -118,7 +205,16 @@ export default function ImportModal({ entity, isOpen, onClose, onSuccess }) {
 
   const validRows      = rows.filter(r => r[requiredKey])
   const missingRows    = rows.length - validRows.length
-  const previewCols    = fields.slice(0, 7) // keep the preview table readable
+  // Companies: the downloadable template is the fixed 15-column business
+  // document, not the full dynamic Company field list. Other entities are unchanged.
+  const templateFields = entity === 'companies'
+    ? COMPANY_IMPORT_TEMPLATE_COLUMNS.map(c => ({ label: c.header }))
+    : fields
+  // Companies: preview the fixed 15-column business template (not an arbitrary
+  // slice of the full Company schema). Other entities keep the existing behavior.
+  const previewCols    = entity === 'companies'
+    ? COMPANY_IMPORT_TEMPLATE_COLUMNS.filter(c => c.key).map(c => ({ key: c.key, label: c.header }))
+    : fields.slice(0, 7) // keep the preview table readable
   const duplicateCount = dupInfo.filter(d => d?.isDuplicate).length
 
   return (
@@ -150,10 +246,10 @@ export default function ImportModal({ entity, isOpen, onClose, onSuccess }) {
               <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginBottom: 20 }}>
                 <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>Download a sample template first:</p>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => buildTemplateFromFields(fields, 'csv',  `${entity}_import_template`)} className="btn-modal-secondary" style={{ fontSize: 12, padding: '6px 12px' }} disabled={!fields.length}>
+                  <button onClick={() => buildTemplateFromFields(templateFields, 'csv',  `${entity}_import_template`)} className="btn-modal-secondary" style={{ fontSize: 12, padding: '6px 12px' }} disabled={!templateFields.length}>
                     <Download size={13} /> CSV Template
                   </button>
-                  <button onClick={() => buildTemplateFromFields(fields, 'xlsx', `${entity}_import_template`)} className="btn-modal-secondary" style={{ fontSize: 12, padding: '6px 12px' }} disabled={!fields.length}>
+                  <button onClick={() => buildTemplateFromFields(templateFields, 'xlsx', `${entity}_import_template`)} className="btn-modal-secondary" style={{ fontSize: 12, padding: '6px 12px' }} disabled={!templateFields.length}>
                     <Download size={13} /> Excel Template
                   </button>
                 </div>

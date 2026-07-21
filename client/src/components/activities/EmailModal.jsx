@@ -10,6 +10,7 @@ import DeliverabilityReport from './DeliverabilityReport'
 import { runDeliverabilityAnalysis } from '../../utils/emailDeliverability'
 import { compressImageIfNeeded } from '../../utils/imageCompress'
 import { discoverBestGeminiModel, callGeminiWithFallback } from '../../utils/geminiModel'
+import { stripInlineFontSize } from '../../utils/sanitizeEmailHtml'
 
 // ── Templates ─────────────────────────────────────────────
 const TEMPLATES = [
@@ -332,7 +333,7 @@ export default function EmailModal({
       if (!aiKey) { setShowAiSettings(true); setError('Please set your AI API key in settings first.'); return }
       setGeneratingAI(true); setError('')
       try {
-        const html = await generateAiPdpAudit(clientName, aiProvider, aiKey, aiModel)
+        const html = stripInlineFontSize(await generateAiPdpAudit(clientName, aiProvider, aiKey, aiModel))
         setBody(html)
         setPreviewHTML(wrapDefaultFont(html))
         if (!subject) setSubject(`AI PDP Audit – ${clientName || 'Your Store'}`)

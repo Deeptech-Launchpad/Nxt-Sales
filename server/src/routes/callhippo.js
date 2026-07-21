@@ -137,12 +137,19 @@ router.get('/logs', auth, async (req, res) => {
   try {
     const { page = 1, limit = 50, search } = req.query
     const skip = (Number(page) - 1) * Number(limit)
+    // Hide call logs whose linked company is in the Recycle Bin — it should
+    // behave as if that company no longer exists. Logs with no company at all
+    // (companyId: null) are unaffected.
+    const hideBinnedCompany = { OR: [{ companyId: null }, { company: { deletedAt: null } }] }
     const where = search ? {
-      OR: [
-        { fromNumber: { contains: search } },
-        { toNumber:   { contains: search } },
+      AND: [
+        { OR: [
+          { fromNumber: { contains: search } },
+          { toNumber:   { contains: search } },
+        ] },
+        hideBinnedCompany,
       ],
-    } : {}
+    } : hideBinnedCompany
     const [logs, total] = await Promise.all([
       prisma.callLog.findMany({
         where,
