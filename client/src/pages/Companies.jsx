@@ -22,6 +22,13 @@ const MoreBadge = ({ n }) => n > 0
 const COLUMNS_STORAGE_KEY = 'mwz_companies_visible_columns'
 const DEFAULT_COLUMNS = ['country', 'industryType', 'email', 'mobile', 'linkedinUrl'] // matches the original hardcoded table
 
+// Lead Owner (ownerId) is intentionally excluded from the server's dynamic
+// Company field list — that list is shared with the Import Template, and
+// ownerId has its own dropdown/name-matching logic there that must not be
+// touched. This is a client-side-only column entry so "Edit Columns" can
+// offer it without affecting Import, Create, or Edit Company in any way.
+const LEAD_OWNER_COLUMN = { key: 'ownerId', label: 'Lead Owner' }
+
 // ── Export dropdown — mirrors Contacts' ExportMenu, but always fetches the
 // FULL filtered dataset from the server first (Update 6: export must cover
 // every matching record, not just the current page).
@@ -290,8 +297,11 @@ export default function Companies() {
   // Export always includes every Company field (a superset of the visible
   // table columns), matching the same precedent as the existing Contacts export.
   const exportColumns = companyFields.map(f => ({ key: f.key, header: f.label }))
+  // Edit Columns offers Lead Owner alongside the server's dynamic field list —
+  // client-side only, doesn't touch Export/Import's field list.
+  const editColumnsFields = [...companyFields, LEAD_OWNER_COLUMN]
   // Table columns shown, in the field list's canonical order (not toggle order)
-  const orderedVisibleFields = companyFields.filter(f => visibleColumns.includes(f.key))
+  const orderedVisibleFields = editColumnsFields.filter(f => visibleColumns.includes(f.key))
 
   function renderCompanyCell(f, c) {
     if (f.key === 'email') {
@@ -301,6 +311,9 @@ export default function Companies() {
       return c.linkedinUrl
         ? <a href={c.linkedinUrl} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }} onClick={e => e.stopPropagation()}>LinkedIn</a>
         : '--'
+    }
+    if (f.key === 'ownerId') {
+      return c.owner?.name || '--'
     }
     const v = c[f.key]
     if (Array.isArray(v)) return v.length ? v.join(', ') : '--'
@@ -394,7 +407,7 @@ export default function Companies() {
             />
           </div>
           <CompanyExportMenu fetchAllForExport={fetchAllForExport} columns={exportColumns} />
-          <EditColumnsMenu fields={companyFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} />
+          <EditColumnsMenu fields={editColumnsFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} />
           <div className="view-toggle">
             <button className={`view-btn ${view === 'table' ? 'active' : ''}`} onClick={() => setView('table')}><List size={14} /></button>
             <button className={`view-btn ${view === 'grid'  ? 'active' : ''}`} onClick={() => setView('grid')}><LayoutGrid size={14} /></button>
