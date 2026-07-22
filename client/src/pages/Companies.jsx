@@ -346,7 +346,7 @@ export default function Companies() {
       <div className="contacts-header">
         <div className="header-left">
           <h1 className="contacts-title">
-            Companies <ChevronDown size={18} style={{ verticalAlign: 'middle', color: '#64748b' }} />
+            Companies
           </h1>
           <span className="records-count">{total} records</span>
         </div>

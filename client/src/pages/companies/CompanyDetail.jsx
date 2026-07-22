@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ChevronDown, ChevronLeft, FileText, Mail, Phone,
-  CheckSquare, Calendar, MoreHorizontal, Search,
+  CheckSquare, Calendar, MoreHorizontal,
   Plus, ExternalLink, Loader2, Pencil, Trash2
 } from 'lucide-react'
 import api from '../../api/client'
@@ -41,7 +41,7 @@ const LEFT_FIELDS = [
 
 const CENTER_TABS = ['Overview', 'Activities', 'Intelligence']
 
-function OverviewTab({ company, recentActs, onAction }) {
+function OverviewTab({ company, recentActs }) {
   const createdAt = company.createdAt
     ? new Date(company.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : '--'
@@ -66,10 +66,6 @@ function OverviewTab({ company, recentActs, onAction }) {
       <div className="detail-section">
         <div className="detail-section-header">
           Recent activities
-          <div className="section-actions">
-            <div className="section-search"><Search size={12} color="#94a3b8" /><input type="text" placeholder="Search" /></div>
-            <button className="section-btn" onClick={() => onAction('note')}>Add activities <ChevronDown size={12} /></button>
-          </div>
         </div>
         {recentActs.length === 0 ? (
           <div className="empty-assoc"><p>No recent activities. Log a note, call, or email below.</p></div>
@@ -209,7 +205,6 @@ export default function CompanyDetail() {
             <span className="detail-back-link" onClick={() => navigate('/companies')}>
               <ChevronLeft size={14} /> Companies
             </span>
-            <button className="detail-actions-btn">Actions <ChevronDown size={12} /></button>
           </div>
 
           <div className="detail-entity-header">
@@ -336,10 +331,6 @@ export default function CompanyDetail() {
               )
             })}
           </div>
-
-          <button className="detail-create-activities" onClick={() => openModal('note')}>
-            Create activities <ChevronDown size={13} />
-          </button>
         </div>
 
         {/* ── CENTER ── */}
@@ -352,7 +343,7 @@ export default function CompanyDetail() {
 
           {centerTab === 'Overview' && (
             <div className="detail-center-body">
-              <OverviewTab company={company} recentActs={recentActs} onAction={openModal} />
+              <OverviewTab company={company} recentActs={recentActs} />
             </div>
           )}
 
@@ -397,27 +388,6 @@ export default function CompanyDetail() {
                 ))}
               </div>
             )}
-          </div>
-
-          <div className="right-panel-section">
-            <div className="right-panel-header">
-              <div className="right-panel-header-left"><ChevronDown size={14} /> Activity summary</div>
-            </div>
-            <div style={{ padding: '8px 16px 16px' }}>
-              {[
-                { label: 'Total activities', val: recentActs.length },
-                { label: 'Notes',            val: recentActs.filter(a => a.type === 'note').length },
-                { label: 'Emails',           val: recentActs.filter(a => a.type === 'email').length },
-                { label: 'Calls',            val: recentActs.filter(a => a.type === 'call').length },
-                { label: 'Meetings',         val: recentActs.filter(a => a.type === 'meeting').length },
-                { label: 'Tasks',            val: recentActs.filter(a => a.type === 'task').length },
-              ].map(f => (
-                <div key={f.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: '1px solid #f8fafc' }}>
-                  <span style={{ fontSize: 12, color: '#64748b' }}>{f.label}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>{f.val}</span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
 
