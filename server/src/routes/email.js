@@ -293,8 +293,8 @@ router.get('/track/open/:token', async (req, res) => {
 })
 
 // Shared helper: fetch a Gmail thread's latest message headers so a reply can
-// continue it. Used by both the legacy contactId/companyId auto-thread path
-// and the new Email Mode "continue" lookup. Never throws — falls back to
+// continue it. Used by both the legacy companyId auto-thread path and the
+// new Email Mode "continue" lookup. Never throws — falls back to
 // threadId-only continuation if the thread's headers can't be read.
 async function resolveThreadMeta(gmail, threadId) {
   try {
@@ -325,10 +325,10 @@ async function resolveThreadMeta(gmail, threadId) {
 // POST /api/email/send — send email via Gmail API
 // Accepts: to, subject, body (plain) OR htmlBody (html), cc, bcc,
 //          attachments: [{ filename, content (base64), mimeType }]
-//          contactId, companyId
+//          companyId
 //          emailMode: 'new' | 'continue' (optional) — see Thread continuation below
 router.post('/send', auth, async (req, res) => {
-  const { to, subject, body, htmlBody, cc, bcc, attachments = [], contactId, companyId, emailMode } = req.body
+  const { to, subject, body, htmlBody, cc, bcc, attachments = [], companyId, emailMode } = req.body
   if (!to || !subject) return res.status(400).json({ message: 'To and Subject are required.' })
 
   // Never trust the frontend on this — a bin'd company should reject writes
@@ -396,9 +396,9 @@ router.post('/send', auth, async (req, res) => {
     // Three ways this resolves, in priority order:
     //   1. emailMode === 'new'      → always a fresh conversation (no lookup at all).
     //   2. emailMode === 'continue' → look up the latest thread by sender+recipient
-    //      email (Email Mode dropdown — Update 4). No contactId/companyId needed,
-    //      so this works from the standalone Email Composer too.
-    //   3. neither provided         → the ORIGINAL contactId/companyId auto-thread
+    //      email (Email Mode dropdown — Update 4). No companyId needed, so this
+    //      works from the standalone Email Composer too.
+    //   3. neither provided         → the ORIGINAL companyId auto-thread
     //      behavior, byte-for-byte unchanged, for any caller that predates Email Mode.
     // In all cases, if no matching thread is found these stay null → new thread,
     // exactly as before. Subject is never altered to defeat Gmail's own grouping.
@@ -438,14 +438,13 @@ router.post('/send', auth, async (req, res) => {
         references = meta.references
       }
 
-    } else if (contactId || companyId) {
+    } else if (companyId) {
       const lastEmail = await prisma.activity.findFirst({
         where: {
           type: 'email',
           threadId: { not: null },
           userId: req.user.id,
-          ...(contactId && { contactId }),
-          ...(companyId && { companyId }),
+          companyId,
         },
         orderBy: { createdAt: 'desc' },
       })
@@ -505,8 +504,7 @@ router.post('/send', auth, async (req, res) => {
     const activity = await prisma.activity.create({
       data: {
         type: 'email',
-        ...(contactId && { contactId }),
-        ...(companyId && { companyId }),
+        companyId,
         userId: req.user.id,
         title: `Email – ${sendSubject}`,
         body: body || (htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ').trim().slice(0, 2000) : null),
@@ -531,7 +529,7 @@ router.post('/send', auth, async (req, res) => {
 
 // POST /api/email/sync — strict sync: only emails between user Gmail ↔ contact/company email
 router.post('/sync', auth, async (req, res) => {
-  const { contactEmail, contactId, companyId } = req.body
+  const { contactEmail, companyId } = req.body
   if (!contactEmail) return res.status(400).json({ message: 'contactEmail required' })
 
   // Never trust the frontend on this — a bin'd company should reject writes
@@ -638,8 +636,7 @@ router.post('/sync', auth, async (req, res) => {
         await prisma.activity.create({
           data: {
             type:        'email',
-            ...(contactId && { contactId }),
-            ...(companyId && { companyId }),
+            companyId,
             userId:      req.user.id,
             title:       `Email – ${subjectRaw}`,
             body:        bodyText || null,
@@ -662,8 +659,7 @@ router.post('/sync', auth, async (req, res) => {
       where: {
         type: 'email',
         messageId: { not: null },
-        ...(contactId && { contactId }),
-        ...(companyId && { companyId }),
+        companyId,
       },
       select: { id: true, messageId: true },
     })

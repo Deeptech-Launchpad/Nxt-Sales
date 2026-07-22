@@ -24,40 +24,10 @@ model User {
   updatedAt        DateTime       @updatedAt
   activities       Activity[]
   companies        Company[]
-  contacts         Contact[]
   deals            Deal[]
   emailAccounts    EmailAccount[]
   sentMessages     ChatMessage[]  @relation("SentMessages")
   receivedMessages ChatMessage[]  @relation("ReceivedMessages")
-}
-
-model Contact {
-  id             String     @id @default(cuid())
-  name           String
-  email          String
-  phone          String?
-  company        String?
-  status         String     @default("Lead")
-  notes          String?
-  ownerId        String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  firstName      String?
-  jobTitle       String?
-  lastName       String?
-  leadStatus     String?
-  lifecycleStage String     @default("Lead")
-  linkedinUrl    String?
-  industry       String?
-  country        String?
-  emails         Json?
-  phones         Json?
-  activities     Activity[]
-  owner          User?      @relation(fields: [ownerId], references: [id])
-  deals          Deal[]
-
-  @@index([email])
-  @@index([ownerId])
 }
 
 model Company {
@@ -113,7 +83,6 @@ model Deal {
   title     String
   value     Float     @default(0)
   stage     String    @default("Discussion")
-  contactId String?
   companyId String?
   ownerId   String
   closeDate DateTime?
@@ -132,7 +101,6 @@ model Deal {
   opportunityType     String?
   strategicImportance String?
   expectedOutcome     String?
-  contact   Contact?  @relation(fields: [contactId], references: [id])
   company   Company?  @relation(fields: [companyId], references: [id])
   owner     User      @relation(fields: [ownerId], references: [id])
 
@@ -143,7 +111,6 @@ model Deal {
 model Activity {
   id            String    @id @default(cuid())
   type          String
-  contactId     String?
   userId        String
   title         String?
   body          String?
@@ -177,10 +144,8 @@ model Activity {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   company       Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  contact       Contact?  @relation(fields: [contactId], references: [id], onDelete: Cascade)
   user          User      @relation(fields: [userId], references: [id])
 
-  @@index([contactId])
   @@index([companyId])
   @@index([messageId])
   @@index([type])

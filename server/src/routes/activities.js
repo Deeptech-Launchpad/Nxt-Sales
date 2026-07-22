@@ -3,15 +3,13 @@ const auth   = require('../middleware/authMiddleware')
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 
-// GET /api/activities?contactId=xxx&type=xxx or companyId=xxx&type=xxx
+// GET /api/activities?companyId=xxx&type=xxx
 router.get('/', auth, async (req, res) => {
   try {
-    const { contactId, companyId, type } = req.query
-    if (!contactId && !companyId) return res.status(400).json({ message: 'contactId or companyId required' })
+    const { companyId, type } = req.query
+    if (!companyId) return res.status(400).json({ message: 'companyId required' })
 
-    const where = {}
-    if (contactId) where.contactId = contactId
-    if (companyId) where.companyId = companyId
+    const where = { companyId }
     if (type && type !== 'all') where.type = type
 
     const activities = await prisma.activity.findMany({
@@ -30,7 +28,7 @@ router.get('/', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const {
-      type, contactId, companyId,
+      type, companyId,
       title, body,
       toEmail, fromEmail, subject, emailStatus,
       direction, duration, outcome,
@@ -39,13 +37,12 @@ router.post('/', auth, async (req, res) => {
       meetLink,
     } = req.body
 
-    if (!type || (!contactId && !companyId)) return res.status(400).json({ message: 'type and contactId or companyId required' })
+    if (!type || !companyId) return res.status(400).json({ message: 'type and companyId required' })
 
     const activity = await prisma.activity.create({
       data: {
         type,
-        ...(contactId && { contactId }),
-        ...(companyId && { companyId }),
+        companyId,
         userId: req.user.id,
         title:  title  || null,
         body:   body   || null,

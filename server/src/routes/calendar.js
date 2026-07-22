@@ -19,7 +19,7 @@ function getOAuth2Client(account) {
 
 // POST /api/calendar/schedule
 router.post('/schedule', auth, async (req, res) => {
-  const { title, startTime, endTime, description, location, attendees, contactId, companyId } = req.body
+  const { title, startTime, endTime, description, location, attendees, companyId } = req.body
 
   if (!title || !startTime) {
     return res.status(400).json({ message: 'Title and start time are required.' })
@@ -34,8 +34,7 @@ router.post('/schedule', auth, async (req, res) => {
     const activity = await prisma.activity.create({
       data: {
         type: 'meeting',
-        ...(contactId && { contactId }),
-        ...(companyId && { companyId }),
+        companyId,
         userId:        req.user.id,
         title:         title || 'Meeting',
         body:          description || null,
@@ -127,8 +126,7 @@ router.post('/schedule', auth, async (req, res) => {
     const activity = await prisma.activity.create({
       data: {
         type: 'meeting',
-        ...(contactId && { contactId }),
-        ...(companyId && { companyId }),
+        companyId,
         userId:        req.user.id,
         title:         title || 'Meeting',
         body:          description || null,
