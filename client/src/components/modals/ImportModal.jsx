@@ -398,6 +398,12 @@ export default function ImportModal({ entity, isOpen, onClose, onSuccess }) {
                   <div style={{ fontSize: 28, fontWeight: 700, color: '#16a34a' }}>{result.created}</div>
                   <div style={{ fontSize: 12, color: '#64748b' }}>{nounCap} created</div>
                 </div>
+                {result.updated > 0 && (
+                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '12px 24px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: '#2563eb' }}>{result.updated}</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Matched existing — filled missing fields</div>
+                  </div>
+                )}
                 {result.failed > 0 && (
                   <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 24px', textAlign: 'center' }}>
                     <div style={{ fontSize: 28, fontWeight: 700, color: '#ef4444' }}>{result.failed}</div>
@@ -405,6 +411,11 @@ export default function ImportModal({ entity, isOpen, onClose, onSuccess }) {
                   </div>
                 )}
               </div>
+              {result.messages?.length > 0 && (
+                <div style={{ textAlign: 'left', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: 12, fontSize: 12, color: '#1e40af', maxHeight: 120, overflowY: 'auto', marginBottom: result.errors?.length > 0 ? 10 : 0 }}>
+                  {result.messages.map((m, i) => <div key={i}>{m}</div>)}
+                </div>
+              )}
               {result.errors?.length > 0 && (
                 <div style={{ textAlign: 'left', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: 12, fontSize: 12, color: '#991b1b', maxHeight: 120, overflowY: 'auto' }}>
                   {result.errors.map((e, i) => <div key={i}>{e}</div>)}

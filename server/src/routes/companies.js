@@ -191,13 +191,17 @@ router.post('/bulk', auth, async (req, res) => {
       return res.status(400).json({ message: 'No companies provided.' })
     }
 
-    let created = 0, failed = 0
+    let created = 0, updated = 0, failed = 0
     const errors = []
+    const messages = []
     const num = (v, float) => {
       if (v === undefined || v === null || v === '') return null
       const n = float ? parseFloat(v) : parseInt(v)
       return Number.isFinite(n) ? n : null
     }
+    // "Blank" = nothing meaningfully entered yet — used to decide which fields
+    // a duplicate-matched row is allowed to fill in below.
+    const isBlank = (v) => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
 
     // Lead Owner is the same single-owner field Companies always had (ownerId,
     // a real system user) — the import column is a name, matched case-
@@ -223,16 +227,84 @@ router.post('/bulk', auth, async (req, res) => {
         const matchedOwnerId = leadOwnerName ? userIdByName.get(leadOwnerName.toLowerCase()) : null
 
         // Duplicate detection during bulk import — same fields/logic as
-        // /check-duplicates and the single-company create route, so a row that
+        // /check-duplicates and the single-company create route. A row that
         // matches an existing company (by name, email, phone, or domain) is
-        // skipped here too, not just flagged in the preview step.
+        // never turned into a second company — instead it backfills any
+        // currently-blank fields on the match (see below).
         const dupConditions = [{ name: { equals: String(c.name).trim(), mode: 'insensitive' } }]
         if (emailList[0])  dupConditions.push({ email: emailList[0].toLowerCase() })
         if (phoneList[0])  dupConditions.push({ phone: phoneList[0] })
         if (c.domain && String(c.domain).trim()) dupConditions.push({ domain: String(c.domain).trim() })
         // Recycle-Binned companies are archived — never block a fresh import row.
         const existingDup = await prisma.company.findFirst({ where: { deletedAt: null, OR: dupConditions } })
-        if (existingDup) { errors.push(`${c.name}: duplicate of existing company "${existingDup.name}" — row skipped`); failed++; continue }
+        if (existingDup) {
+          // Backfill only — a matched row fills in fields the existing company
+          // doesn't have yet; anything already filled in is left untouched, so
+          // re-importing a spreadsheet to add newly-tracked columns (e.g. CMS,
+          // Remarks) can never overwrite data a user already entered.
+          const data = {}
+          const setIfBlank = (key, newVal) => { if (isBlank(existingDup[key]) && !isBlank(newVal)) data[key] = newVal }
+
+          setIfBlank('domain',                c.domain || null)
+          setIfBlank('industry',              c.industry || null)
+          setIfBlank('industryType',          c.industryType || null)
+          setIfBlank('companyType',           c.companyType || null)
+          setIfBlank('leadType',              c.leadType || null)
+          setIfBlank('employeeCount',         num(c.employeeCount, false))
+          setIfBlank('revenue',               num(c.revenue, true))
+          setIfBlank('country',               c.country || null)
+          setIfBlank('city',                  c.city || null)
+          setIfBlank('stateRegion',           c.stateRegion || null)
+          setIfBlank('postalCode',            c.postalCode || null)
+          setIfBlank('timeZone',              c.timeZone || null)
+          setIfBlank('originalTrafficSource', c.originalTrafficSource || null)
+          setIfBlank('linkedinUrl',           c.linkedinUrl || null)
+          setIfBlank('description',           c.description || null)
+          setIfBlank('leadStatus',            c.leadStatus || null)
+          setIfBlank('endPdpUrl',             c.endPdpUrl || null)
+          setIfBlank('cms',                   c.cms || null)
+          setIfBlank('remarks',               c.remarks || null)
+          setIfBlank('ownerId',               matchedOwnerId || null)
+
+          // Email/Phone: scalar + array are one unit — only fill when the
+          // company has NEITHER, so any existing email/phone is left as-is.
+          if (isBlank(existingDup.email) && isBlank(existingDup.emails) && emailList.length) {
+            data.email = emailList[0].toLowerCase()
+            data.emails = emailList
+          }
+          if (isBlank(existingDup.phone) && isBlank(existingDup.phones) && phoneList.length) {
+            data.phone = phoneList[0]
+            data.phones = phoneList
+          }
+          if (isBlank(existingDup.contactPersons) && contactPersonList.length) data.contactPersons = contactPersonList
+          if (isBlank(existingDup.linkedProfiles) && linkedProfileList.length) data.linkedProfiles = linkedProfileList
+
+          const filledKeys = Object.keys(data)
+          if (filledKeys.length) {
+            await prisma.company.update({ where: { id: existingDup.id }, data })
+          }
+
+          // Notes/Task are additive Activity records (not Company columns), so
+          // they still get added for a matched row, same as a fresh import.
+          const noteText = c.notes
+          if (noteText && String(noteText).trim()) {
+            await prisma.activity.create({
+              data: { type: 'note', companyId: existingDup.id, userId: req.user.id, title: 'Imported Note', body: String(noteText).trim() },
+            }).catch(e => console.error(`Import note creation failed for ${existingDup.id}:`, e.message))
+          }
+          const taskText = c.task
+          if (taskText && String(taskText).trim()) {
+            await prisma.activity.create({
+              data: { type: 'task', companyId: existingDup.id, userId: req.user.id, title: String(taskText).trim(), taskStatus: 'not_started' },
+            }).catch(e => console.error(`Import task creation failed for ${existingDup.id}:`, e.message))
+          }
+
+          updated++
+          messages.push(filledKeys.length
+            ? `${c.name}: matched existing company "${existingDup.name}" — filled ${filledKeys.length} missing field(s), existing data unchanged.`
+            : `${c.name}: matched existing company "${existingDup.name}" — no missing fields to fill, nothing changed.`)
+          continue
+        }
 
         const newCompany = await prisma.company.create({
           data: {
@@ -302,7 +374,7 @@ router.post('/bulk', auth, async (req, res) => {
       }
     }
 
-    res.json({ created, failed, errors })
+    res.json({ created, updated, failed, errors, messages })
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: 'Server error.' })
