@@ -326,11 +326,49 @@ router.post('/sync', auth, async (req, res) => {
       }
     }
 
+    // Backfill: each sync only re-fetches CallHippo's most recent 100 calls, so
+    // an older call log that was synced BEFORE its matching company (or that
+    // company's phone number) existed in the CRM would otherwise stay
+    // unmatched forever — it falls outside every future sync's fetch window,
+    // so it's never re-evaluated against the index above. Re-check every
+    // still-unmatched call log against the same index built for this sync, so
+    // it links up as soon as the company/phone is added, however long after
+    // the call itself happened.
+    let backfilled = 0
+    const stillUnmatched = await prisma.callLog.findMany({ where: { companyId: null } })
+    for (const log of stillUnmatched) {
+      const matchedCompany = companyPhoneIndex.get(normalizePhone(log.toNumber))
+      if (!matchedCompany) continue
+
+      await prisma.callLog.update({ where: { id: log.id }, data: { companyId: matchedCompany.id } })
+      await prisma.activity.upsert({
+        where:  { callLogId: log.id },
+        create: {
+          type:      'call',
+          companyId: matchedCompany.id,
+          userId:    req.user.id,
+          title:     `${log.direction === 'outbound' ? 'Outbound' : 'Inbound'} call – ${matchedCompany.name}`,
+          direction: log.direction,
+          duration:  log.duration,
+          outcome:   log.status,
+          recordingUrl: log.recordingUrl,
+          callLogId: log.id,
+        },
+        update: {
+          direction: log.direction,
+          duration:  log.duration,
+          outcome:   log.status,
+          recordingUrl: log.recordingUrl,
+        },
+      }).catch(e => console.error(`[CallHippo] Backfill activity link failed for call ${log.callhippoId}:`, e.message))
+      backfilled++
+    }
+
     // Recover any analyses orphaned by a restart, then run the pending queue
     triggerPendingAnalysis().catch(e => console.error('[CallHippo] auto-analysis error:', e.message))
 
-    console.log(`[CallHippo] Sync complete: ${synced} upserted, ${skipped} skipped`)
-    res.json({ synced, skipped, total: callsArray.length })
+    console.log(`[CallHippo] Sync complete: ${synced} upserted, ${skipped} skipped, ${backfilled} backfilled`)
+    res.json({ synced, skipped, backfilled, total: callsArray.length })
 
   } catch (err) {
     console.error('[CallHippo] sync error:', err.message)

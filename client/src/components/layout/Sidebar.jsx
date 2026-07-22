@@ -95,6 +95,16 @@ export default function Sidebar() {
     setExpanded(p => ({ ...p, [section]: !p[section] }))
   }
 
+  // Filter nav items by the search box — sections with no matching item are
+  // hidden, and a section with a match auto-expands so the result is visible
+  // without also needing to click it open.
+  const query = search.trim().toLowerCase()
+  const filteredMenuStructure = query
+    ? menuStructure
+        .map(s => ({ ...s, items: s.items.filter(i => i.label.toLowerCase().includes(query)) }))
+        .filter(s => s.items.length > 0)
+    : menuStructure
+
   return (
     <aside className="sidebar-modern">
       {/* Header */}
@@ -149,8 +159,8 @@ export default function Sidebar() {
           )}
         </NavLink>
 
-        {menuStructure.map(({ section, icon: SectionIcon, items }) => {
-          const isExpanded = expanded[section]
+        {filteredMenuStructure.map(({ section, icon: SectionIcon, items }) => {
+          const isExpanded = query ? true : expanded[section]
 
           return (
             <div key={section} className="section-modern">
@@ -189,6 +199,10 @@ export default function Sidebar() {
             </div>
           )
         })}
+
+        {query && filteredMenuStructure.length === 0 && (
+          <div style={{ padding: '10px 16px', fontSize: 12, color: '#94a3b8' }}>No matches</div>
+        )}
       </nav>
 
       {/* Footer */}
