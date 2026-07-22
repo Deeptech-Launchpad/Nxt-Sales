@@ -93,9 +93,9 @@ function buildCompanyWhere(query, userId) {
 
   if (search) {
     where.OR = [
-      { name:    { contains: search, mode: 'insensitive' } },
-      { email:   { contains: search, mode: 'insensitive' } },
-      { website: { contains: search, mode: 'insensitive' } },
+      { name:   { contains: search, mode: 'insensitive' } },
+      { email:  { contains: search, mode: 'insensitive' } },
+      { domain: { contains: search, mode: 'insensitive' } },
     ]
   }
 
@@ -149,9 +149,9 @@ router.get('/export', auth, async (req, res) => {
 
 // ── POST /api/companies/check-duplicates — bulk pre-import duplicate preview ──
 // Read-only: creates/modifies nothing. For each row, checks the same fields as
-// single-company duplicate detection (name/email/phone/website) plus domain,
-// and reports the matching existing company, if any, so the Import modal can
-// preview and let the user skip/remove duplicate rows before anything is created.
+// single-company duplicate detection (name/email/phone/domain), and reports
+// the matching existing company, if any, so the Import modal can preview and
+// let the user skip/remove duplicate rows before anything is created.
 router.post('/check-duplicates', auth, async (req, res) => {
   try {
     const { companies } = req.body
@@ -163,10 +163,9 @@ router.post('/check-duplicates', auth, async (req, res) => {
       if (!name) { results.push({ isDuplicate: false, existing: null }); continue }
 
       const dupConditions = [{ name: { equals: name, mode: 'insensitive' } }]
-      if (c.email)   dupConditions.push({ email: String(c.email).toLowerCase().trim() })
-      if (c.phone)   dupConditions.push({ phone: String(c.phone).trim() })
-      if (c.website) dupConditions.push({ website: String(c.website).trim() })
-      if (c.domain)  dupConditions.push({ domain: String(c.domain).trim() })
+      if (c.email)  dupConditions.push({ email: String(c.email).toLowerCase().trim() })
+      if (c.phone)  dupConditions.push({ phone: String(c.phone).trim() })
+      if (c.domain) dupConditions.push({ domain: String(c.domain).trim() })
 
       // Recycle-Binned companies are archived — they must never block a new
       // company from being created/imported with the same identity.
@@ -225,13 +224,12 @@ router.post('/bulk', auth, async (req, res) => {
 
         // Duplicate detection during bulk import — same fields/logic as
         // /check-duplicates and the single-company create route, so a row that
-        // matches an existing company (by name, email, phone, website, or
-        // domain) is skipped here too, not just flagged in the preview step.
+        // matches an existing company (by name, email, phone, or domain) is
+        // skipped here too, not just flagged in the preview step.
         const dupConditions = [{ name: { equals: String(c.name).trim(), mode: 'insensitive' } }]
         if (emailList[0])  dupConditions.push({ email: emailList[0].toLowerCase() })
         if (phoneList[0])  dupConditions.push({ phone: phoneList[0] })
-        if (c.website && String(c.website).trim()) dupConditions.push({ website: String(c.website).trim() })
-        if (c.domain  && String(c.domain).trim())  dupConditions.push({ domain: String(c.domain).trim() })
+        if (c.domain && String(c.domain).trim()) dupConditions.push({ domain: String(c.domain).trim() })
         // Recycle-Binned companies are archived — never block a fresh import row.
         const existingDup = await prisma.company.findFirst({ where: { deletedAt: null, OR: dupConditions } })
         if (existingDup) { errors.push(`${c.name}: duplicate of existing company "${existingDup.name}" — row skipped`); failed++; continue }
@@ -243,8 +241,6 @@ router.post('/bulk', auth, async (req, res) => {
             emails:                emailList.length ? emailList : null,
             phone:                 phoneList[0] || null,
             phones:                phoneList.length ? phoneList : null,
-            mobile:                c.mobile || null,
-            website:               c.website || null,
             domain:                c.domain || null,
             industry:              c.industry || null,
             industryType:          c.industryType || null,
@@ -322,9 +318,9 @@ router.get('/recycle-bin', auth, async (req, res) => {
       deletedAt: { not: null },
       ...(search && {
         OR: [
-          { name:    { contains: search, mode: 'insensitive' } },
-          { email:   { contains: search, mode: 'insensitive' } },
-          { website: { contains: search, mode: 'insensitive' } },
+          { name:   { contains: search, mode: 'insensitive' } },
+          { email:  { contains: search, mode: 'insensitive' } },
+          { domain: { contains: search, mode: 'insensitive' } },
         ],
       }),
     }
@@ -362,8 +358,8 @@ router.get('/:id', auth, async (req, res) => {
 // ── POST /api/companies ───────────────────────────────────
 router.post('/', auth, async (req, res) => {
   try {
-    const { name, email, phone, website, industry, employeeCount, revenue, lifecycleStage, leadStatus, status, ownerId,
-            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, mobile, emails, phones,
+    const { name, email, phone, industry, employeeCount, revenue, lifecycleStage, leadStatus, status, ownerId,
+            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, emails, phones,
             endPdpUrl, cms, remarks, contactPersons, linkedProfiles } = req.body
     if (!name) return res.status(400).json({ message: 'Company name is required.' })
 
@@ -374,17 +370,17 @@ router.post('/', auth, async (req, res) => {
     const primaryEmail = emailList[0] ? emailList[0].toLowerCase() : null
     const primaryPhone = phoneList[0] || null
 
-    // Duplicate check — name (always) + email + phone + website (when provided)
+    // Duplicate check — name (always) + email + phone + Company URL/domain (when provided)
     const dupConditions = [{ name: { equals: name.trim(), mode: 'insensitive' } }]
     if (primaryEmail) dupConditions.push({ email: primaryEmail })
     if (primaryPhone) dupConditions.push({ phone: primaryPhone })
-    if (website && website.trim()) dupConditions.push({ website: website.trim() })
+    if (domain && domain.trim()) dupConditions.push({ domain: domain.trim() })
 
     // Recycle-Binned companies are archived — never block creating a new one.
     const existing = await prisma.company.findFirst({ where: { deletedAt: null, OR: dupConditions } })
     if (existing) {
       return res.status(409).json({
-        message: 'A company with this name, email, phone, or website already exists.',
+        message: 'A company with this name, email, phone, or company URL already exists.',
         duplicate: true,
         existing: { id: existing.id, name: existing.name },
       })
@@ -397,7 +393,6 @@ router.post('/', auth, async (req, res) => {
         emails:          emailList.length ? emailList : null,
         phone:           primaryPhone,
         phones:          phoneList.length ? phoneList : null,
-        website:         website  || null,
         industry:        industry || null,
         employeeCount:   employeeCount ? parseInt(employeeCount) : null,
         revenue:         revenue  ? parseFloat(revenue) : null,
@@ -417,7 +412,6 @@ router.post('/', auth, async (req, res) => {
         leadType:              leadType              || null,
         originalTrafficSource: originalTrafficSource || null,
         country:               country               || null,
-        mobile:                mobile                || null,
         endPdpUrl:             endPdpUrl             || null,
         cms:                   cms                   || null,
         remarks:               remarks               || null,
@@ -444,8 +438,8 @@ router.put('/:id', auth, async (req, res) => {
     const existingRecord = await prisma.company.findUnique({ where: { id }, select: { deletedAt: true } })
     if (!existingRecord || existingRecord.deletedAt) return res.status(404).json({ message: 'Company not found.' })
 
-    const { name, email, phone, website, industry, employeeCount, revenue, lifecycleStage, leadStatus, status, ownerId,
-            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, mobile, emails, phones,
+    const { name, email, phone, industry, employeeCount, revenue, lifecycleStage, leadStatus, status, ownerId,
+            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, emails, phones,
             endPdpUrl, cms, remarks, contactPersons, linkedProfiles } = req.body
 
     // Recompute the multi-value lists + primary only when arrays were sent.
@@ -462,7 +456,6 @@ router.put('/:id', auth, async (req, res) => {
                       : (email !== undefined && { email: email ? email.toLowerCase().trim() : null })),
         ...(phoneList ? { phone: phoneList[0] || null, phones: phoneList.length ? phoneList : null }
                       : (phone !== undefined && { phone: phone || null })),
-        ...(website !== undefined && { website: website || null }),
         ...(industry !== undefined && { industry: industry || null }),
         ...(employeeCount !== undefined && { employeeCount: employeeCount ? parseInt(employeeCount) : null }),
         ...(revenue !== undefined && { revenue: revenue ? parseFloat(revenue) : null }),
@@ -482,7 +475,6 @@ router.put('/:id', auth, async (req, res) => {
         ...(leadType !== undefined && { leadType: leadType || null }),
         ...(originalTrafficSource !== undefined && { originalTrafficSource: originalTrafficSource || null }),
         ...(country !== undefined && { country: country || null }),
-        ...(mobile !== undefined && { mobile: mobile || null }),
         ...(endPdpUrl !== undefined && { endPdpUrl: endPdpUrl || null }),
         ...(cms !== undefined && { cms: cms || null }),
         ...(remarks !== undefined && { remarks: remarks || null }),
@@ -519,9 +511,9 @@ router.delete('/bulk', auth, async (req, res) => {
 
 // ── POST /api/companies/recycle-bin/restore ───────────────────────────────
 // Restores each id unless an ACTIVE company already exists with the same
-// name/email/phone/website/domain — in that case the row stays in the bin
-// and the conflict is reported back so the user can decide, rather than
-// silently overwriting or merging anything.
+// name/email/phone/domain — in that case the row stays in the bin and the
+// conflict is reported back so the user can decide, rather than silently
+// overwriting or merging anything.
 router.post('/recycle-bin/restore', auth, async (req, res) => {
   try {
     const { ids } = req.body
@@ -535,10 +527,9 @@ router.post('/recycle-bin/restore', auth, async (req, res) => {
       if (!company || !company.deletedAt) continue // not in the bin — skip
 
       const dupConditions = [{ name: { equals: company.name, mode: 'insensitive' } }]
-      if (company.email)   dupConditions.push({ email: company.email })
-      if (company.phone)   dupConditions.push({ phone: company.phone })
-      if (company.website) dupConditions.push({ website: company.website })
-      if (company.domain)  dupConditions.push({ domain: company.domain })
+      if (company.email)  dupConditions.push({ email: company.email })
+      if (company.phone)  dupConditions.push({ phone: company.phone })
+      if (company.domain) dupConditions.push({ domain: company.domain })
 
       const conflict = await prisma.company.findFirst({ where: { deletedAt: null, OR: dupConditions } })
       if (conflict) {

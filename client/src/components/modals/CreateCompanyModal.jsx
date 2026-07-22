@@ -7,17 +7,6 @@ import MultiValueInput from '../MultiValueInput'
 import { cleanList } from '../../utils/multiValue'
 import '../../styles/modal.css'
 
-const LIFECYCLE_STAGES = [
-  'Subscriber',
-  'Lead',
-  'Marketing Qualified Lead',
-  'Sales Qualified Lead',
-  'Opportunity',
-  'Customer',
-  'Evangelist',
-  'Other',
-]
-
 const LEAD_STATUSES = [
   'New',
   'Open',
@@ -28,12 +17,6 @@ const LEAD_STATUSES = [
   'Connected',
   'Bad Timing',
 ]
-
-// Option lists for the new reference dropdown fields (adjustable later)
-const COMPANY_TYPES  = ['Prospect', 'Partner', 'Reseller', 'Vendor', 'Customer', 'Competitor', 'Other']
-const INDUSTRY_TYPES = ['B2B', 'B2C', 'B2B2C', 'Enterprise', 'SMB', 'Government', 'Non-Profit', 'Other']
-const LEAD_TYPES     = ['New Business', 'Existing Business', 'Referral', 'Inbound', 'Outbound', 'Partner', 'Other']
-const TRAFFIC_SOURCES = ['Organic Search', 'Paid Search', 'Direct Traffic', 'Referrals', 'Social Media', 'Email Marketing', 'Paid Social', 'Offline Sources', 'Other Campaigns', 'Other']
 
 // ── Reusable searchable single-select dropdown ────────────
 function SearchableSelect({ value, onChange, options, placeholder = 'Select…', showEmail = false }) {
@@ -124,13 +107,9 @@ function SearchableSelect({ value, onChange, options, placeholder = 'Select…',
 
 // ── Main Modal ────────────────────────────────────────────
 const EMPTY = {
-  name: '', emails: [''], phones: [''], website: '',
-  industry: '', employeeCount: '', revenue: '',
-  ownerId: '', lifecycleStage: 'Lead', leadStatus: '',
-  // New reference fields
-  domain: '', mobile: '', country: '', city: '', stateRegion: '', postalCode: '',
-  timeZone: '', description: '', linkedinUrl: '',
-  companyType: '', industryType: '', leadType: '', originalTrafficSource: '',
+  name: '', emails: [''], phones: [''],
+  industry: '', ownerId: '', leadStatus: '',
+  domain: '', country: '',
   endPdpUrl: '', cms: '', remarks: '',
   contactPersons: [''], linkedProfiles: [''],
 }
@@ -171,20 +150,10 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
     ...COUNTRIES.map(c => ({ value: c, label: c })),
   ]
 
-  const lifecycleOptions = [
-    { value: '', label: 'Select a stage' },
-    ...LIFECYCLE_STAGES.map(s => ({ value: s, label: s })),
-  ]
-
   const leadStatusOptions = [
     { value: '', label: 'Select a status' },
     ...LEAD_STATUSES.map(s => ({ value: s, label: s })),
   ]
-
-  const companyTypeOptions   = [{ value: '', label: 'Select a type' },          ...COMPANY_TYPES.map(s => ({ value: s, label: s }))]
-  const industryTypeOptions  = [{ value: '', label: 'Select industry type' },   ...INDUSTRY_TYPES.map(s => ({ value: s, label: s }))]
-  const leadTypeOptions      = [{ value: '', label: 'Select a lead type' },      ...LEAD_TYPES.map(s => ({ value: s, label: s }))]
-  const trafficSourceOptions = [{ value: '', label: 'Select a source' },         ...TRAFFIC_SOURCES.map(s => ({ value: s, label: s }))]
 
   const set = (field, val) => setForm(p => ({ ...p, [field]: val }))
 
@@ -204,26 +173,11 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
         emails,
         phone:           phones[0] || null,
         phones,
-        website:         form.website || null,
         industry:        form.industry || null,
-        employeeCount:   form.employeeCount ? parseInt(form.employeeCount) : null,
-        revenue:         form.revenue ? parseFloat(form.revenue) : null,
         ownerId:         form.ownerId || null,
-        lifecycleStage:  form.lifecycleStage || 'Lead',
         leadStatus:      form.leadStatus || null,
         domain:                form.domain || null,
-        companyType:           form.companyType || null,
-        city:                  form.city || null,
-        stateRegion:           form.stateRegion || null,
-        postalCode:            form.postalCode || null,
-        timeZone:              form.timeZone || null,
-        description:           form.description || null,
-        linkedinUrl:           form.linkedinUrl || null,
-        industryType:          form.industryType || null,
-        leadType:              form.leadType || null,
-        originalTrafficSource: form.originalTrafficSource || null,
         country:               form.country || null,
-        mobile:                form.mobile || null,
         endPdpUrl:             form.endPdpUrl || null,
         cms:                   form.cms || null,
         remarks:               form.remarks || null,
@@ -295,7 +249,7 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
                 Duplicate company detected
               </p>
               <p style={{ margin: '0 0 8px', fontSize: 13, color: '#78350f' }}>
-                <strong>{duplicate.name}</strong> already exists with the same name, email, phone, or website.
+                <strong>{duplicate.name}</strong> already exists with the same name, email, phone, or company URL.
               </p>
               <a
                 href={`/companies/${duplicate.id}`}
@@ -316,17 +270,6 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
               type="tel"
               placeholder="+1 555 000 1234"
               addLabel="Add phone"
-            />
-          </div>
-
-          {/* Website */}
-          <div className="form-group">
-            <label>Website</label>
-            <input
-              type="url"
-              value={form.website}
-              onChange={e => set('website', e.target.value)}
-              placeholder="https://example.com"
             />
           </div>
 
@@ -354,40 +297,6 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
             />
           </div>
 
-          {/* Employee count */}
-          <div className="form-group">
-            <label>Number of employees</label>
-            <input
-              type="number"
-              value={form.employeeCount}
-              onChange={e => set('employeeCount', e.target.value)}
-              placeholder=""
-            />
-          </div>
-
-          {/* Annual revenue */}
-          <div className="form-group">
-            <label>Annual revenue</label>
-            <input
-              type="number"
-              value={form.revenue}
-              onChange={e => set('revenue', e.target.value)}
-              placeholder=""
-              step="0.01"
-            />
-          </div>
-
-          {/* Lifecycle stage */}
-          <div className="form-group">
-            <label>Lifecycle stage</label>
-            <SearchableSelect
-              value={form.lifecycleStage}
-              onChange={v => set('lifecycleStage', v)}
-              options={lifecycleOptions}
-              placeholder="Select a stage"
-            />
-          </div>
-
           {/* Lead status */}
           <div className="form-group">
             <label>Lead status</label>
@@ -401,68 +310,13 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
 
           {/* ── Additional fields ── */}
           <div className="form-group">
-            <label>Company domain name</label>
+            <label>Company URL</label>
             <input type="text" value={form.domain} onChange={e => set('domain', e.target.value)} placeholder="example.com" />
-          </div>
-
-          <div className="form-group">
-            <label>Type</label>
-            <SearchableSelect value={form.companyType} onChange={v => set('companyType', v)} options={companyTypeOptions} placeholder="Select a type" />
-          </div>
-
-          <div className="form-group">
-            <label>Industry Type</label>
-            <SearchableSelect value={form.industryType} onChange={v => set('industryType', v)} options={industryTypeOptions} placeholder="Select industry type" />
-          </div>
-
-          <div className="form-group">
-            <label>Lead Type</label>
-            <SearchableSelect value={form.leadType} onChange={v => set('leadType', v)} options={leadTypeOptions} placeholder="Select a lead type" />
-          </div>
-
-          <div className="form-group">
-            <label>Original Traffic Source</label>
-            <SearchableSelect value={form.originalTrafficSource} onChange={v => set('originalTrafficSource', v)} options={trafficSourceOptions} placeholder="Select a source" />
           </div>
 
           <div className="form-group">
             <label>Country of Origin</label>
             <SearchableSelect value={form.country} onChange={v => set('country', v)} options={countryOptions} placeholder="Select a country" />
-          </div>
-
-          <div className="form-group">
-            <label>Mobile</label>
-            <input type="tel" value={form.mobile} onChange={e => set('mobile', e.target.value)} placeholder="" />
-          </div>
-
-          <div className="form-group">
-            <label>City</label>
-            <input type="text" value={form.city} onChange={e => set('city', e.target.value)} placeholder="" />
-          </div>
-
-          <div className="form-group">
-            <label>State/Region</label>
-            <input type="text" value={form.stateRegion} onChange={e => set('stateRegion', e.target.value)} placeholder="" />
-          </div>
-
-          <div className="form-group">
-            <label>Postal code</label>
-            <input type="text" value={form.postalCode} onChange={e => set('postalCode', e.target.value)} placeholder="" />
-          </div>
-
-          <div className="form-group">
-            <label>Time zone</label>
-            <input type="text" value={form.timeZone} onChange={e => set('timeZone', e.target.value)} placeholder="" />
-          </div>
-
-          <div className="form-group">
-            <label>LinkedIn URL</label>
-            <input type="url" value={form.linkedinUrl} onChange={e => set('linkedinUrl', e.target.value)} placeholder="https://www.linkedin.com/company/..." />
-          </div>
-
-          <div className="form-group">
-            <label>Description</label>
-            <textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)} placeholder="" />
           </div>
 
           <div className="form-group">

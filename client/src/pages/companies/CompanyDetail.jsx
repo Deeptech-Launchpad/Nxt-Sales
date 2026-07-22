@@ -27,7 +27,7 @@ const PRIMARY_TAG = {
 const LEFT_FIELDS = [
   { label: 'Email',           key: 'email',        isEmail: true },
   { label: 'Phone number',    key: 'phone',        isPhone: true  },
-  { label: 'Website',         key: 'website'                     },
+  { label: 'Company URL',     key: 'domain'                      },
   { label: 'Lead Owner',      key: '_ownerName'                  },
   { label: 'Industry',        key: 'industry'                    },
   { label: 'Lifecycle stage', key: 'lifecycleStage'              },
@@ -103,7 +103,7 @@ function IntelligenceTab({ company }) {
         {[
           { key: 'Email',    val: company.email    },
           { key: 'Phone',    val: company.phone    },
-          { key: 'Website',  val: company.website  },
+          { key: 'Company URL', val: company.domain },
           { key: 'Industry', val: company.industry },
         ].filter(f => f.val).map(f => (
           <div key={f.key} className="intel-field-row">
@@ -112,7 +112,7 @@ function IntelligenceTab({ company }) {
           </div>
         ))}
       </div>
-      {!company.email && !company.website && !company.industry && (
+      {!company.email && !company.domain && !company.industry && (
         <div className="empty-assoc" style={{ marginTop: 24 }}><p>No intelligence data available.</p></div>
       )}
     </div>
@@ -217,9 +217,9 @@ export default function CompanyDetail() {
               {initials}
             </div>
             <h2 className="detail-entity-name">{displayName}</h2>
-            {company.website && (
-              <a href={company.website} target="_blank" rel="noreferrer" className="detail-entity-domain">
-                {company.website} <ExternalLink size={11} />
+            {company.domain && (
+              <a href={/^https?:\/\//i.test(company.domain) ? company.domain : `https://${company.domain}`} target="_blank" rel="noreferrer" className="detail-entity-domain">
+                {company.domain} <ExternalLink size={11} />
               </a>
             )}
           </div>

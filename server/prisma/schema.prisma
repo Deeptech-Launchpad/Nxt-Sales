@@ -65,7 +65,6 @@ model Company {
   name           String
   email          String?
   phone          String?
-  website        String?
   industry       String?
   employeeCount  Int?
   revenue        Float?
@@ -88,7 +87,6 @@ model Company {
   leadType              String?
   originalTrafficSource String?
   country               String?
-  mobile                String?
   emails                Json?
   phones                Json?
   endPdpUrl             String?

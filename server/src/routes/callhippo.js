@@ -116,12 +116,12 @@ function normalizePhone(raw) {
 // differences between CallHippo and company records (dashes, spaces, +country).
 async function buildCompanyPhoneIndex() {
   const companies = await prisma.company.findMany({
-    where: { OR: [{ phone: { not: null } }, { mobile: { not: null } }, { phones: { not: null } }] },
-    select: { id: true, name: true, phone: true, mobile: true, phones: true },
+    where: { OR: [{ phone: { not: null } }, { phones: { not: null } }] },
+    select: { id: true, name: true, phone: true, phones: true },
   })
   const index = new Map()
   for (const c of companies) {
-    const keys = [c.phone, c.mobile, ...(Array.isArray(c.phones) ? c.phones : [])]
+    const keys = [c.phone, ...(Array.isArray(c.phones) ? c.phones : [])]
     for (const raw of keys) {
       const key = normalizePhone(raw)
       if (key && !index.has(key)) index.set(key, { id: c.id, name: c.name })
@@ -216,7 +216,7 @@ router.post('/sync', auth, async (req, res) => {
     let skipped = 0
 
     // Company Name column (Update 10): match each call's "To" number against
-    // company phone/mobile once up front, reused for every call in this sync.
+    // company phone/phones once up front, reused for every call in this sync.
     const companyPhoneIndex = await buildCompanyPhoneIndex()
 
     for (const call of callsArray) {

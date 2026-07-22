@@ -9,7 +9,7 @@ const STEPS = ['Upload File', 'Preview & Map', 'Import']
 // Exact-header aliases for the standard Company bulk-import template. The
 // spreadsheet's literal headers ("Co. Phone no.", "Company - Url", etc.) are
 // deliberately different from the friendlier UI labels used for table columns
-// and the Create/Edit forms ("Phone Number", "Website") — this maps the
+// and the Create/Edit forms ("Phone Number", "Company URL") — this maps the
 // template's exact text to our internal field labels so mapRowsToFields'
 // label matching resolves them, without changing those UI-facing labels.
 // "S No" has no matching field and is intentionally left out (ignored on import).
@@ -20,7 +20,7 @@ const COMPANY_TEMPLATE_HEADER_ALIASES = {
   'company name':    'Company Name',
   'industry':        'Industry',
   'country':         'Country of Origin',
-  'company - url':   'Website',
+  'company - url':   'Company URL',
   'end- pdp - url':  'End PDP URL',
   'email':           'Email',
   'co. phone no.':   'Phone Number',
@@ -75,7 +75,7 @@ const COMPANY_IMPORT_TEMPLATE_COLUMNS = [
   { header: 'Country',                                           key: 'country' },
   { header: 'Company Name',                                      key: 'name' },
   { header: 'Remarks (Static / Less data / Partnership)',        key: 'remarks' },
-  { header: 'Company - Url',                                     key: 'website' },
+  { header: 'Company - Url',                                     key: 'domain' },
   { header: 'END- PDP - URL',                                    key: 'endPdpUrl' },
   { header: 'Email',                                             key: 'email' },
   { header: 'Co. Phone no.',                                     key: 'phone' },
@@ -303,7 +303,7 @@ export default function ImportModal({ entity, isOpen, onClose, onSuccess }) {
                 <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 6, padding: 10, marginBottom: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#854d0e', marginBottom: 8 }}>
                     <AlertCircle size={14} color="#ca8a04" style={{ flexShrink: 0 }} />
-                    {duplicateCount} row(s) match an existing company (by name, email, phone, website, or domain) — highlighted below.
+                    {duplicateCount} row(s) match an existing company (by name, email, phone, or company URL) — highlighted below.
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button type="button" className="btn-modal-secondary" style={{ fontSize: 12, padding: '5px 10px' }} onClick={skipAllDuplicates}>

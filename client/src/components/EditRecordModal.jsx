@@ -25,8 +25,8 @@ function CompanyForm({ data, onChange, users }) {
       <FormRow label="Phone Number">
         <MultiValueInput values={data.phones} onChange={v => onChange('phones', v)} type="tel" placeholder="+91 98765 43210" addLabel="Add phone" inputStyle={ER_INPUT_STYLE} />
       </FormRow>
-      <FormRow label="Website">
-        <input className="er-input" {...f('website')} placeholder="https://example.com" />
+      <FormRow label="Company URL">
+        <input className="er-input" {...f('domain')} placeholder="example.com" />
       </FormRow>
       <FormRow label="Industry">
         <select className="er-input" {...f('industry')}>
@@ -38,12 +38,6 @@ function CompanyForm({ data, onChange, users }) {
         <select className="er-input" {...f('country')}>
           <option value="">Select country</option>
           {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </FormRow>
-      <FormRow label="Lifecycle Stage">
-        <select className="er-input" {...f('lifecycleStage')}>
-          <option value="">Select stage</option>
-          {LIFECYCLE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
       </FormRow>
       <FormRow label="Lead Status">

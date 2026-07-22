@@ -20,7 +20,7 @@ const MoreBadge = ({ n }) => n > 0
   : null
 
 const COLUMNS_STORAGE_KEY = 'mwz_companies_visible_columns'
-const DEFAULT_COLUMNS = ['country', 'industryType', 'email', 'mobile', 'linkedinUrl'] // matches the original hardcoded table
+const DEFAULT_COLUMNS = ['country', 'industry', 'email', 'phone', 'domain']
 
 // Lead Owner (ownerId) is intentionally excluded from the server's dynamic
 // Company field list — that list is shared with the Import Template, and
@@ -28,6 +28,21 @@ const DEFAULT_COLUMNS = ['country', 'industryType', 'email', 'mobile', 'linkedin
 // touched. This is a client-side-only column entry so "Edit Columns" can
 // offer it without affecting Import, Create, or Edit Company in any way.
 const LEAD_OWNER_COLUMN = { key: 'ownerId', label: 'Lead Owner' }
+
+// These Company fields are no longer part of the current workflow — hidden
+// from Edit Columns (and Create/Edit Company) but left in the schema/Export,
+// since they were never asked to be removed from Export or the database.
+const RETIRED_COLUMN_KEYS = new Set([
+  'industryType', 'companyType', 'leadType', 'employeeCount', 'revenue',
+  'city', 'stateRegion', 'postalCode', 'timeZone', 'originalTrafficSource',
+  'description', 'lifecycleStage', 'linkedinUrl',
+])
+
+// deletedAt is an internal system field (Recycle Bin / auto-cleanup only) —
+// never a user-facing column. Hidden from Edit Columns the same way as the
+// retired fields above; the database column, backend, and Recycle Bin logic
+// are untouched.
+const INTERNAL_COLUMN_KEYS = new Set(['deletedAt'])
 
 // ── Export dropdown — mirrors Contacts' ExportMenu, but always fetches the
 // FULL filtered dataset from the server first (Update 6: export must cover
@@ -299,7 +314,14 @@ export default function Companies() {
   const exportColumns = companyFields.map(f => ({ key: f.key, header: f.label }))
   // Edit Columns offers Lead Owner alongside the server's dynamic field list —
   // client-side only, doesn't touch Export/Import's field list.
-  const editColumnsFields = [...companyFields, LEAD_OWNER_COLUMN]
+  // 'emails'/'phones' are the raw storage arrays behind the 'email'/'phone'
+  // columns (which already show the primary value + a "+N" badge for the
+  // rest) — hidden here to avoid a duplicate, differently-formatted column
+  // for the same data. Export still gets the full list via exportColumns.
+  const editColumnsFields = [
+    ...companyFields.filter(f => f.key !== 'emails' && f.key !== 'phones' && !RETIRED_COLUMN_KEYS.has(f.key) && !INTERNAL_COLUMN_KEYS.has(f.key)),
+    LEAD_OWNER_COLUMN,
+  ]
   // Table columns shown, in the field list's canonical order (not toggle order)
   const orderedVisibleFields = editColumnsFields.filter(f => visibleColumns.includes(f.key))
 
@@ -307,10 +329,8 @@ export default function Companies() {
     if (f.key === 'email') {
       return <>{c.email || '--'}<MoreBadge n={moreCount(c.email, c.emails)} /></>
     }
-    if (f.key === 'linkedinUrl') {
-      return c.linkedinUrl
-        ? <a href={c.linkedinUrl} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }} onClick={e => e.stopPropagation()}>LinkedIn</a>
-        : '--'
+    if (f.key === 'phone') {
+      return <>{c.phone || '--'}<MoreBadge n={moreCount(c.phone, c.phones)} /></>
     }
     if (f.key === 'ownerId') {
       return c.owner?.name || '--'
