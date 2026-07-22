@@ -4,7 +4,7 @@ export const APP_CONFIG = {
   appColor: '#e63329',
   tagline:  'Sign in to your workspace',
   features: [
-    'Manage contacts, leads & deals in one place',
+    'Manage companies, leads & deals in one place',
     'Automate email campaigns & marketing workflows',
     'Track activities and close deals faster',
   ],

@@ -224,7 +224,7 @@ export default function CompanyDetail() {
             )}
           </div>
 
-          {/* Action buttons — same layout as ContactDetail */}
+          {/* Action buttons */}
           <div className="detail-action-icons">
             {[
               { Icon: FileText,       label: 'Note',    type: 'note'    },
@@ -369,7 +369,7 @@ export default function CompanyDetail() {
           )}
         </div>
 
-        {/* ── RIGHT ── same structure as ContactDetail */}
+        {/* ── RIGHT ── */}
         <div className="detail-right">
           <div className="right-panel-section">
             <div className="right-panel-header">
@@ -426,7 +426,6 @@ export default function CompanyDetail() {
       {/* ── Edit company modal ── */}
       {editOpen && (
         <EditRecordModal
-          type="company"
           id={id}
           record={company}
           onClose={() => setEditOpen(false)}
@@ -451,7 +450,7 @@ export default function CompanyDetail() {
         />
       )}
 
-      {/* ── Activity Modals — same pattern as ContactDetail ── */}
+      {/* ── Activity Modals ── */}
       {activeModal === 'note' && (
         <NoteModal
           companyId={id}

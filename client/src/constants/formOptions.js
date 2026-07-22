@@ -1,4 +1,4 @@
-// Shared dropdown value lists for Company & Contact forms.
+// Shared dropdown value lists for Company forms.
 // Single source of truth — used by the Create and Edit modals so the
 // Industry and Country options stay in sync everywhere.
 

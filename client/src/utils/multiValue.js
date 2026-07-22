@@ -1,4 +1,4 @@
-// Helpers for the multi-email / multi-phone fields on Company and Contact.
+// Helpers for the multi-email / multi-phone fields on Company.
 //
 // The DB keeps a single primary value (`email` / `phone`) for backward
 // compatibility plus a full array (`emails` / `phones`). Older records have no

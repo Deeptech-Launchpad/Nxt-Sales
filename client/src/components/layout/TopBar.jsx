@@ -11,7 +11,6 @@ import '../../styles/topbar.css'
 
 const PAGE_TITLES = {
   '/dashboard':  'Dashboard',
-  '/contacts':   'Contacts',
   '/companies':  'Companies',
   '/deals':      'Deals',
   '/activities': 'Activities',

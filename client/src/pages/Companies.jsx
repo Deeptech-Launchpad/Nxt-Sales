@@ -44,9 +44,8 @@ const RETIRED_COLUMN_KEYS = new Set([
 // are untouched.
 const INTERNAL_COLUMN_KEYS = new Set(['deletedAt'])
 
-// ── Export dropdown — mirrors Contacts' ExportMenu, but always fetches the
-// FULL filtered dataset from the server first (Update 6: export must cover
-// every matching record, not just the current page).
+// ── Export dropdown — always fetches the FULL filtered dataset from the
+// server first, not just the current page.
 function CompanyExportMenu({ fetchAllForExport, columns }) {
   const [open, setOpen]       = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -310,7 +309,7 @@ export default function Companies() {
   const hasFilters = ownerFilter.length > 0 || createDateFilter.length > 0 || leadStatusFilter.length > 0
 
   // Export always includes every Company field (a superset of the visible
-  // table columns), matching the same precedent as the existing Contacts export.
+  // table columns).
   const exportColumns = companyFields.map(f => ({ key: f.key, header: f.label }))
   // Edit Columns offers Lead Owner alongside the server's dynamic field list —
   // client-side only, doesn't touch Export/Import's field list.
@@ -492,7 +491,6 @@ export default function Companies() {
       />
 
       <ImportModal
-        entity="companies"
         isOpen={showImport}
         onClose={() => setShowImport(false)}
         onSuccess={() => { fetchCompanies(); setShowImport(false) }}
