@@ -6,13 +6,11 @@ import Layout from './components/layout/Layout'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
 import Dashboard from './pages/Dashboard'
-import Contacts from './pages/contacts/Contacts'
 import Companies from './pages/Companies'
 import Deals from './pages/Deals'
 import Tickets from './pages/Tickets'
 import CompanyDetail from './pages/companies/CompanyDetail'
 import CompanyRecycleBin from './pages/companies/CompanyRecycleBin'
-import ContactDetail from './pages/contacts/ContactDetail'
 import Inbox from './pages/Inbox'
 import Calls from './pages/Calls'
 import Meetings from './pages/Meetings'
@@ -49,8 +47,6 @@ export default function App() {
           <Route path="/" element={<PrivateRoute><NotificationProvider><Layout /></NotificationProvider></PrivateRoute>}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="contacts" element={<Contacts />} />
-            <Route path="contacts/:id" element={<ContactDetail />} />
             <Route path="companies" element={<Companies />} />
             <Route path="companies/recycle-bin" element={<CompanyRecycleBin />} />
             <Route path="companies/:id" element={<CompanyDetail />} />

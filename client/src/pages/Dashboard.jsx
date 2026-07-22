@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Users, TrendingUp, Briefcase, CheckCircle, Mail, UserPlus, Plus } from 'lucide-react'
+import { TrendingUp, Briefcase, CheckCircle, Mail, Plus } from 'lucide-react'
 import api from '../api/client'
 import '../styles/dashboard.css'
 
 const quickActions = [
-  { label: 'Add Contact', Icon: UserPlus,   color: '#eff6ff', iconColor: '#3b82f6', to: '/contacts' },
   { label: 'New Deal',    Icon: TrendingUp, color: '#fef9ee', iconColor: '#f59e0b', to: '/deals' },
   { label: 'Send Email',  Icon: Mail,       color: '#f0fdf4', iconColor: '#22c55e', to: '/email' },
   { label: 'Create Task', Icon: Plus,       color: '#fff1f2', iconColor: '#e63329', to: '/activities' },
@@ -17,19 +16,14 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const firstName = user?.name?.split(' ')[0] || 'there'
 
-  const [loading, setLoading]           = useState(true)
-  const [contactCount, setContactCount] = useState(0)
-  const [deals, setDeals]               = useState([])
+  const [loading, setLoading] = useState(true)
+  const [deals, setDeals]     = useState([])
 
   // All figures below come from the backend DB — nothing hardcoded.
   useEffect(() => {
     let alive = true
-    Promise.all([
-      api.get('/contacts', { params: { limit: 1 } }).then(r => r.data?.total ?? 0).catch(() => 0),
-      api.get('/deals').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
-    ]).then(([total, dealList]) => {
+    api.get('/deals').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []).then(dealList => {
       if (!alive) return
-      setContactCount(total)
       setDeals(dealList)
       setLoading(false)
     })
@@ -41,7 +35,6 @@ export default function Dashboard() {
   const recentDeals = deals.slice(0, 5)
 
   const stats = [
-    { label: 'Total Contacts', value: contactCount,      Icon: Users,       color: '#eff6ff', iconColor: '#3b82f6' },
     { label: 'Total Deals',    value: deals.length,       Icon: TrendingUp,  color: '#fef9ee', iconColor: '#f59e0b' },
     { label: 'Active Deals',   value: activeDeals.length, Icon: Briefcase,   color: '#f0fdf4', iconColor: '#22c55e' },
     { label: 'Won Deals',      value: wonDeals.length,    Icon: CheckCircle, color: '#fff1f2', iconColor: '#e63329' },

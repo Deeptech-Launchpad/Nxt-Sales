@@ -18,7 +18,6 @@ const load = (k, fallback) => { try { return JSON.parse(localStorage.getItem(k))
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* ignore quota */ } }
 
 function linkFor(a) {
-  if (a.contactId) return `/contacts/${a.contactId}`
   if (a.companyId) return `/companies/${a.companyId}`
   return '/dashboard'
 }
@@ -70,7 +69,7 @@ export function NotificationProvider({ children }) {
       const remindAt = start - HOUR_MS
       if (now >= remindAt && now < start && !firedMeetings.current.has(m.id)) {
         firedMeetings.current.add(m.id)
-        const who = m.contact?.name || m.company?.name
+        const who = m.company?.name
         fresh.push({
           id: 'meeting_' + m.id,
           type: 'meeting',
@@ -92,7 +91,7 @@ export function NotificationProvider({ children }) {
       for (const e of emails) {
         if (knownEmails.current.has(e.id)) continue
         knownEmails.current.add(e.id)
-        const who = e.contact?.name || e.company?.name || e.fromEmail || 'a contact'
+        const who = e.company?.name || e.fromEmail || 'a contact'
         fresh.push({
           id: 'email_' + e.id,
           type: 'email',
@@ -116,7 +115,7 @@ export function NotificationProvider({ children }) {
         const key = `${o.id}:${o.openCount}`
         if (knownOpens.current.has(key)) continue
         knownOpens.current.add(key)
-        const who = o.contact?.name || o.company?.name || o.toEmail || 'the recipient'
+        const who = o.company?.name || o.toEmail || 'the recipient'
         const times = o.openCount > 1 ? ` (${o.openCount}×)` : ''
         fresh.push({
           id: `open_${o.id}_${o.openCount}`,

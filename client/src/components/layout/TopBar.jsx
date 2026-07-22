@@ -5,7 +5,7 @@ import { useNotifications } from '../../context/NotificationContext'
 import api from '../../api/client'
 import {
   Search, Bell, User, Settings, LogOut,
-  Calendar, Mail, Building2, TrendingUp, Users, X,
+  Calendar, Mail, Building2, TrendingUp, X,
 } from 'lucide-react'
 import '../../styles/topbar.css'
 
@@ -66,19 +66,18 @@ export default function TopBar() {
     return () => document.removeEventListener('mousedown', close)
   }, [])
 
-  // ── Global search (Contacts / Companies / Deals) — debounced ──
+  // ── Global search (Companies / Deals) — debounced ──
   const runSearch = async (q) => {
     if (!q || q.trim().length < 2) { setResults(null); setSearching(false); return }
     setSearching(true)
     try {
-      const [contacts, companies, dealsAll] = await Promise.all([
-        api.get('/contacts',  { params: { search: q, limit: 5 } }).then(r => r.data?.contacts  || []).catch(() => []),
+      const [companies, dealsAll] = await Promise.all([
         api.get('/companies', { params: { search: q, limit: 5 } }).then(r => r.data?.companies || []).catch(() => []),
         api.get('/deals').then(r => Array.isArray(r.data) ? r.data : []).catch(() => []),
       ])
       const ql = q.toLowerCase()
       const deals = dealsAll.filter(d => (d.title || '').toLowerCase().includes(ql)).slice(0, 5)
-      setResults({ contacts: contacts.slice(0, 5), companies: companies.slice(0, 5), deals })
+      setResults({ companies: companies.slice(0, 5), deals })
     } finally { setSearching(false) }
   }
 
@@ -95,7 +94,7 @@ export default function TopBar() {
     navigate(path)
   }
 
-  const totalResults = results ? results.contacts.length + results.companies.length + results.deals.length : 0
+  const totalResults = results ? results.companies.length + results.deals.length : 0
 
   const handleLogout = () => { logout(); navigate('/login'); setProfileOpen(false) }
   const goTo = (path) => { navigate(path); setProfileOpen(false) }
@@ -111,7 +110,7 @@ export default function TopBar() {
         <Search className="search-icon" size={15} />
         <input
           type="text"
-          placeholder="Search contacts, companies, deals..."
+          placeholder="Search companies, deals..."
           value={search}
           onChange={onSearchChange}
           onFocus={() => search.length >= 2 && setShowResults(true)}
@@ -121,17 +120,6 @@ export default function TopBar() {
             {searching && totalResults === 0 && <div className="tsr-empty">Searching…</div>}
             {!searching && totalResults === 0 && <div className="tsr-empty">No matches found.</div>}
 
-            {results?.contacts?.length > 0 && (
-              <div className="tsr-group">
-                <div className="tsr-group-title">Contacts</div>
-                {results.contacts.map(c => (
-                  <button key={c.id} className="tsr-item" onClick={() => goResult(`/contacts/${c.id}`)}>
-                    <Users size={14} /> <span>{c.name}</span>
-                    {c.email && <span className="tsr-sub">{c.email}</span>}
-                  </button>
-                ))}
-              </div>
-            )}
             {results?.companies?.length > 0 && (
               <div className="tsr-group">
                 <div className="tsr-group-title">Companies</div>
