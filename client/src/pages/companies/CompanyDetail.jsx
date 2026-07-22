@@ -30,7 +30,6 @@ const LEFT_FIELDS = [
   { label: 'Company URL',     key: 'domain'                      },
   { label: 'Lead Owner',      key: '_ownerName'                  },
   { label: 'Industry',        key: 'industry'                    },
-  { label: 'Lifecycle stage', key: 'lifecycleStage'              },
   { label: 'Lead status',     key: 'leadStatus'                  },
   { label: 'Contact Person',  key: 'contactPersons', isMulti: true },
   { label: 'Linked Profile',  key: 'linkedProfiles',  isMulti: true },
@@ -48,14 +47,10 @@ function OverviewTab({ company, recentActs }) {
 
   return (
     <div>
-      <div className="data-highlights">
+      <div className="data-highlights" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <div className="highlight-item">
           <span className="highlight-label">Create Date</span>
           <span className="highlight-value">{createdAt}</span>
-        </div>
-        <div className="highlight-item">
-          <span className="highlight-label">Lifecycle Stage</span>
-          <span className="highlight-value">{company.lifecycleStage || '--'}</span>
         </div>
         <div className="highlight-item">
           <span className="highlight-label">Lead Status</span>
@@ -85,11 +80,7 @@ function OverviewTab({ company, recentActs }) {
 function IntelligenceTab({ company }) {
   return (
     <div>
-      <div className="data-highlights" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 20 }}>
-        <div className="highlight-item">
-          <span className="highlight-label">Lifecycle Stage</span>
-          <span className="highlight-value">{company.lifecycleStage || '--'}</span>
-        </div>
+      <div className="data-highlights" style={{ gridTemplateColumns: '1fr', marginBottom: 20 }}>
         <div className="highlight-item">
           <span className="highlight-label">Lead Status</span>
           <span className="highlight-value">{company.leadStatus || '--'}</span>
