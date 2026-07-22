@@ -191,7 +191,7 @@ router.post('/bulk', auth, async (req, res) => {
       return res.status(400).json({ message: 'No companies provided.' })
     }
 
-    let created = 0, updated = 0, failed = 0
+    let created = 0, updated = 0, unchanged = 0, failed = 0
     const errors = []
     const messages = []
     const num = (v, float) => {
@@ -299,10 +299,13 @@ router.post('/bulk', auth, async (req, res) => {
             }).catch(e => console.error(`Import task creation failed for ${existingDup.id}:`, e.message))
           }
 
-          updated++
-          messages.push(filledKeys.length
-            ? `${c.name}: matched existing company "${existingDup.name}" — filled ${filledKeys.length} missing field(s), existing data unchanged.`
-            : `${c.name}: matched existing company "${existingDup.name}" — no missing fields to fill, nothing changed.`)
+          if (filledKeys.length) {
+            updated++
+            messages.push(`${c.name}: matched existing company "${existingDup.name}" — filled ${filledKeys.length} missing field(s), existing data unchanged.`)
+          } else {
+            unchanged++
+            messages.push(`${c.name}: matched existing company "${existingDup.name}" — no missing fields to fill, nothing changed.`)
+          }
           continue
         }
 
@@ -374,7 +377,7 @@ router.post('/bulk', auth, async (req, res) => {
       }
     }
 
-    res.json({ created, updated, failed, errors, messages })
+    res.json({ created, updated, unchanged, failed, errors, messages })
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: 'Server error.' })

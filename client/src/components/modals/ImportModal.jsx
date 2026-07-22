@@ -386,7 +386,13 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
                 {result.updated > 0 && (
                   <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '12px 24px', textAlign: 'center' }}>
                     <div style={{ fontSize: 28, fontWeight: 700, color: '#2563eb' }}>{result.updated}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>Matched existing — filled missing fields</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Fields updated</div>
+                  </div>
+                )}
+                {result.unchanged > 0 && (
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 24px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: '#64748b' }}>{result.unchanged}</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Matched existing (no changes)</div>
                   </div>
                 )}
                 {result.failed > 0 && (
