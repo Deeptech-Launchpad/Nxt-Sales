@@ -15,10 +15,10 @@ const emptyForm = {
 }
 
 // Create or edit a deal. Pass `deal` (an existing deal record) to edit it —
-// otherwise a new deal is created, optionally pre-linked to a company or
-// contact. Persisted via POST/PUT /api/deals so it appears in the global
-// Deals dashboard as well as on the linked record.
-export default function CreateDealModal({ companyId, contactId, deal, onClose, onSaved }) {
+// otherwise a new deal is created, optionally pre-linked to a company.
+// Persisted via POST/PUT /api/deals so it appears in the global Deals
+// dashboard as well as on the linked record.
+export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
   const isEdit = !!deal
   const [form, setForm] = useState(() => deal ? {
     title:               deal.title || '',
@@ -69,7 +69,7 @@ export default function CreateDealModal({ companyId, contactId, deal, onClose, o
     try {
       const { data } = isEdit
         ? await api.put(`/deals/${deal.id}`, payload)
-        : await api.post('/deals', { ...payload, ...(companyId && { companyId }), ...(contactId && { contactId }) })
+        : await api.post('/deals', { ...payload, ...(companyId && { companyId }) })
       onSaved && onSaved(data)
       onClose()
     } catch (e) {

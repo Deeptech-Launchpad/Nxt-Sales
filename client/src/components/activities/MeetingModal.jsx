@@ -16,7 +16,6 @@ function addMinutes(isoStr, minutes) {
 
 export default function MeetingModal({
   isOpen = true,
-  contactId,
   companyId,
   contactName,
   contactEmail,
@@ -72,8 +71,7 @@ export default function MeetingModal({
           description: body || null,
           location:    location || null,
           attendees:   attendees,
-          ...(contactId && { contactId }),
-          ...(companyId && { companyId }),
+          companyId,
         })
         data = res.data
 
@@ -95,8 +93,7 @@ export default function MeetingModal({
         const endTimeDate = new Date(startTime.getTime() + Number(durationM) * 60000)
         const res = await api.post('/activities', {
           type: 'meeting',
-          ...(contactId && { contactId }),
-          ...(companyId && { companyId }),
+          companyId,
           title: title.trim(),
           body: body || null,
           startTime: startTime.toISOString(),

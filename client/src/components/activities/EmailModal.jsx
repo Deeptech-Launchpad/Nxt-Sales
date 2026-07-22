@@ -175,7 +175,6 @@ async function buildAttachment(file) {
 // ─────────────────────────────────────────────────────────
 export default function EmailModal({
   isOpen = true,
-  contactId,
   companyId,
   contactEmail,
   contactName,
@@ -387,8 +386,7 @@ export default function EmailModal({
         bcc: bcc || undefined,
         attachments,
         emailMode,
-        ...(contactId && { contactId }),
-        ...(companyId && { companyId }),
+        companyId,
       })
 
       // Save to sent folder in localStorage
@@ -443,8 +441,7 @@ export default function EmailModal({
     try {
       const { data } = await api.post('/activities', {
         type: 'email',
-        ...(contactId && { contactId }),
-        ...(companyId && { companyId }),
+        companyId,
         title: `Email – ${subject}`,
         body,
         toEmail,

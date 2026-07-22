@@ -12,7 +12,7 @@ const OUTCOMES = [
   { value: 'wrong_number', label: 'Wrong number' },
 ]
 
-export default function CallModal({ isOpen = true, contactId, companyId, contactName, onClose, onSaved, onActivitySaved }) {
+export default function CallModal({ isOpen = true, companyId, contactName, onClose, onSaved, onActivitySaved }) {
   const { dragRef, pos } = useDraggable()
   const [direction,  setDirection]  = useState('outbound')
   const [outcome,    setOutcome]    = useState('connected')
@@ -29,8 +29,7 @@ export default function CallModal({ isOpen = true, contactId, companyId, contact
     try {
       const { data } = await api.post('/activities', {
         type: 'call',
-        ...(contactId && { contactId }),
-        ...(companyId && { companyId }),
+        companyId,
         title: `${direction === 'outbound' ? 'Outbound' : 'Inbound'} call – ${outcomeLabel}`,
         body: notes || null,
         direction,

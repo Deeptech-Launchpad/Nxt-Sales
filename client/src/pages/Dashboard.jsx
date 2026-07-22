@@ -79,7 +79,7 @@ export default function Dashboard() {
                   <p className="activity-text"><strong>{d.title}</strong> — {d.stage}</p>
                   <p className="activity-time">
                     {d.createdAt ? new Date(d.createdAt).toLocaleDateString() : ''}
-                    {d.contact?.name ? ` · ${d.contact.name}` : ''}
+                    {d.company?.name ? ` · ${d.company.name}` : ''}
                   </p>
                 </div>
               </div>

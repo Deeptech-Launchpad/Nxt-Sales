@@ -17,7 +17,6 @@ router.get('/', auth, async (req, res) => {
     const weekAgo = new Date(now.getTime() -  7 * 24 * 60 * 60 * 1000)
 
     const relations = {
-      contact: { select: { id: true, name: true } },
       company: { select: { id: true, name: true } },
     }
 
@@ -54,8 +53,7 @@ router.get('/', auth, async (req, res) => {
         take: 50,
         select: {
           id: true, subject: true, toEmail: true, openCount: true,
-          firstOpenedAt: true, lastOpenedAt: true, contactId: true, companyId: true,
-          contact: { select: { id: true, name: true } },
+          firstOpenedAt: true, lastOpenedAt: true, companyId: true,
           company: { select: { id: true, name: true } },
         },
       }),

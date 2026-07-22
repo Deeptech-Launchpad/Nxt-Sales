@@ -10,7 +10,7 @@ function tomorrowStr() {
   return d.toISOString().slice(0, 10)
 }
 
-export default function TaskModal({ isOpen = true, contactId, companyId, contactName, onClose, onSaved, onActivitySaved }) {
+export default function TaskModal({ isOpen = true, companyId, contactName, onClose, onSaved, onActivitySaved }) {
   const { user }  = useAuth()
   const [users, setUsers] = useState([])
   const { dragRef, pos } = useDraggable()
@@ -34,8 +34,7 @@ export default function TaskModal({ isOpen = true, contactId, companyId, contact
     try {
       const { data } = await api.post('/activities', {
         type: 'task',
-        ...(contactId && { contactId }),
-        ...(companyId && { companyId }),
+        companyId,
         title:      taskName.trim(),
         body:       body || null,
         dueDate:    dueDate ? new Date(dueDate).toISOString() : null,

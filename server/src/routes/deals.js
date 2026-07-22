@@ -24,7 +24,6 @@ function buildDealData(body) {
   if (body.value !== undefined) data.value = Number(body.value) || 0
   if (body.stage !== undefined) data.stage = body.stage || 'Discussion'
   if (body.notes !== undefined) data.notes = body.notes || null
-  if (body.contactId !== undefined) data.contactId = body.contactId || null
   if (body.companyId !== undefined) data.companyId = body.companyId || null
   if (body.closeDate !== undefined) data.closeDate = body.closeDate ? new Date(body.closeDate) : null
   return data
@@ -45,7 +44,6 @@ router.get('/', auth, async (req, res) => {
     const deals = await prisma.deal.findMany({
       where,
       include: {
-        contact: { select: { id: true, name: true, company: true } },
         company: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },

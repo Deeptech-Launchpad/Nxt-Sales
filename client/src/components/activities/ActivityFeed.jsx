@@ -470,7 +470,7 @@ function EmptyState({ subTab }) {
   )
 }
 
-export default function ActivityFeed({ contactId, companyId, entityId, entityType, contactEmail, onAction, refreshKey = 0 }) {
+export default function ActivityFeed({ companyId, contactEmail, onAction, refreshKey = 0 }) {
   const [subTab,      setSubTab]      = useState('All activities')
   const [query,       setQuery]       = useState('')
   const [acts,        setActs]        = useState([])
@@ -481,19 +481,15 @@ export default function ActivityFeed({ contactId, companyId, entityId, entityTyp
   // Track the last entity+email combo that was auto-synced so we sync once per visit
   const autoSyncKeyRef = useRef(null)
 
-  const id       = contactId || companyId || entityId
-  const type     = entityType || (contactId ? 'contact' : 'company')
-  const paramKey = type === 'contact' ? 'contactId' : 'companyId'
-
   const fetchActs = useCallback(() => {
-    if (!id) return
+    if (!companyId) return
     setLoading(true)
     const actType = subTab === 'All activities' ? 'all' : TYPE_MAP[subTab]
-    api.get('/activities', { params: { [paramKey]: id, type: actType } })
+    api.get('/activities', { params: { companyId, type: actType } })
       .then(r => setActs(r.data))
       .catch(() => setActs([]))
       .finally(() => setLoading(false))
-  }, [id, paramKey, subTab, refreshKey])
+  }, [companyId, subTab, refreshKey])
 
   useEffect(() => { fetchActs() }, [fetchActs])
 
@@ -501,31 +497,23 @@ export default function ActivityFeed({ contactId, companyId, entityId, entityTyp
   // refreshKey bumps (e.g. right after sending) so a continued thread appears at
   // once. The key includes refreshKey so each send triggers a fresh Gmail sync.
   useEffect(() => {
-    if (subTab !== 'Emails' || !contactEmail || !id) return
-    const key = `${id}::${contactEmail}::${refreshKey}`
+    if (subTab !== 'Emails' || !contactEmail || !companyId) return
+    const key = `${companyId}::${contactEmail}::${refreshKey}`
     if (autoSyncKeyRef.current === key) return
     autoSyncKeyRef.current = key
 
-    api.post('/email/sync', {
-      contactEmail,
-      ...(contactId  && { contactId }),
-      ...(companyId  && { companyId }),
-    }).then(() => {
-      api.get('/activities', { params: { [paramKey]: id, type: 'email' } })
+    api.post('/email/sync', { contactEmail, companyId }).then(() => {
+      api.get('/activities', { params: { companyId, type: 'email' } })
         .then(r => setActs(r.data))
         .catch(() => {})
     }).catch(() => {})
-  }, [subTab, contactEmail, id, paramKey, contactId, companyId, refreshKey])
+  }, [subTab, contactEmail, companyId, refreshKey])
 
   const syncEmails = async () => {
     if (!contactEmail) { setSyncMsg('No email address found for this record.'); return }
     setSyncing(true); setSyncMsg('')
     try {
-      const { data } = await api.post('/email/sync', {
-        contactEmail,
-        ...(contactId  && { contactId }),
-        ...(companyId  && { companyId }),
-      })
+      const { data } = await api.post('/email/sync', { contactEmail, companyId })
       const added   = data.synced   || 0
       const removed = data.removed  || 0
       const total   = data.total

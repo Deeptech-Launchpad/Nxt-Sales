@@ -4,7 +4,7 @@ import api from '../../api/client'
 import { useDraggable } from '../../hooks/useDraggable'
 import '../../styles/activity-modals.css'
 
-export default function NoteModal({ isOpen = true, contactId, companyId, contactName, onClose, onSaved, onActivitySaved }) {
+export default function NoteModal({ isOpen = true, companyId, onClose, onSaved, onActivitySaved }) {
   const { dragRef, pos } = useDraggable()
   const [subject, setSubject] = useState('')
   const [body,    setBody]    = useState('')
@@ -17,8 +17,7 @@ export default function NoteModal({ isOpen = true, contactId, companyId, contact
     try {
       const { data } = await api.post('/activities', {
         type: 'note',
-        ...(contactId && { contactId }),
-        ...(companyId && { companyId }),
+        companyId,
         title: subject.trim() || 'Note',
         body: body.trim(),
       })
@@ -86,7 +85,7 @@ export default function NoteModal({ isOpen = true, contactId, companyId, contact
 
         <div className="act-popup-footer">
           <div className="act-popup-footer-left">
-            <span style={{ fontSize: 12, color: '#94a3b8' }}>Associated with this contact</span>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>Associated with this company</span>
           </div>
           <div className="act-popup-footer-right">
             <button className="btn-act-cancel" onClick={onClose}>Cancel</button>

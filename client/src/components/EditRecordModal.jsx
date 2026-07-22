@@ -8,8 +8,7 @@ import { cleanList, editList } from '../utils/multiValue'
 // Compact input styling so MultiValueInput matches this modal's .er-input look.
 const ER_INPUT_STYLE = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }
 
-const LIFECYCLE_STAGES = ['Lead', 'Marketing Qualified Lead', 'Sales Qualified Lead', 'Opportunity', 'Customer', 'Evangelist', 'Other']
-const LEAD_STATUSES    = ['New', 'Open', 'In Progress', 'Open Deal', 'Unqualified', 'Attempted to Contact', 'Connected', 'Bad Timing']
+const LEAD_STATUSES = ['New', 'Open', 'In Progress', 'Open Deal', 'Unqualified', 'Attempted to Contact', 'Connected', 'Bad Timing']
 
 // ── Company edit fields ───────────────────────────────────────
 function CompanyForm({ data, onChange, users }) {
@@ -71,59 +70,6 @@ function CompanyForm({ data, onChange, users }) {
   )
 }
 
-// ── Contact edit fields ───────────────────────────────────────
-function ContactForm({ data, onChange }) {
-  const f = (key) => ({ value: data[key] || '', onChange: e => onChange(key, e.target.value) })
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <FormRow label="First Name">
-          <input className="er-input" {...f('firstName')} placeholder="First name" />
-        </FormRow>
-        <FormRow label="Last Name">
-          <input className="er-input" {...f('lastName')} placeholder="Last name" />
-        </FormRow>
-      </div>
-      <FormRow label="Email">
-        <MultiValueInput values={data.emails} onChange={v => onChange('emails', v)} type="email" placeholder="contact@example.com" addLabel="Add email" inputStyle={ER_INPUT_STYLE} />
-      </FormRow>
-      <FormRow label="Phone Number">
-        <MultiValueInput values={data.phones} onChange={v => onChange('phones', v)} type="tel" placeholder="+91 98765 43210" addLabel="Add phone" inputStyle={ER_INPUT_STYLE} />
-      </FormRow>
-      <FormRow label="Job Title">
-        <input className="er-input" {...f('jobTitle')} placeholder="e.g. Sales Manager" />
-      </FormRow>
-      <FormRow label="Primary Company">
-        <input className="er-input" {...f('company')} placeholder="Company name" />
-      </FormRow>
-      <FormRow label="Industry">
-        <select className="er-input" {...f('industry')}>
-          <option value="">Select industry</option>
-          {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-        </select>
-      </FormRow>
-      <FormRow label="Country">
-        <select className="er-input" {...f('country')}>
-          <option value="">Select country</option>
-          {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-      </FormRow>
-      <FormRow label="Lifecycle Stage">
-        <select className="er-input" {...f('lifecycleStage')}>
-          <option value="">Select stage</option>
-          {LIFECYCLE_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </FormRow>
-      <FormRow label="Lead Status">
-        <select className="er-input" {...f('leadStatus')}>
-          <option value="">Select status</option>
-          {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      </FormRow>
-    </div>
-  )
-}
-
 function FormRow({ label, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -136,26 +82,22 @@ function FormRow({ label, children }) {
 }
 
 // ── Main modal ────────────────────────────────────────────────
-export default function EditRecordModal({ type, id, record, onClose, onSaved }) {
-  const isCompany = type === 'company'
+export default function EditRecordModal({ id, record, onClose, onSaved }) {
   const [data,    setData]    = useState(() => ({
     ...record,
     emails: editList(record.email, record.emails),
     phones: editList(record.phone, record.phones),
-    ...(type === 'company' && {
-      contactPersons: editList(null, record.contactPersons),
-      linkedProfiles: editList(null, record.linkedProfiles),
-    }),
+    contactPersons: editList(null, record.contactPersons),
+    linkedProfiles: editList(null, record.linkedProfiles),
   }))
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
   const [users,   setUsers]   = useState([])
 
-  // Lead Owner dropdown — same "load all system users" behavior Company Owner
-  // used to have, now the single owner field for Companies.
+  // Lead Owner dropdown — loads all system users for the owner select.
   useEffect(() => {
-    if (isCompany) api.get('/users').then(r => setUsers(r.data)).catch(() => {})
-  }, [isCompany])
+    api.get('/users').then(r => setUsers(r.data)).catch(() => {})
+  }, [])
 
   const handleChange = (key, value) => setData(prev => ({ ...prev, [key]: value }))
 
@@ -163,18 +105,14 @@ export default function EditRecordModal({ type, id, record, onClose, onSaved }) 
     if (!data.name?.trim()) { setError('Name is required.'); return }
     const emails = cleanList(data.emails)
     const phones = cleanList(data.phones)
-    if (!isCompany && !emails.length) { setError('At least one email is required.'); return }
     setSaving(true); setError('')
     try {
-      const endpoint = isCompany ? `/companies/${id}` : `/contacts/${id}`
       const payload  = {
         ...data, emails, phones, email: emails[0] || null, phone: phones[0] || null,
-        ...(isCompany && {
-          contactPersons: cleanList(data.contactPersons),
-          linkedProfiles: cleanList(data.linkedProfiles),
-        }),
+        contactPersons: cleanList(data.contactPersons),
+        linkedProfiles: cleanList(data.linkedProfiles),
       }
-      const { data: updated } = await api.put(endpoint, payload)
+      const { data: updated } = await api.put(`/companies/${id}`, payload)
       onSaved(updated)
       onClose()
     } catch (err) {
@@ -204,7 +142,7 @@ export default function EditRecordModal({ type, id, record, onClose, onSaved }) 
           padding: '16px 20px', borderBottom: '1px solid #e2e8f0',
         }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
-            Edit {isCompany ? 'Company' : 'Contact'}
+            Edit Company
           </span>
           <button
             onClick={onClose}
@@ -216,10 +154,7 @@ export default function EditRecordModal({ type, id, record, onClose, onSaved }) 
 
         {/* Body */}
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
-          {isCompany
-            ? <CompanyForm data={data} onChange={handleChange} users={users} />
-            : <ContactForm data={data} onChange={handleChange} />
-          }
+          <CompanyForm data={data} onChange={handleChange} users={users} />
           {error && (
             <p style={{ color: '#ef4444', fontSize: 12, marginTop: 12, fontWeight: 500 }}>{error}</p>
           )}
