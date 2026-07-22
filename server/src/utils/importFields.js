@@ -1,21 +1,10 @@
 // Single source of truth for import/template fields.
 // Derived dynamically from the Prisma data model (DMMF) so that when a new
-// column is added to Contact/Company, it automatically appears in the import
+// column is added to Company, it automatically appears in the import
 // template and mapping — no manual header updates required.
 const { Prisma } = require('@prisma/client')
 
 const CONFIG = {
-  Contact: {
-    requiredKey: 'email',
-    // System / derived / relation columns that shouldn't be import headers
-    exclude: ['id', 'createdAt', 'updatedAt', 'status', 'ownerId', 'name', 'notes'],
-    labels: {
-      firstName: 'First Name', lastName: 'Last Name', email: 'Email',
-      phone: 'Phone Number', company: 'Primary Company', jobTitle: 'Job Title',
-      linkedinUrl: 'LinkedIn URL', lifecycleStage: 'Lifecycle Stage', leadStatus: 'Lead Status',
-    },
-    order: ['firstName', 'lastName', 'email', 'phone', 'company', 'jobTitle', 'linkedinUrl', 'lifecycleStage', 'leadStatus'],
-  },
   Company: {
     requiredKey: 'name',
     exclude: ['id', 'createdAt', 'updatedAt', 'status', 'ownerId'],
