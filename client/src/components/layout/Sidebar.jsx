@@ -5,10 +5,10 @@ import api from '../../api/client'
 import '../../styles/sidebar.css'
 import {
   LayoutDashboard, Users, Building2, TrendingUp, Ticket,
-  Package, ShoppingCart, List, Mail, Zap, FileText,
-  BarChart2, Settings, ChevronDown, Search,
-  FileCode, DollarSign, Headphones, Database, Workflow,
-  CreditCard, Inbox, Phone, Calendar, CheckSquare, MessageSquare, Code
+  Package, ShoppingCart, List, Mail,
+  Settings, ChevronDown, Search,
+  FileCode, Workflow,
+  Inbox, Phone, Calendar, CheckSquare, MessageSquare, Code
 } from 'lucide-react'
 
 // NOTE: Items/sections below are commented out only to HIDE them from the sidebar
@@ -39,39 +39,9 @@ const menuStructure = [
     section: 'Marketing',
     icon: Mail,
     items: [
-      // { to: '/campaigns', label: 'Campaigns', icon: Mail },            // hidden — not implemented yet
       { to: '/email', label: 'Email', icon: FileCode },
-      // { to: '/automation', label: 'Automation', icon: Zap },           // hidden — not implemented yet
-      // { to: '/forms', label: 'Forms', icon: FileText },                // hidden — not implemented yet
     ],
   },
-  // ── Sections below hidden for now (placeholders, not implemented). Uncomment to re-enable. ──
-  // {
-  //   section: 'Sales',
-  //   icon: TrendingUp,
-  //   items: [
-  //     { to: '/sales-workspace', label: 'Workspace', icon: LayoutDashboard },
-  //     { to: '/sequences', label: 'Sequences', icon: Workflow },
-  //     { to: '/forecast', label: 'Forecast', icon: BarChart2 },
-  //   ],
-  // },
-  // {
-  //   section: 'Revenue',
-  //   icon: DollarSign,
-  //   items: [
-  //     { to: '/quotes', label: 'Quotes', icon: FileText },
-  //     { to: '/invoices', label: 'Invoices', icon: DollarSign },
-  //     { to: '/payments', label: 'Payments', icon: CreditCard },
-  //   ],
-  // },
-  // {
-  //   section: 'Service',
-  //   icon: Headphones,
-  //   items: [
-  //     { to: '/help-desk', label: 'Help Desk', icon: Headphones },
-  //     { to: '/kb', label: 'Knowledge Base', icon: Database },
-  //   ],
-  // },
 ]
 
 export default function Sidebar() {
