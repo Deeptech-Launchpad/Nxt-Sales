@@ -300,8 +300,13 @@ export default function Companies() {
   const hasFilters = ownerFilter.length > 0 || createDateFilter.length > 0 || leadStatusFilter.length > 0
 
   // Export always includes every Company field (a superset of the visible
-  // table columns).
-  const exportColumns = companyFields.map(f => ({ key: f.key, header: f.label }))
+  // table columns) — except 'phone', the legacy primary-scalar mirror of the
+  // 'phones' array (we've fully migrated to the multi-value field, so only
+  // Phones should appear), and 'deletedAt', an internal Recycle Bin field
+  // that should never appear in a normal Company export.
+  const exportColumns = companyFields
+    .filter(f => f.key !== 'phone' && f.key !== 'deletedAt')
+    .map(f => ({ key: f.key, header: f.label }))
   // Edit Columns offers Lead Owner alongside the server's dynamic field list —
   // client-side only, doesn't touch Export/Import's field list.
   // 'emails'/'phones' are the raw storage arrays behind the 'email'/'phone'
