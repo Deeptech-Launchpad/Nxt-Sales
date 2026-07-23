@@ -36,9 +36,6 @@ model Company {
   email          String?
   phone          String?
   industry       String?
-  employeeCount  Int?
-  revenue        Float?
-  lifecycleStage String     @default("Lead")
   leadStatus     String?
   status         String     @default("Lead")
   notes          String?
@@ -46,16 +43,6 @@ model Company {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
   domain                String?
-  companyType           String?
-  city                  String?
-  stateRegion           String?
-  postalCode            String?
-  timeZone              String?
-  description           String?
-  linkedinUrl           String?
-  industryType          String?
-  leadType              String?
-  originalTrafficSource String?
   country               String?
   emails                Json?
   phones                Json?

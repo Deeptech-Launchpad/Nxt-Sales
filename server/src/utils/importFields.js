@@ -7,16 +7,7 @@ const { Prisma } = require('@prisma/client')
 const CONFIG = {
   Company: {
     requiredKey: 'name',
-    // industryType/companyType/leadType/employeeCount/revenue/city/stateRegion/
-    // postalCode/timeZone/originalTrafficSource/description/lifecycleStage/
-    // linkedinUrl are retired fields — excluded here ahead of their schema
-    // removal so they no longer surface in Edit Columns or Export.
-    exclude: [
-      'id', 'createdAt', 'updatedAt', 'status', 'ownerId',
-      'industryType', 'companyType', 'leadType', 'employeeCount', 'revenue',
-      'city', 'stateRegion', 'postalCode', 'timeZone', 'originalTrafficSource',
-      'description', 'lifecycleStage', 'linkedinUrl',
-    ],
+    exclude: ['id', 'createdAt', 'updatedAt', 'status', 'ownerId'],
     labels: {
       name: 'Company Name', email: 'Email', phone: 'Phone Number',
       domain: 'Company URL', industry: 'Industry',
