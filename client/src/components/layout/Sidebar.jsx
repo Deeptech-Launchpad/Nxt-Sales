@@ -4,17 +4,11 @@ import { useAuth } from '../../context/AuthContext'
 import api from '../../api/client'
 import '../../styles/sidebar.css'
 import {
-  LayoutDashboard, Users, Building2, TrendingUp, Ticket,
-  Package, ShoppingCart, List, Mail,
-  Settings, ChevronDown, Search,
-  FileCode, Workflow,
-  Inbox, Phone, Calendar, CheckSquare, MessageSquare, Code
+  LayoutDashboard, Users, Building2, TrendingUp, Mail,
+  Settings, ChevronDown, Search, FileCode,
+  Inbox, Phone, Calendar, CheckSquare, MessageSquare
 } from 'lucide-react'
 
-// NOTE: Items/sections below are commented out only to HIDE them from the sidebar
-// (those modules aren't implemented yet). Nothing is deleted — their routes, pages,
-// components, APIs and DB logic remain intact. To re-enable a module later, just
-// uncomment its line. The imported icons are also kept so re-enabling "just works".
 const menuStructure = [
   {
     section: 'CRM',
@@ -22,17 +16,10 @@ const menuStructure = [
     items: [
       { to: '/companies', label: 'Companies', icon: Building2 },
       { to: '/deals', label: 'Deals', icon: TrendingUp },
-      // { to: '/tickets', label: 'Tickets', icon: Ticket },              // hidden — not implemented yet
-      // { to: '/products', label: 'Products', icon: Package },           // hidden — not implemented yet
-      // { to: '/orders', label: 'Orders', icon: ShoppingCart },          // hidden — not implemented yet
-      // { to: '/segments', label: 'Segments', icon: List },              // hidden — not implemented yet
       { to: '/inbox', label: 'Inbox', icon: Inbox },
       { to: '/calls', label: 'Calls', icon: Phone },
       { to: '/meetings', label: 'Meetings', icon: Calendar },
       { to: '/tasks', label: 'Tasks', icon: CheckSquare },
-      // { to: '/playbooks', label: 'Playbooks', icon: Workflow },        // hidden — not implemented yet
-      // { to: '/templates', label: 'Message Templates', icon: MessageSquare }, // hidden — not implemented yet
-      // { to: '/snippets', label: 'Snippets', icon: Code },              // hidden — not implemented yet
     ],
   },
   {

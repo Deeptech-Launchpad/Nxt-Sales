@@ -8,19 +8,12 @@ import Settings from './pages/Settings'
 import Dashboard from './pages/Dashboard'
 import Companies from './pages/Companies'
 import Deals from './pages/Deals'
-import Tickets from './pages/Tickets'
 import CompanyDetail from './pages/companies/CompanyDetail'
 import CompanyRecycleBin from './pages/companies/CompanyRecycleBin'
 import Inbox from './pages/Inbox'
 import Calls from './pages/Calls'
 import Meetings from './pages/Meetings'
 import Tasks from './pages/Tasks'
-import Playbooks from './pages/Playbooks'
-import Templates from './pages/Templates'
-import Snippets from './pages/Snippets'
-import Products from './pages/Products'
-import Orders from './pages/Orders'
-import Segments from './pages/Segments'
 import Chat from './pages/Chat'
 import EmailTool from './pages/EmailTool'
 import UserManagement from './pages/UserManagement'
@@ -51,17 +44,10 @@ export default function App() {
             <Route path="companies/recycle-bin" element={<CompanyRecycleBin />} />
             <Route path="companies/:id" element={<CompanyDetail />} />
             <Route path="deals" element={<Deals />} />
-            <Route path="tickets" element={<Tickets />} />
             <Route path="inbox" element={<Inbox />} />
             <Route path="calls" element={<Calls />} />
             <Route path="meetings" element={<Meetings />} />
             <Route path="tasks" element={<Tasks />} />
-            <Route path="playbooks" element={<Playbooks />} />
-            <Route path="templates" element={<Templates />} />
-            <Route path="snippets" element={<Snippets />} />
-            <Route path="products" element={<Products />} />
-            <Route path="orders" element={<Orders />} />
-            <Route path="segments" element={<Segments />} />
             <Route path="chat" element={<Chat />} />
             <Route path="email" element={<EmailTool />} />
             <Route path="users" element={<UserManagement />} />
