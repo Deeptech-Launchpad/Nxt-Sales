@@ -29,15 +29,6 @@ const DEFAULT_COLUMNS = ['country', 'industry', 'email', 'phone', 'domain']
 // offer it without affecting Import, Create, or Edit Company in any way.
 const LEAD_OWNER_COLUMN = { key: 'ownerId', label: 'Lead Owner' }
 
-// These Company fields are no longer part of the current workflow — hidden
-// from Edit Columns (and Create/Edit Company) but left in the schema/Export,
-// since they were never asked to be removed from Export or the database.
-const RETIRED_COLUMN_KEYS = new Set([
-  'industryType', 'companyType', 'leadType', 'employeeCount', 'revenue',
-  'city', 'stateRegion', 'postalCode', 'timeZone', 'originalTrafficSource',
-  'description', 'lifecycleStage', 'linkedinUrl',
-])
-
 // deletedAt is an internal system field (Recycle Bin / auto-cleanup only) —
 // never a user-facing column. Hidden from Edit Columns the same way as the
 // retired fields above; the database column, backend, and Recycle Bin logic
@@ -318,7 +309,7 @@ export default function Companies() {
   // rest) — hidden here to avoid a duplicate, differently-formatted column
   // for the same data. Export still gets the full list via exportColumns.
   const editColumnsFields = [
-    ...companyFields.filter(f => f.key !== 'emails' && f.key !== 'phones' && !RETIRED_COLUMN_KEYS.has(f.key) && !INTERNAL_COLUMN_KEYS.has(f.key)),
+    ...companyFields.filter(f => f.key !== 'emails' && f.key !== 'phones' && !INTERNAL_COLUMN_KEYS.has(f.key)),
     LEAD_OWNER_COLUMN,
   ]
   // Table columns shown, in the field list's canonical order (not toggle order)

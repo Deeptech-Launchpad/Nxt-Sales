@@ -194,11 +194,6 @@ router.post('/bulk', auth, async (req, res) => {
     let created = 0, updated = 0, unchanged = 0, failed = 0
     const errors = []
     const messages = []
-    const num = (v, float) => {
-      if (v === undefined || v === null || v === '') return null
-      const n = float ? parseFloat(v) : parseInt(v)
-      return Number.isFinite(n) ? n : null
-    }
     // "Blank" = nothing meaningfully entered yet — used to decide which fields
     // a duplicate-matched row is allowed to fill in below.
     const isBlank = (v) => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
@@ -247,19 +242,7 @@ router.post('/bulk', auth, async (req, res) => {
 
           setIfBlank('domain',                c.domain || null)
           setIfBlank('industry',              c.industry || null)
-          setIfBlank('industryType',          c.industryType || null)
-          setIfBlank('companyType',           c.companyType || null)
-          setIfBlank('leadType',              c.leadType || null)
-          setIfBlank('employeeCount',         num(c.employeeCount, false))
-          setIfBlank('revenue',               num(c.revenue, true))
           setIfBlank('country',               c.country || null)
-          setIfBlank('city',                  c.city || null)
-          setIfBlank('stateRegion',           c.stateRegion || null)
-          setIfBlank('postalCode',            c.postalCode || null)
-          setIfBlank('timeZone',              c.timeZone || null)
-          setIfBlank('originalTrafficSource', c.originalTrafficSource || null)
-          setIfBlank('linkedinUrl',           c.linkedinUrl || null)
-          setIfBlank('description',           c.description || null)
           setIfBlank('leadStatus',            c.leadStatus || null)
           setIfBlank('endPdpUrl',             c.endPdpUrl || null)
           setIfBlank('cms',                   c.cms || null)
@@ -318,20 +301,7 @@ router.post('/bulk', auth, async (req, res) => {
             phones:                phoneList.length ? phoneList : null,
             domain:                c.domain || null,
             industry:              c.industry || null,
-            industryType:          c.industryType || null,
-            companyType:           c.companyType || null,
-            leadType:              c.leadType || null,
-            employeeCount:         num(c.employeeCount, false),
-            revenue:               num(c.revenue, true),
             country:               c.country || null,
-            city:                  c.city || null,
-            stateRegion:           c.stateRegion || null,
-            postalCode:            c.postalCode || null,
-            timeZone:              c.timeZone || null,
-            originalTrafficSource: c.originalTrafficSource || null,
-            linkedinUrl:           c.linkedinUrl || null,
-            description:           c.description || null,
-            lifecycleStage:        c.lifecycleStage || 'Lead',
             leadStatus:            c.leadStatus || null,
             status:                'Lead',
             ownerId:               matchedOwnerId || req.user.id,
@@ -433,8 +403,8 @@ router.get('/:id', auth, async (req, res) => {
 // ── POST /api/companies ───────────────────────────────────
 router.post('/', auth, async (req, res) => {
   try {
-    const { name, email, phone, industry, employeeCount, revenue, lifecycleStage, leadStatus, status, ownerId,
-            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, emails, phones,
+    const { name, email, phone, industry, leadStatus, status, ownerId,
+            domain, country, emails, phones,
             endPdpUrl, cms, remarks, contactPersons, linkedProfiles } = req.body
     if (!name) return res.status(400).json({ message: 'Company name is required.' })
 
@@ -469,23 +439,10 @@ router.post('/', auth, async (req, res) => {
         phone:           primaryPhone,
         phones:          phoneList.length ? phoneList : null,
         industry:        industry || null,
-        employeeCount:   employeeCount ? parseInt(employeeCount) : null,
-        revenue:         revenue  ? parseFloat(revenue) : null,
-        lifecycleStage:  lifecycleStage || 'Lead',
         leadStatus:      leadStatus || null,
         status:          status    || 'Lead',
         ownerId:         ownerId   || req.user.id,
         domain:                domain                || null,
-        companyType:           companyType           || null,
-        city:                  city                  || null,
-        stateRegion:           stateRegion           || null,
-        postalCode:            postalCode            || null,
-        timeZone:              timeZone              || null,
-        description:           description           || null,
-        linkedinUrl:           linkedinUrl           || null,
-        industryType:          industryType          || null,
-        leadType:              leadType              || null,
-        originalTrafficSource: originalTrafficSource || null,
         country:               country               || null,
         endPdpUrl:             endPdpUrl             || null,
         cms:                   cms                   || null,
@@ -513,8 +470,8 @@ router.put('/:id', auth, async (req, res) => {
     const existingRecord = await prisma.company.findUnique({ where: { id }, select: { deletedAt: true } })
     if (!existingRecord || existingRecord.deletedAt) return res.status(404).json({ message: 'Company not found.' })
 
-    const { name, email, phone, industry, employeeCount, revenue, lifecycleStage, leadStatus, status, ownerId,
-            domain, companyType, city, stateRegion, postalCode, timeZone, description, linkedinUrl, industryType, leadType, originalTrafficSource, country, emails, phones,
+    const { name, email, phone, industry, leadStatus, status, ownerId,
+            domain, country, emails, phones,
             endPdpUrl, cms, remarks, contactPersons, linkedProfiles } = req.body
 
     // Recompute the multi-value lists + primary only when arrays were sent.
@@ -532,23 +489,10 @@ router.put('/:id', auth, async (req, res) => {
         ...(phoneList ? { phone: phoneList[0] || null, phones: phoneList.length ? phoneList : null }
                       : (phone !== undefined && { phone: phone || null })),
         ...(industry !== undefined && { industry: industry || null }),
-        ...(employeeCount !== undefined && { employeeCount: employeeCount ? parseInt(employeeCount) : null }),
-        ...(revenue !== undefined && { revenue: revenue ? parseFloat(revenue) : null }),
-        ...(lifecycleStage !== undefined && { lifecycleStage: lifecycleStage || 'Lead' }),
         ...(leadStatus !== undefined && { leadStatus: leadStatus || null }),
         ...(status !== undefined && { status: status || 'Lead' }),
         ...(ownerId !== undefined && { ownerId: ownerId || null }),
         ...(domain !== undefined && { domain: domain || null }),
-        ...(companyType !== undefined && { companyType: companyType || null }),
-        ...(city !== undefined && { city: city || null }),
-        ...(stateRegion !== undefined && { stateRegion: stateRegion || null }),
-        ...(postalCode !== undefined && { postalCode: postalCode || null }),
-        ...(timeZone !== undefined && { timeZone: timeZone || null }),
-        ...(description !== undefined && { description: description || null }),
-        ...(linkedinUrl !== undefined && { linkedinUrl: linkedinUrl || null }),
-        ...(industryType !== undefined && { industryType: industryType || null }),
-        ...(leadType !== undefined && { leadType: leadType || null }),
-        ...(originalTrafficSource !== undefined && { originalTrafficSource: originalTrafficSource || null }),
         ...(country !== undefined && { country: country || null }),
         ...(endPdpUrl !== undefined && { endPdpUrl: endPdpUrl || null }),
         ...(cms !== undefined && { cms: cms || null }),

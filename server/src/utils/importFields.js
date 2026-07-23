@@ -7,23 +7,25 @@ const { Prisma } = require('@prisma/client')
 const CONFIG = {
   Company: {
     requiredKey: 'name',
-    exclude: ['id', 'createdAt', 'updatedAt', 'status', 'ownerId'],
+    // industryType/companyType/leadType/employeeCount/revenue/city/stateRegion/
+    // postalCode/timeZone/originalTrafficSource/description/lifecycleStage/
+    // linkedinUrl are retired fields — excluded here ahead of their schema
+    // removal so they no longer surface in Edit Columns or Export.
+    exclude: [
+      'id', 'createdAt', 'updatedAt', 'status', 'ownerId',
+      'industryType', 'companyType', 'leadType', 'employeeCount', 'revenue',
+      'city', 'stateRegion', 'postalCode', 'timeZone', 'originalTrafficSource',
+      'description', 'lifecycleStage', 'linkedinUrl',
+    ],
     labels: {
       name: 'Company Name', email: 'Email', phone: 'Phone Number',
       domain: 'Company URL', industry: 'Industry',
-      industryType: 'Industry Type', companyType: 'Type', leadType: 'Lead Type',
-      employeeCount: 'Number of Employees', revenue: 'Annual Revenue',
-      country: 'Country of Origin', city: 'City', stateRegion: 'State/Region',
-      postalCode: 'Postal Code', timeZone: 'Time Zone',
-      originalTrafficSource: 'Original Traffic Source', linkedinUrl: 'LinkedIn URL',
-      description: 'Description', lifecycleStage: 'Lifecycle Stage', leadStatus: 'Lead Status',
+      country: 'Country of Origin', leadStatus: 'Lead Status',
       notes: 'Notes', endPdpUrl: 'End PDP URL', cms: 'CMS', remarks: 'Remarks',
       contactPersons: 'Contact Person', linkedProfiles: 'Linked Profile',
     },
-    order: ['name', 'email', 'phone', 'domain', 'industry', 'industryType',
-      'companyType', 'leadType', 'employeeCount', 'revenue', 'country', 'city', 'stateRegion',
-      'postalCode', 'timeZone', 'originalTrafficSource', 'linkedinUrl', 'description',
-      'lifecycleStage', 'leadStatus', 'notes', 'endPdpUrl', 'cms', 'remarks',
+    order: ['name', 'email', 'phone', 'domain', 'industry', 'country',
+      'leadStatus', 'notes', 'endPdpUrl', 'cms', 'remarks',
       'contactPersons', 'linkedProfiles'],
   },
 }
