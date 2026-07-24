@@ -527,154 +527,200 @@ router.post('/send', auth, async (req, res) => {
   }
 })
 
-// POST /api/email/sync — strict sync: only emails between user Gmail ↔ contact/company email
+// ── Email address matching helpers (Update: Email Sync Rewrite) ────────────
+// Extracts bare, lowercase email addresses out of a raw header value such as
+// `"Jane Doe" <jane@company.com>, other@company.com` — used instead of raw
+// substring matching so display names, aliases, and multiple recipients in
+// To/Cc all resolve correctly.
+const EMAIL_ADDR_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
+function extractAddresses(headerValue) {
+  if (!headerValue) return []
+  return (headerValue.match(EMAIL_ADDR_RE) || []).map(a => a.toLowerCase())
+}
+
+// A company's full set of saved addresses — primary `email` plus any
+// additional `emails` (Update 2: multi-email support). Same fields already
+// rendered in Company Details; sync now uses all of them, not just primary.
+function companyAddressSet(company) {
+  const set = new Set()
+  if (company?.email) set.add(company.email.trim().toLowerCase())
+  if (Array.isArray(company?.emails)) {
+    for (const e of company.emails) {
+      if (typeof e === 'string' && e.trim()) set.add(e.trim().toLowerCase())
+    }
+  }
+  return set
+}
+
+// In-process single-flight lock: if a sync for the same company is already
+// running, a second call awaits and returns that same in-flight result
+// instead of starting a duplicate run that could race on the same rows.
+const syncInFlight = new Map()
+
+// POST /api/email/sync — incremental, idempotent sync: only conversations
+// between the connected Gmail account and the company's saved address(es).
+// Never deletes or recreates an Activity — a message already synced is left
+// untouched forever, which is what keeps its id, trackingId, and open-tracking
+// history permanently intact and in sync with notifications.
 router.post('/sync', auth, async (req, res) => {
   const { contactEmail, companyId } = req.body
-  if (!contactEmail) return res.status(400).json({ message: 'contactEmail required' })
 
-  // Never trust the frontend on this — a bin'd company should reject writes
-  // (Activity creation) even if a stale UI surface still has its id in hand.
+  let company = null
   if (companyId) {
-    const company = await prisma.company.findUnique({ where: { id: companyId }, select: { deletedAt: true } })
+    company = await prisma.company.findUnique({ where: { id: companyId } })
+    // Never trust the frontend on this — a bin'd company should reject writes
+    // (Activity creation) even if a stale UI surface still has its id in hand.
     if (!company || company.deletedAt) {
       return res.status(400).json({ message: 'This company has been moved to the Recycle Bin. Please restore it before sending or syncing emails.' })
     }
   }
 
-  const account = await prisma.emailAccount.findFirst({
-    where: { userId: req.user.id, provider: 'gmail' },
-  })
-  if (!account) return res.json({ synced: 0, message: 'Gmail not connected' })
+  // Company is the source of truth for which addresses to sync (primary +
+  // additional). contactEmail is kept for backward compatibility with the
+  // current caller and as a fallback when no companyId is given.
+  const targetAddresses = companyAddressSet(company)
+  if (contactEmail) targetAddresses.add(contactEmail.trim().toLowerCase())
+  if (targetAddresses.size === 0) return res.status(400).json({ message: 'contactEmail required' })
 
-  const userEmail    = account.email.toLowerCase()
-  const contactLower = contactEmail.toLowerCase()
-
-  try {
-    const { google } = require('googleapis')
-    const oauth2Client = getOAuth2Client()
-    oauth2Client.setCredentials({
-      access_token: account.accessToken,
-      refresh_token: account.refreshToken,
-    })
-
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
-
-    // Verify token is valid and log which Gmail account is actually connected
-    let actualEmail
+  const lockKey = companyId || [...targetAddresses].sort().join(',')
+  if (syncInFlight.has(lockKey)) {
     try {
-      const profile = await gmail.users.getProfile({ userId: 'me' })
-      actualEmail = profile.data.emailAddress
-      console.log(`[Email Sync] Token valid — connected Gmail: ${actualEmail}`)
-      console.log(`[Email Sync] Searching for emails with contact: ${contactLower}`)
-    } catch (tokenErr) {
-      console.error(`[Email Sync] Token invalid:`, tokenErr.message)
-      return res.status(401).json({ message: 'Gmail token expired. Please disconnect Gmail and reconnect it.' })
+      return res.json(await syncInFlight.get(lockKey))
+    } catch (err) {
+      return res.status(err.status || 500).json({ message: err.message || 'Failed to sync emails.' })
     }
+  }
 
-    // Use simple single-address queries — Gmail API can silently return 0
-    // when combining from: and to: for the signed-in user's own address.
-    // The strict app-level header check below ensures only relevant emails are kept.
-    const queryInbound  = `from:${contactEmail}`   // emails received from contact
-    const queryOutbound = `to:${contactEmail}`      // emails sent to contact (in Sent)
-
-    console.log(`[Email Sync] Inbound  query: ${queryInbound}`)
-    console.log(`[Email Sync] Outbound query: ${queryOutbound}`)
-
-    const [inboundRes, outboundRes] = await Promise.all([
-      gmail.users.messages.list({ userId: 'me', q: queryInbound,  maxResults: 100 }),
-      gmail.users.messages.list({ userId: 'me', q: queryOutbound, maxResults: 100 }),
-    ])
-
-    // Merge + deduplicate by message ID
-    const seenIds = new Set()
-    const messages = [
-      ...(inboundRes.data.messages  || []),
-      ...(outboundRes.data.messages || []),
-    ].filter(m => { if (seenIds.has(m.id)) return false; seenIds.add(m.id); return true })
-
-    const threadIds = new Set(messages.map(m => m.threadId))
-    console.log(`[Email Sync] Gmail returned ${messages.length} message(s) (${(inboundRes.data.messages||[]).length} inbound + ${(outboundRes.data.messages||[]).length} outbound), ${threadIds.size} thread(s)`)
-
-    // All messageIds that belong to valid threads — used to clean up unrelated old syncs
-    const validMessageIds = new Set()
-    let synced = 0
-
-    for (const threadId of threadIds) {
-      const threadRes = await gmail.users.threads.get({
-        userId: 'me',
-        id: threadId,
-        format: 'full',
-      })
-
-      const threadMessages = threadRes.data.messages || []
-
-      for (const msg of threadMessages) {
-        const headers     = msg.payload?.headers || []
-        const fromRaw     = headers.find(h => h.name === 'From')?.value  || ''
-        const toRaw       = headers.find(h => h.name === 'To')?.value    || ''
-        const fromLower   = fromRaw.toLowerCase()
-        const toLower     = toRaw.toLowerCase()
-
-        // Application-level strict check: message must be between user and contact only
-        const userToContact    = fromLower.includes(userEmail)    && toLower.includes(contactLower)
-        const contactToUser    = fromLower.includes(contactLower) && toLower.includes(userEmail)
-        if (!userToContact && !contactToUser) continue
-
-        validMessageIds.add(msg.id)
-
-        const exists = await prisma.activity.findFirst({ where: { messageId: msg.id } })
-        if (exists) continue
-
-        const subjectRaw = headers.find(h => h.name === 'Subject')?.value || '(no subject)'
-        const dateHeader = headers.find(h => h.name === 'Date')?.value
-
-        const bodyText = extractTextBody(msg.payload)
-
-        const isInbound = fromLower.includes(contactLower)
-        const emailDate = dateHeader ? new Date(dateHeader) : new Date()
-
-        await prisma.activity.create({
-          data: {
-            type:        'email',
-            companyId,
-            userId:      req.user.id,
-            title:       `Email – ${subjectRaw}`,
-            body:        bodyText || null,
-            toEmail:     toRaw,
-            fromEmail:   fromRaw,
-            subject:     subjectRaw,
-            emailStatus: isInbound ? 'received' : 'sent',
-            direction:   isInbound ? 'inbound'  : 'outbound',
-            messageId:   msg.id,
-            threadId:    threadId,
-            createdAt:   emailDate,
-          },
-        })
-        synced++
-      }
-    }
-
-    // Delete previously synced emails for this entity that don't match the strict filter
-    const allSynced = await prisma.activity.findMany({
-      where: {
-        type: 'email',
-        messageId: { not: null },
-        companyId,
-      },
-      select: { id: true, messageId: true },
-    })
-    const toDelete = allSynced.filter(a => !validMessageIds.has(a.messageId))
-    if (toDelete.length > 0) {
-      await prisma.activity.deleteMany({ where: { id: { in: toDelete.map(a => a.id) } } })
-    }
-
-    console.log(`[Email Sync] Done: synced=${synced}, removed=${toDelete.length}`)
-    res.json({ synced, removed: toDelete.length, total: messages.length })
+  const runPromise = runEmailSync({ userId: req.user.id, companyId, targetAddresses })
+  syncInFlight.set(lockKey, runPromise)
+  try {
+    res.json(await runPromise)
   } catch (err) {
     console.error('Gmail sync error:', err.message)
-    res.status(500).json({ message: err.message || 'Failed to sync emails.' })
+    res.status(err.status || 500).json({ message: err.message || 'Failed to sync emails.' })
+  } finally {
+    syncInFlight.delete(lockKey)
   }
 })
+
+async function runEmailSync({ userId, companyId, targetAddresses }) {
+  const account = await prisma.emailAccount.findFirst({
+    where: { userId, provider: 'gmail' },
+  })
+  if (!account) return { synced: 0, removed: 0, total: 0, message: 'Gmail not connected' }
+
+  const userEmail    = account.email.toLowerCase()
+  const addressList  = [...targetAddresses]
+
+  const { google } = require('googleapis')
+  const oauth2Client = getOAuth2Client()
+  oauth2Client.setCredentials({
+    access_token: account.accessToken,
+    refresh_token: account.refreshToken,
+  })
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
+
+  try {
+    const profile = await gmail.users.getProfile({ userId: 'me' })
+    console.log(`[Email Sync] Token valid — connected Gmail: ${profile.data.emailAddress}`)
+    console.log(`[Email Sync] Company addresses: ${addressList.join(', ')}`)
+  } catch (tokenErr) {
+    console.error(`[Email Sync] Token invalid:`, tokenErr.message)
+    const err = new Error('Gmail token expired. Please disconnect Gmail and reconnect it.')
+    err.status = 401
+    throw err
+  }
+
+  // One OR-grouped query per direction covers every company address in a
+  // single round-trip, instead of one round-trip per address.
+  const fromClause = addressList.map(a => `from:${a}`).join(' OR ')
+  const toClause    = addressList.map(a => `to:${a}`).join(' OR ')
+  const ccClause    = addressList.map(a => `cc:${a}`).join(' OR ')
+
+  const [inboundRes, outboundToRes, outboundCcRes] = await Promise.all([
+    gmail.users.messages.list({ userId: 'me', q: `(${fromClause})`, maxResults: 100 }),
+    gmail.users.messages.list({ userId: 'me', q: `(${toClause})`,   maxResults: 100 }),
+    gmail.users.messages.list({ userId: 'me', q: `(${ccClause})`,   maxResults: 100 }),
+  ])
+
+  // Merge + deduplicate by message ID across all addresses/queries
+  const seenIds = new Set()
+  const messages = [
+    ...(inboundRes.data.messages    || []),
+    ...(outboundToRes.data.messages || []),
+    ...(outboundCcRes.data.messages || []),
+  ].filter(m => { if (seenIds.has(m.id)) return false; seenIds.add(m.id); return true })
+
+  const threadIds = new Set(messages.map(m => m.threadId))
+  console.log(`[Email Sync] Gmail returned ${messages.length} message(s), ${threadIds.size} thread(s)`)
+
+  let synced = 0
+
+  for (const threadId of threadIds) {
+    const threadRes = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'full',
+    })
+
+    const threadMessages = threadRes.data.messages || []
+
+    for (const msg of threadMessages) {
+      const headers = msg.payload?.headers || []
+      const getHeader = (name) => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || ''
+
+      // Application-level strict check, done per-message (handles reply
+      // chains/forwards correctly since each message in the thread carries
+      // its own headers) — extracted bare addresses, so aliases/display
+      // names/multiple recipients in To or Cc all resolve correctly.
+      const fromAddrs       = extractAddresses(getHeader('From'))
+      const recipientAddrs  = [...extractAddresses(getHeader('To')), ...extractAddresses(getHeader('Cc'))]
+
+      const fromIsUser          = fromAddrs.includes(userEmail)
+      const fromIsCompany       = fromAddrs.some(a => targetAddresses.has(a))
+      const recipientHasCompany = recipientAddrs.some(a => targetAddresses.has(a))
+      const recipientHasUser    = recipientAddrs.includes(userEmail)
+
+      const userToCompany = fromIsUser    && recipientHasCompany
+      const companyToUser = fromIsCompany && recipientHasUser
+      if (!userToCompany && !companyToUser) continue
+
+      // Idempotent + never destructive: a message already synced is left
+      // completely untouched — this is what preserves its Activity id,
+      // trackingId, and open-tracking history permanently, and is what keeps
+      // notifications and Activity history from ever disagreeing again.
+      const exists = await prisma.activity.findFirst({ where: { messageId: msg.id } })
+      if (exists) continue
+
+      const subjectRaw = getHeader('Subject') || '(no subject)'
+      const dateHeader = getHeader('Date')
+      const bodyText   = extractTextBody(msg.payload)
+      const emailDate  = dateHeader ? new Date(dateHeader) : new Date()
+
+      await prisma.activity.create({
+        data: {
+          type:        'email',
+          companyId:   companyId || null,
+          userId,
+          title:       `Email – ${subjectRaw}`,
+          body:        bodyText || null,
+          toEmail:     getHeader('To'),
+          fromEmail:   getHeader('From'),
+          subject:     subjectRaw,
+          emailStatus: companyToUser ? 'received' : 'sent',
+          direction:   companyToUser ? 'inbound'  : 'outbound',
+          messageId:   msg.id,
+          threadId,
+          createdAt:   emailDate,
+        },
+      })
+      synced++
+    }
+  }
+
+  console.log(`[Email Sync] Done: synced=${synced}`)
+  return { synced, removed: 0, total: messages.length }
+}
 
 // DELETE /api/email/gmail/disconnect
 router.delete('/gmail/disconnect', auth, async (req, res) => {
