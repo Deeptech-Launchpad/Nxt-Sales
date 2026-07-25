@@ -22,7 +22,7 @@ const app  = express()
 const PORT = process.env.PORT || 5000
 
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:3000', credentials: true }))
-app.use(express.json({ limit: '25mb' }))
+app.use(express.json({ limit: '50mb' }))
 app.use(session({
   secret: process.env.JWT_SECRET || 'dev-secret',
   resave: false,
