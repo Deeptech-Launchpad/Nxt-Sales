@@ -4,6 +4,7 @@ import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 import { INDUSTRIES, COUNTRIES } from '../../constants/formOptions'
 import MultiValueInput from '../MultiValueInput'
+import EmailConflictWarning from '../EmailConflictWarning'
 import { cleanList } from '../../utils/multiValue'
 import '../../styles/modal.css'
 
@@ -235,6 +236,9 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
               placeholder="name@example.com"
               addLabel="Add email"
             />
+            {/* No excludeCompanyId — this company does not exist yet, so every
+                match is genuinely another company's address. */}
+            <EmailConflictWarning emails={form.emails} />
           </div>
 
           {/* Duplicate warning — placed right after the top identifying fields

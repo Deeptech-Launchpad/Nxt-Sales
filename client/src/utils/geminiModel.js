@@ -18,11 +18,29 @@ export const GEMINI_MODEL_PRIORITY = [
   'gemini-1.5-flash', 'gemini-1.5-pro',
 ]
 
+// Plain fetch() has no default timeout — a rate-limited or momentarily
+// unresponsive model can leave a request hanging far longer than any normal
+// API round-trip. Bounding each attempt is what keeps the fallback loop's
+// worst case measured in seconds instead of unbounded: with up to 7
+// candidates, one truly slow/hanging model could otherwise stall the whole
+// chain for minutes before ever reaching a model that actually works.
+const GEMINI_ATTEMPT_TIMEOUT_MS = 12000
+
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // Ask Google which Gemini models this specific API key can actually use, and
 // rank them by GEMINI_MODEL_PRIORITY — so the user never has to guess/enter a
 // model name themselves.
 export async function discoverBestGeminiModel(apiKey) {
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`)
+  const resp = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {}, GEMINI_ATTEMPT_TIMEOUT_MS)
   if (!resp.ok) {
     const e = await resp.json().catch(() => ({}))
     throw new Error(e.error?.message || 'Could not list Gemini models for this API key.')
@@ -44,7 +62,10 @@ export async function discoverBestGeminiModel(apiKey) {
 // exhausted (429) — Gemini's free-tier quotas are commonly PER-MODEL, so a
 // 429 on one model does not mean every model is blocked for this key. A bad
 // key or a safety block applies identically to every model, so those fail
-// fast after one attempt instead of wasting time retrying.
+// fast after one attempt instead of wasting time retrying. Each attempt is
+// individually time-bounded (see fetchWithTimeout above) — the fallback
+// breadth and detection rules are unchanged, only a hung attempt is now
+// capped rather than able to stall every model behind it.
 export async function callGeminiWithFallback(apiKey, preferredModel, requestBody) {
   const candidates = [preferredModel, ...GEMINI_MODEL_PRIORITY].filter((v, i, a) => v && a.indexOf(v) === i)
   let lastErr = null
@@ -55,13 +76,15 @@ export async function callGeminiWithFallback(apiKey, preferredModel, requestBody
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
     let resp
     try {
-      resp = await fetch(url, {
+      resp = await fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
-      })
+      }, GEMINI_ATTEMPT_TIMEOUT_MS)
     } catch (networkErr) {
-      lastErr = networkErr
+      lastErr = networkErr.name === 'AbortError'
+        ? new Error(`${model} did not respond within ${GEMINI_ATTEMPT_TIMEOUT_MS / 1000}s`)
+        : networkErr
       continue
     }
     if (resp.ok) return await resp.json()

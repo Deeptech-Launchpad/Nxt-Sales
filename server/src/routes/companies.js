@@ -147,6 +147,81 @@ router.get('/export', auth, async (req, res) => {
   }
 })
 
+// ── POST /api/companies/email-conflicts ───────────────────────────────────────
+// Read-only: creates/modifies nothing. Given a set of email addresses, reports
+// which OTHER companies already hold any of them.
+//
+// Why this exists: an email address can only ever be attached to one company's
+// conversation history — Email Sync stores one Activity row per Gmail message,
+// so whichever company claims a message first keeps it. Two companies sharing an
+// address therefore silently starve whichever was created second. Surfacing the
+// clash at save time is what stops that being discovered later as "sync is
+// broken". Deliberately advisory: the caller is warned, never blocked, because
+// legitimately shared addresses (a consultant serving two clients, a shared
+// info@ at a parent company) do occur and the user is the right judge.
+//
+// Matching covers BOTH the primary `email` column and the `emails` JSONB array,
+// case-insensitively, and is done in Postgres rather than by scanning rows in
+// JS — this is called on a debounce while typing, against a table that holds
+// thousands of companies in production.
+router.post('/email-conflicts', auth, async (req, res) => {
+  try {
+    const { emails, excludeCompanyId } = req.body
+    const addrs = [...new Set(
+      (Array.isArray(emails) ? emails : [])
+        .filter(e => typeof e === 'string')
+        .map(e => e.trim().toLowerCase())
+        .filter(Boolean)
+    )]
+    if (addrs.length === 0) return res.json({ conflicts: [] })
+
+    // Recycle-Binned companies are archived and never block anything.
+    const rows = await prisma.$queryRaw`
+      SELECT id, name, email, emails
+      FROM "Company"
+      WHERE "deletedAt" IS NULL
+        AND (
+          lower(email) = ANY(${addrs}::text[])
+          OR EXISTS (
+            -- The CASE is load-bearing: the emails column is nullable JSONB and
+            -- some rows hold JSON null (not SQL NULL), which COALESCE does not
+            -- catch. jsonb_array_elements_text errors with "cannot extract
+            -- elements from a scalar" on those, so anything that is not an
+            -- array is normalised to an empty array before expansion.
+            SELECT 1
+            FROM jsonb_array_elements_text(
+              CASE WHEN jsonb_typeof(emails) = 'array' THEN emails ELSE '[]'::jsonb END
+            ) AS e
+            WHERE lower(e) = ANY(${addrs}::text[])
+          )
+        )
+    `
+
+    // address → the other companies holding it
+    const byAddress = new Map(addrs.map(a => [a, []]))
+    for (const row of rows) {
+      if (excludeCompanyId && row.id === excludeCompanyId) continue
+      const held = new Set(
+        [row.email, ...(Array.isArray(row.emails) ? row.emails : [])]
+          .filter(v => typeof v === 'string')
+          .map(v => v.trim().toLowerCase())
+      )
+      for (const a of addrs) {
+        if (held.has(a)) byAddress.get(a).push({ id: row.id, name: row.name })
+      }
+    }
+
+    const conflicts = [...byAddress.entries()]
+      .filter(([, companies]) => companies.length > 0)
+      .map(([email, companies]) => ({ email, companies }))
+
+    res.json({ conflicts })
+  } catch (err) {
+    console.error('[Company email-conflicts] error:', err.message)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
 // ── POST /api/companies/check-duplicates — bulk pre-import duplicate preview ──
 // Read-only: creates/modifies nothing. For each row, checks the same fields as
 // single-company duplicate detection (name/email/phone/domain), and reports

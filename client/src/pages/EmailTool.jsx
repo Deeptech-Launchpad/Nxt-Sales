@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Chart, registerables } from 'chart.js'
 import api from '../api/client'
 import '../styles/email-tool.css'
@@ -7,6 +8,7 @@ import { runDeliverabilityAnalysis } from '../utils/emailDeliverability'
 import { compressImageIfNeeded } from '../utils/imageCompress'
 import { discoverBestGeminiModel, callGeminiWithFallback } from '../utils/geminiModel'
 import { stripInlineFontSize } from '../utils/sanitizeEmailHtml'
+import { invalidateCompanyEmail } from '../utils/emailCache'
 
 Chart.register(...registerables)
 
@@ -420,11 +422,10 @@ function ToastContainer() {
 // Sidebar
 // ─────────────────────────────────────────────────────────
 const NAV_ITEMS = [
-  { key: 'composer',  icon: '✉️',  label: 'Composer' },
-  { key: 'sent',      icon: '📤',  label: 'Sent Emails' },
-  { key: 'drafts',    icon: '📝',  label: 'Drafts' },
-  { key: 'analytics', icon: '📊',  label: 'Analytics' },
-  { key: 'settings',  icon: '⚙️',  label: 'Settings' },
+  { key: 'composer',    icon: '✉️',  label: 'Composer' },
+  { key: 'drafts',      icon: '📝',  label: 'Drafts' },
+  { key: 'analytics',   icon: '📊',  label: 'Analytics' },
+  { key: 'settings',    icon: '⚙️',  label: 'Settings' },
 ]
 
 function ETSidebar({ section, setSection, draftsCount, gmailStatus, onCompose }) {
@@ -485,7 +486,7 @@ function AttachChip({ name }) {
 // ─────────────────────────────────────────────────────────
 // Composer Section
 // ─────────────────────────────────────────────────────────
-function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initialDraft, clearInitialDraft }) {
+function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, clearInitialDraft, companyContext }) {
   const [to, setTo]         = useState(initialDraft?.to || '')
   const [cc, setCc]         = useState(initialDraft?.cc || '')
   const [bcc, setBcc]       = useState(initialDraft?.bcc || '')
@@ -535,6 +536,17 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
     clearInitialDraft?.()
   // eslint-disable-next-line
   }, [initialDraft])
+
+  // Arriving from a company (Email quick action, "Log an email", or clicking a
+  // saved company address) — prefill the recipient so the composer is ready to
+  // send without retyping. companyContext.companyId travels with the send so
+  // the email is filed against that company.
+  useEffect(() => {
+    if (!companyContext) return
+    if (companyContext.to) setTo(companyContext.to)
+    if (companyContext.companyName) setClientName(prev => prev || companyContext.companyName)
+  // eslint-disable-next-line
+  }, [companyContext?.to, companyContext?.companyId])
 
   const handleTemplateChange = (val) => {
     setTemplate(val)
@@ -780,6 +792,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
           subject: previewSubject || subject,
           htmlBody: previewHtml,
           emailMode,
+          companyId: companyContext?.companyId || undefined,
           attachments: attachments.map(a => ({
             filename: a.name,
             content: a.data,
@@ -791,26 +804,13 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
         await sendViaGmailDirect(localToken, to, cc, bcc, previewSubject || subject, previewHtml, attachments)
       }
 
-      // Save to localStorage sent history
-      const record = {
-        id: 'sent_' + Date.now(),
-        clientName: clientName || 'N/A',
-        clientEmail: to,
-        subject: previewSubject || subject,
-        emailType: template === 'manual' ? 'Manual' : `Template ${template}`,
-        timestamp: Date.now(),
-        status: 'Success',
-        attachmentNames: attachments.map(a => a.name),
-        bodyHtml: previewHtml
-      }
-      const sent = JSON.parse(localStorage.getItem('altius_sent_emails') || '[]')
-      sent.unshift(record)
-      localStorage.setItem('altius_sent_emails', JSON.stringify(sent))
+      // The company's conversation cache no longer reflects reality — the user
+      // returns to Company Detail by navigation (a remount, not a refreshKey
+      // bump), so without this the freshly sent email would not show up.
+      invalidateCompanyEmail(companyContext?.companyId)
 
       showToast(`Email sent successfully to ${to}!`, 'success')
       clearForm()
-      onSent()
-      setSection('sent')
     } catch (err) {
       showToast('Send failed: ' + (err.response?.data?.message || err.message), 'error')
     } finally {
@@ -1114,151 +1114,6 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, onSent, initia
 }
 
 // ─────────────────────────────────────────────────────────
-// Sent Emails Section
-// ─────────────────────────────────────────────────────────
-function SentSection({ refresh }) {
-  const [emails, setEmails]     = useState([])
-  const [search, setSearch]     = useState('')
-  const [selected, setSelected] = useState(null)
-
-  const load = useCallback(() => {
-    const stored = JSON.parse(localStorage.getItem('altius_sent_emails') || '[]')
-    setEmails(stored)
-  }, [])
-
-  useEffect(() => { load() }, [load, refresh])
-
-  const filtered = emails.filter(m => {
-    if (!search.trim()) return true
-    const q = search.toLowerCase()
-    return (m.clientName || '').toLowerCase().includes(q) ||
-           (m.clientEmail || '').toLowerCase().includes(q) ||
-           (m.subject || '').toLowerCase().includes(q)
-  })
-
-  return (
-    <div className="et-section">
-      <div className="et-panel-header">
-        <h2 className="et-panel-title">Sent Emails</h2>
-        <div className="et-search-wrap">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <input
-            className="et-search-input"
-            type="text"
-            placeholder="Search sent emails..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="et-grid-panel">
-        <div className="et-table-scroll">
-          <table className="et-grid-table">
-            <thead>
-              <tr>
-                <th style={{ width: 40 }}>STATUS</th>
-                <th>CLIENT NAME</th>
-                <th>CLIENT EMAIL</th>
-                <th>SUBJECT</th>
-                <th>DATE &amp; TIME</th>
-                <th style={{ width: 50, textAlign: 'center' }}>FILES</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="et-td-empty">
-                    {emails.length === 0 ? 'No sent emails yet. Compose and send your first email!' : 'No emails match your search.'}
-                  </td>
-                </tr>
-              ) : filtered.map(m => (
-                <tr key={m.id} onClick={() => setSelected(m)}>
-                  <td>
-                    <div className="et-status-icon-sent">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                        <polyline points="20 6 9 17 4 12"/>
-                      </svg>
-                    </div>
-                  </td>
-                  <td style={{ fontWeight: 600 }}>{m.clientName || 'N/A'}</td>
-                  <td style={{ color: '#94a3b8' }}>{m.clientEmail}</td>
-                  <td>{m.subject}</td>
-                  <td style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>{fmtDateTime(m.timestamp)}</td>
-                  <td style={{ textAlign: 'center' }}>
-                    {m.attachmentNames?.length > 0 && (
-                      <span className="et-attach-icon" title={m.attachmentNames.join(', ')}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                        </svg>
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {selected && <SentDetailModal email={selected} onClose={() => setSelected(null)} />}
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────
-// Sent Detail Modal
-// ─────────────────────────────────────────────────────────
-function SentDetailModal({ email, onClose }) {
-  return (
-    <div className="et-modal-overlay active" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="et-modal-box">
-        <div className="et-modal-header">
-          <h3>Sent Pitch Details</h3>
-          <button className="et-modal-close" onClick={onClose}>×</button>
-        </div>
-
-        <div className="et-modal-meta">
-          <div className="et-meta-row">
-            <span className="et-meta-label">TO</span>
-            <span className="et-meta-val">{email.clientEmail}</span>
-          </div>
-          <div className="et-meta-row">
-            <span className="et-meta-label">SUBJECT</span>
-            <span className="et-meta-val">{email.subject}</span>
-          </div>
-          <div className="et-meta-row">
-            <span className="et-meta-label">DATE</span>
-            <span className="et-meta-val">{fmtDateTime(email.timestamp)}</span>
-          </div>
-        </div>
-
-        <div className="et-modal-body">
-          <div className="et-modal-envelope">
-            {email.bodyHtml
-              ? <div dangerouslySetInnerHTML={{ __html: email.bodyHtml }} />
-              : <p style={{ color: '#94a3b8' }}>No body stored.</p>
-            }
-          </div>
-        </div>
-
-        {email.attachmentNames?.length > 0 && (
-          <div className="et-modal-attachments">
-            {email.attachmentNames.map((n, i) => <AttachChip key={i} name={n} />)}
-          </div>
-        )}
-
-        <div className="et-modal-footer">
-          <button className="et-btn et-btn-secondary" style={{ flex: 'none' }} onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────
 // Drafts Section
 // ─────────────────────────────────────────────────────────
 function DraftsSection({ onLoadDraft, setSection }) {
@@ -1336,44 +1191,31 @@ function DraftsSection({ onLoadDraft, setSection }) {
 function AnalyticsSection() {
   const chartRef = useRef()
   const chartInstance = useRef(null)
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
 
-  const sent = JSON.parse(localStorage.getItem('altius_sent_emails') || '[]')
-  const now = Date.now()
-  const oneDay = 86400000
-
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
-  const kpiToday = sent.filter(m => m.timestamp >= todayStart.getTime()).length
-
-  const dayOfWeek = new Date().getDay()
-  const diffToMon = dayOfWeek === 0 ? 6 : dayOfWeek - 1
-  const weekStart = todayStart.getTime() - diffToMon * oneDay
-  const kpiWeek = sent.filter(m => m.timestamp >= weekStart).length
-
-  const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime()
-  const kpiMonth = sent.filter(m => m.timestamp >= monthStart).length
+  // Real send counts from the Activity table.
+  useEffect(() => {
+    let cancelled = false
+    api.get('/email/analytics')
+      .then(r => { if (!cancelled) setStats(r.data) })
+      .catch(() => { if (!cancelled) setStats({ totalSent: 0, sentToday: 0, sentWeek: 0, sentMonth: 0, last7Days: [] }) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
-    if (!chartRef.current) return
-
-    const labels = []
-    const data = []
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now - i * oneDay)
-      labels.push(d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }))
-      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-      data.push(sent.filter(m => m.timestamp >= dayStart && m.timestamp < dayStart + oneDay).length)
-    }
+    if (!chartRef.current || !stats) return
 
     if (chartInstance.current) chartInstance.current.destroy()
 
     chartInstance.current = new Chart(chartRef.current, {
       type: 'bar',
       data: {
-        labels,
+        labels: stats.last7Days.map(d => d.label),
         datasets: [{
           label: 'Emails Sent',
-          data,
+          data: stats.last7Days.map(d => d.count),
           backgroundColor: '#E11D48',
           borderColor: '#EF4444',
           borderWidth: 1,
@@ -1409,14 +1251,13 @@ function AnalyticsSection() {
     })
 
     return () => { chartInstance.current?.destroy() }
-  // eslint-disable-next-line
-  }, [])
+  }, [stats])
 
   const kpis = [
-    { label: 'Total Sent',   value: sent.length, sub: 'all time' },
-    { label: 'Sent Today',   value: kpiToday,    sub: 'last 24 hours' },
-    { label: 'Sent This Week', value: kpiWeek,   sub: 'since Monday' },
-    { label: 'Sent This Month', value: kpiMonth, sub: 'this calendar month' },
+    { label: 'Total Sent',      value: stats?.totalSent ?? '—', sub: 'all time' },
+    { label: 'Sent Today',      value: stats?.sentToday ?? '—', sub: 'last 24 hours' },
+    { label: 'Sent This Week',  value: stats?.sentWeek ?? '—',  sub: 'since Monday' },
+    { label: 'Sent This Month', value: stats?.sentMonth ?? '—', sub: 'this calendar month' },
   ]
 
   return (
@@ -1430,7 +1271,7 @@ function AnalyticsSection() {
           {kpis.map(k => (
             <div key={k.label} className="et-kpi-card">
               <div className="et-kpi-label">{k.label}</div>
-              <div className="et-kpi-val">{k.value}</div>
+              <div className="et-kpi-val">{loading ? '—' : k.value}</div>
               <div className="et-kpi-sub">{k.sub}</div>
             </div>
           ))}
@@ -1792,11 +1633,24 @@ async function sendViaGmailDirect(token, to, cc, bcc, subject, bodyHtml, attachm
 // Main EmailTool Component
 // ─────────────────────────────────────────────────────────
 export default function EmailTool() {
+  const location = useLocation()
   const [section, setSection]         = useState('composer')
   const [gmailStatus, setGmailStatus] = useState({ connected: false, email: null })
   const [draftsCount, setDraftsCount] = useState(0)
-  const [sentRefresh, setSentRefresh] = useState(0)
   const [initialDraft, setInitialDraft] = useState(null)
+
+  // Company context handed over by Company Details (Email quick action, "Log an
+  // email", or clicking a saved address). Marketing → Email is the single
+  // compose surface, so this is how company scope reaches it.
+  const companyContext = location.state?.companyId
+    ? { to: location.state.to || '', companyId: location.state.companyId, companyName: location.state.companyName || '' }
+    : null
+
+  // Land directly on the composer when arriving from a company.
+  useEffect(() => {
+    if (companyContext) setSection('composer')
+  // eslint-disable-next-line
+  }, [location.state?.companyId, location.state?.to])
 
   // Check NXT Sales backend Gmail status
   useEffect(() => {
@@ -1846,10 +1700,6 @@ export default function EmailTool() {
     setDraftsCount(count)
   }
 
-  const handleSent = () => {
-    setSentRefresh(n => n + 1)
-  }
-
   return (
     <div className="et-root">
       <ETSidebar
@@ -1866,12 +1716,11 @@ export default function EmailTool() {
             gmailStatus={gmailStatus}
             setSection={setSection}
             onDraftSaved={handleDraftSaved}
-            onSent={handleSent}
             initialDraft={initialDraft}
             clearInitialDraft={() => setInitialDraft(null)}
+            companyContext={companyContext}
           />
         )}
-        {section === 'sent' && <SentSection refresh={sentRefresh} />}
         {section === 'drafts' && (
           <DraftsSection
             onLoadDraft={handleLoadDraft}

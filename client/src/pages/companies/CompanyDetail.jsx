@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import api from '../../api/client'
 import NoteModal    from '../../components/activities/NoteModal'
-import EmailModal   from '../../components/activities/EmailModal'
 import CallModal    from '../../components/activities/CallModal'
 import MeetingModal from '../../components/activities/MeetingModal'
 import TaskModal    from '../../components/activities/TaskModal'
@@ -15,6 +14,7 @@ import ActivityFeed      from '../../components/activities/ActivityFeed'
 import EditRecordModal   from '../../components/EditRecordModal'
 import CreateDealModal   from '../../components/modals/CreateDealModal'
 import { valueList } from '../../utils/multiValue'
+import { invalidateCompanyEmail } from '../../utils/emailCache'
 import '../../styles/detail-page.css'
 import '../../styles/activity-modals.css'
 
@@ -162,7 +162,20 @@ export default function CompanyDetail() {
     setFeedRefreshKey(k => k + 1)
   }
 
-  const openModal = (type) => { setActiveModal(type); setCenterTab('Activities') }
+  // Every email entry point (Email quick action, "Log an email", and clicking
+  // a saved company address) routes to Marketing → Email — the single compose
+  // surface — carrying companyId so the sent mail is filed against the company
+  // and lands in the right address group immediately.
+  const openComposer = (toAddress) => {
+    navigate('/email', {
+      state: { to: toAddress || company?.email || '', companyId: id, companyName: company?.name || '' },
+    })
+  }
+
+  const openModal = (type) => {
+    if (type === 'email') { openComposer(); return }
+    setActiveModal(type); setCenterTab('Activities')
+  }
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 10, color: '#94a3b8' }}>
@@ -257,7 +270,15 @@ export default function CompanyDetail() {
                       {list.length
                         ? list.map((e, i) => (
                             <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
-                              <a href={`mailto:${e}`} className="link">{e}</a>
+                              {/* Opens the in-app composer, not the OS mail client */}
+                              <span
+                                className="link"
+                                style={{ cursor: 'pointer' }}
+                                title="Compose in Marketing → Email"
+                                onClick={() => openComposer(e)}
+                              >
+                                {e}
+                              </span>
                               {i === 0 && list.length > 1 && <span style={PRIMARY_TAG}>Primary</span>}
                             </span>
                           ))
@@ -340,7 +361,7 @@ export default function CompanyDetail() {
 
           {centerTab === 'Activities' && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <ActivityFeed companyId={id} contactEmail={company.email} onAction={openModal} refreshKey={feedRefreshKey} />
+              <ActivityFeed companyId={id} companyName={company.name} contactEmail={company.email} onAction={openModal} refreshKey={feedRefreshKey} />
             </div>
           )}
 
@@ -390,7 +411,13 @@ export default function CompanyDetail() {
           id={id}
           record={company}
           onClose={() => setEditOpen(false)}
-          onSaved={(updated) => setCompany(updated)}
+          onSaved={(updated) => {
+            setCompany(updated)
+            // Saved addresses drive the whole conversation grouping, so any
+            // edit makes the cached Emails tab stale.
+            invalidateCompanyEmail(id)
+            setFeedRefreshKey(k => k + 1)
+          }}
         />
       )}
 
@@ -415,14 +442,6 @@ export default function CompanyDetail() {
       {activeModal === 'note' && (
         <NoteModal
           companyId={id}
-          onClose={() => setActiveModal(null)}
-          onSaved={onActivitySaved}
-        />
-      )}
-      {activeModal === 'email' && (
-        <EmailModal
-          companyId={id}
-          contactEmail={company.email}
           onClose={() => setActiveModal(null)}
           onSaved={onActivitySaved}
         />

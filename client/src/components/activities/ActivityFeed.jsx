@@ -5,6 +5,7 @@ import {
   Video, ArrowUpRight, ArrowDownLeft, ExternalLink, RefreshCw, Eye, Play,
 } from 'lucide-react'
 import api from '../../api/client'
+import EmailConversations from './EmailConversations'
 import '../../styles/activity-modals.css'
 
 const SUBTABS = ['All activities', 'Notes', 'Emails', 'Calls', 'Tasks', 'Meetings']
@@ -470,71 +471,27 @@ function EmptyState({ subTab }) {
   )
 }
 
-export default function ActivityFeed({ companyId, contactEmail, onAction, refreshKey = 0 }) {
+export default function ActivityFeed({ companyId, companyName, contactEmail, onAction, refreshKey = 0 }) {
   const [subTab,      setSubTab]      = useState('All activities')
   const [query,       setQuery]       = useState('')
   const [acts,        setActs]        = useState([])
   const [loading,     setLoading]     = useState(true)
-  const [syncing,     setSyncing]     = useState(false)
-  const [syncMsg,     setSyncMsg]     = useState('')
 
-  // Track the last entity+email combo that was auto-synced so we sync once per visit
-  const autoSyncKeyRef = useRef(null)
+  // Guards against out-of-order responses overwriting newer data.
+  const reqSeq = useRef(0)
 
   const fetchActs = useCallback(() => {
     if (!companyId) return
+    const seq = ++reqSeq.current
     setLoading(true)
     const actType = subTab === 'All activities' ? 'all' : TYPE_MAP[subTab]
     api.get('/activities', { params: { companyId, type: actType } })
-      .then(r => setActs(r.data))
-      .catch(() => setActs([]))
-      .finally(() => setLoading(false))
+      .then(r => { if (seq === reqSeq.current) setActs(r.data) })
+      .catch(() => { if (seq === reqSeq.current) setActs([]) })
+      .finally(() => { if (seq === reqSeq.current) setLoading(false) })
   }, [companyId, subTab, refreshKey])
 
   useEffect(() => { fetchActs() }, [fetchActs])
-
-  // Auto-sync emails silently when the Emails tab is opened, and again whenever
-  // refreshKey bumps (e.g. right after sending) so a continued thread appears at
-  // once. The key includes refreshKey so each send triggers a fresh Gmail sync.
-  useEffect(() => {
-    if (subTab !== 'Emails' || !contactEmail || !companyId) return
-    const key = `${companyId}::${contactEmail}::${refreshKey}`
-    if (autoSyncKeyRef.current === key) return
-    autoSyncKeyRef.current = key
-
-    api.post('/email/sync', { contactEmail, companyId }).then(() => {
-      api.get('/activities', { params: { companyId, type: 'email' } })
-        .then(r => setActs(r.data))
-        .catch(() => {})
-    }).catch(() => {})
-  }, [subTab, contactEmail, companyId, refreshKey])
-
-  const syncEmails = async () => {
-    if (!contactEmail) { setSyncMsg('No email address found for this record.'); return }
-    setSyncing(true); setSyncMsg('')
-    try {
-      const { data } = await api.post('/email/sync', { contactEmail, companyId })
-      const added   = data.synced   || 0
-      const removed = data.removed  || 0
-      const total   = data.total
-
-      if (data.message === 'Gmail not connected') {
-        setSyncMsg('Gmail not connected. Please connect Gmail first.')
-      } else if (total === 0) {
-        setSyncMsg('No matching emails found in Gmail for this email address.')
-      } else if (added > 0 || removed > 0) {
-        setSyncMsg(`${added} added${removed > 0 ? `, ${removed} removed` : ''}`)
-      } else {
-        setSyncMsg(`Already up to date (${total} Gmail email${total !== 1 ? 's' : ''} matched)`)
-      }
-      fetchActs()
-    } catch (err) {
-      const msg = err?.response?.data?.message || 'Sync failed.'
-      setSyncMsg(msg)
-    } finally {
-      setSyncing(false)
-    }
-  }
 
   const displayList = buildDisplayList(acts, query)
   const groups      = groupByDate(displayList)
@@ -550,6 +507,12 @@ export default function ActivityFeed({ companyId, contactEmail, onAction, refres
         ))}
       </div>
 
+      {/* Emails tab: conversations grouped by company email address.
+          All other tabs keep the original flat activity timeline. */}
+      {subTab === 'Emails' ? (
+        <EmailConversations companyId={companyId} companyName={companyName} refreshKey={refreshKey} />
+      ) : (
+      <>
       {/* Toolbar */}
       <div className="af-toolbar">
         <div className="af-toolbar-left">
@@ -581,22 +544,6 @@ export default function ActivityFeed({ companyId, contactEmail, onAction, refres
               {a.label}
             </button>
           ))}
-          {subTab === 'Emails' && (
-            <button
-              className="btn-af-action"
-              onClick={syncEmails}
-              disabled={syncing}
-              style={{ display: 'flex', alignItems: 'center', gap: 5 }}
-            >
-              <RefreshCw size={12} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />
-              {syncing ? 'Syncing…' : 'Sync emails'}
-            </button>
-          )}
-          {subTab === 'Emails' && syncMsg && (
-            <span style={{ fontSize: 11, color: syncMsg.includes('failed') || syncMsg.includes('No email') ? '#ef4444' : '#10b981' }}>
-              {syncMsg}
-            </span>
-          )}
         </div>
       </div>
 
@@ -621,6 +568,8 @@ export default function ActivityFeed({ companyId, contactEmail, onAction, refres
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   )
 }

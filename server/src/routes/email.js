@@ -333,12 +333,20 @@ router.post('/send', auth, async (req, res) => {
 
   // Never trust the frontend on this — a bin'd company should reject writes
   // (Activity creation) even if a stale UI surface still has its id in hand.
+  let sendCompany = null
   if (companyId) {
-    const company = await prisma.company.findUnique({ where: { id: companyId }, select: { deletedAt: true } })
-    if (!company || company.deletedAt) {
+    sendCompany = await prisma.company.findUnique({ where: { id: companyId } })
+    if (!sendCompany || sendCompany.deletedAt) {
       return res.status(400).json({ message: 'This company has been moved to the Recycle Bin. Please restore it before sending or syncing emails.' })
     }
   }
+
+  // Which of the company's saved addresses this email is going to — recorded
+  // now so the sent message appears under the right address group instantly,
+  // instead of waiting for the next sync to classify it.
+  const sendRecipients = [...extractAddresses(to), ...extractAddresses(cc || '')]
+  const sendOwn = await ownAddressSet(req.user.id)
+  const sendMatchedAddress = companyAddressList(sendCompany, sendOwn).find(a => sendRecipients.includes(a)) || null
 
   const account = await prisma.emailAccount.findFirst({
     where: { userId: req.user.id, provider: 'gmail' },
@@ -509,6 +517,7 @@ router.post('/send', auth, async (req, res) => {
         title: `Email – ${sendSubject}`,
         body: body || (htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ').trim().slice(0, 2000) : null),
         toEmail: to,
+        ccEmail: cc || null,
         fromEmail: account.email,
         subject: sendSubject,
         emailStatus: 'sent',
@@ -516,6 +525,10 @@ router.post('/send', auth, async (req, res) => {
         messageId: sent.data.id,
         threadId: sent.data.threadId,
         trackingId,
+        matchedCompanyEmail: sendMatchedAddress,
+        attachments: Array.isArray(attachments) && attachments.length
+          ? attachments.map(a => ({ filename: a.filename, size: a.content ? Math.round(a.content.length * 0.75) : 0, mimeType: a.mimeType || null }))
+          : undefined,
       },
       include: { user: { select: { id: true, name: true, email: true } } },
     })
@@ -541,15 +554,88 @@ function extractAddresses(headerValue) {
 // A company's full set of saved addresses — primary `email` plus any
 // additional `emails` (Update 2: multi-email support). Same fields already
 // rendered in Company Details; sync now uses all of them, not just primary.
-function companyAddressSet(company) {
-  const set = new Set()
-  if (company?.email) set.add(company.email.trim().toLowerCase())
-  if (Array.isArray(company?.emails)) {
-    for (const e of company.emails) {
-      if (typeof e === 'string' && e.trim()) set.add(e.trim().toLowerCase())
-    }
+// Ordered: primary first, then additional in saved order — the anchor picker
+// below relies on that order to stay deterministic across runs.
+// `exclude` holds the viewer's own connected mailbox addresses. A company
+// address that is ALSO the connected account can never identify a counterpart:
+// every message in the mailbox has the user as a participant, so treating it as
+// a company address matches the entire mailbox. Such an address is dropped.
+function companyAddressList(company, exclude = new Set()) {
+  const seen = new Set()
+  const list = []
+  const push = (v) => {
+    if (typeof v !== 'string') return
+    const a = v.trim().toLowerCase()
+    if (a && !seen.has(a) && !exclude.has(a)) { seen.add(a); list.push(a) }
   }
-  return set
+  push(company?.email)
+  if (Array.isArray(company?.emails)) company.emails.forEach(push)
+  return list
+}
+
+// Every mailbox this user has connected — never valid as a company address.
+async function ownAddressSet(userId) {
+  const accounts = await prisma.emailAccount.findMany({ where: { userId }, select: { email: true } })
+  return new Set(accounts.map(a => (a.email || '').trim().toLowerCase()).filter(Boolean))
+}
+
+// Walks the MIME tree and collects attachment metadata (filename + size).
+// Stored at sync time so opening a conversation never needs a live Gmail call.
+function extractAttachments(payload, out = []) {
+  if (!payload) return out
+  if (payload.filename && payload.filename.trim() && payload.body?.attachmentId) {
+    out.push({ filename: payload.filename, size: payload.body.size || 0, mimeType: payload.mimeType || null })
+  }
+  if (Array.isArray(payload.parts)) payload.parts.forEach(p => extractAttachments(p, out))
+  return out
+}
+
+// ── Conversation matching rules ────────────────────────────────────────────
+// A message ANCHORS a thread to a company only when the connected mailbox and
+// a company address sit on OPPOSITE ends of that message — one sent it, the
+// other received it. Direction is the entire point of the rule: it is what
+// separates "I corresponded with this company" from "somebody else happened to
+// put us both on the same email".
+//
+// This previously pooled From+To together and asked only whether both addresses
+// appeared *somewhere* in that pool. A group email from an outside sender to a
+// distribution list containing both the connected mailbox and a company address
+// satisfied that test, which is how a batch of unrelated internal team email was
+// imported into a company. Requiring opposite ends closes that hole at the root.
+//
+// Cc/Bcc are excluded on both sides: being copied on someone else's conversation
+// does not make it part of the company relationship.
+//
+// Returns the matched company address (used for address-level grouping), or null.
+// The company's own saved address order is preserved so re-running a sync always
+// resolves the same anchor for the same message.
+//
+// Used by BOTH the Gmail import path and the reconciliation pass — they must
+// never diverge, or rows that could no longer be imported would survive cleanup.
+function anchorForAddresses(fromRaw, toRaw, userEmail, companyAddresses) {
+  const from = extractAddresses(fromRaw)
+  const to   = extractAddresses(toRaw)
+
+  // user → company
+  if (from.includes(userEmail)) {
+    const anchor = companyAddresses.find(a => to.includes(a))
+    if (anchor) return anchor
+  }
+  // company → user
+  if (to.includes(userEmail)) {
+    const anchor = companyAddresses.find(a => from.includes(a))
+    if (anchor) return anchor
+  }
+  return null
+}
+
+// Once any single message in a thread anchors, the WHOLE thread is imported —
+// including replies where a participant was only Cc'd — so the conversation is
+// never shown with holes in it.
+function anchorForMessage(msg, userEmail, companyAddresses) {
+  const headers = msg.payload?.headers || []
+  const getHeader = (name) => headers.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value || ''
+  return anchorForAddresses(getHeader('From'), getHeader('To'), userEmail, companyAddresses)
 }
 
 // In-process single-flight lock: if a sync for the same company is already
@@ -575,14 +661,25 @@ router.post('/sync', auth, async (req, res) => {
     }
   }
 
-  // Company is the source of truth for which addresses to sync (primary +
-  // additional). contactEmail is kept for backward compatibility with the
-  // current caller and as a fallback when no companyId is given.
-  const targetAddresses = companyAddressSet(company)
-  if (contactEmail) targetAddresses.add(contactEmail.trim().toLowerCase())
-  if (targetAddresses.size === 0) return res.status(400).json({ message: 'contactEmail required' })
+  // The company record is the ONLY source of truth for which addresses belong
+  // to it. contactEmail is honoured solely when there is no company context —
+  // letting a caller inject an arbitrary address into a company's address list
+  // is precisely how unrelated conversations got attached to a company.
+  const own = await ownAddressSet(req.user.id)
+  const companyAddresses = company
+    ? companyAddressList(company, own)
+    : (contactEmail && !own.has(contactEmail.trim().toLowerCase()) ? [contactEmail.trim().toLowerCase()] : [])
 
-  const lockKey = companyId || [...targetAddresses].sort().join(',')
+  if (companyAddresses.length === 0) {
+    return res.json({
+      synced: 0, adopted: 0, unlinked: 0, removed: 0, total: 0,
+      message: company
+        ? 'No usable company email address. Add a client address to this company (an address that is also your own connected mailbox cannot be used).'
+        : 'contactEmail required',
+    })
+  }
+
+  const lockKey = companyId || [...companyAddresses].sort().join(',')
   if (syncInFlight.has(lockKey)) {
     try {
       return res.json(await syncInFlight.get(lockKey))
@@ -591,7 +688,7 @@ router.post('/sync', auth, async (req, res) => {
     }
   }
 
-  const runPromise = runEmailSync({ userId: req.user.id, companyId, targetAddresses })
+  const runPromise = runEmailSync({ userId: req.user.id, companyId, companyAddresses, own })
   syncInFlight.set(lockKey, runPromise)
   try {
     res.json(await runPromise)
@@ -603,14 +700,29 @@ router.post('/sync', auth, async (req, res) => {
   }
 })
 
-async function runEmailSync({ userId, companyId, targetAddresses }) {
+// Pages through a Gmail search query until exhausted (or the safety cap is
+// hit), instead of silently keeping only the first 100 hits — that truncation
+// is why older conversations could go missing from a long history.
+const MAX_PAGES = 10
+async function listAllMessages(gmail, q) {
+  const out = []
+  let pageToken
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await gmail.users.messages.list({ userId: 'me', q, maxResults: 100, pageToken })
+    out.push(...(res.data.messages || []))
+    pageToken = res.data.nextPageToken
+    if (!pageToken) break
+  }
+  return out
+}
+
+async function runEmailSync({ userId, companyId, companyAddresses, own = new Set() }) {
   const account = await prisma.emailAccount.findFirst({
     where: { userId, provider: 'gmail' },
   })
-  if (!account) return { synced: 0, removed: 0, total: 0, message: 'Gmail not connected' }
+  if (!account) return { synced: 0, adopted: 0, removed: 0, total: 0, message: 'Gmail not connected' }
 
-  const userEmail    = account.email.toLowerCase()
-  const addressList  = [...targetAddresses]
+  const userEmail = account.email.toLowerCase()
 
   const { google } = require('googleapis')
   const oauth2Client = getOAuth2Client()
@@ -618,12 +730,26 @@ async function runEmailSync({ userId, companyId, targetAddresses }) {
     access_token: account.accessToken,
     refresh_token: account.refreshToken,
   })
+  // Persist refreshed access tokens, so a long-lived session doesn't start
+  // failing sync once the original access token expires.
+  oauth2Client.on('tokens', async (tokens) => {
+    if (!tokens.access_token) return
+    try {
+      await prisma.emailAccount.update({
+        where: { userId_provider: { userId, provider: 'gmail' } },
+        data: {
+          accessToken: tokens.access_token,
+          ...(tokens.expiry_date && { expiresAt: new Date(tokens.expiry_date) }),
+        },
+      })
+    } catch (e) { console.warn('[Email Sync] token persist failed:', e.message) }
+  })
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
 
   try {
     const profile = await gmail.users.getProfile({ userId: 'me' })
-    console.log(`[Email Sync] Token valid — connected Gmail: ${profile.data.emailAddress}`)
-    console.log(`[Email Sync] Company addresses: ${addressList.join(', ')}`)
+    console.log(`[Email Sync] Connected Gmail: ${profile.data.emailAddress}`)
+    console.log(`[Email Sync] Company addresses: ${companyAddresses.join(', ')}`)
   } catch (tokenErr) {
     console.error(`[Email Sync] Token invalid:`, tokenErr.message)
     const err = new Error('Gmail token expired. Please disconnect Gmail and reconnect it.')
@@ -631,96 +757,449 @@ async function runEmailSync({ userId, companyId, targetAddresses }) {
     throw err
   }
 
-  // One OR-grouped query per direction covers every company address in a
-  // single round-trip, instead of one round-trip per address.
-  const fromClause = addressList.map(a => `from:${a}`).join(' OR ')
-  const toClause    = addressList.map(a => `to:${a}`).join(' OR ')
-  const ccClause    = addressList.map(a => `cc:${a}`).join(' OR ')
+  // Candidate discovery casts a WIDE net (from/to/cc/bcc, every address) —
+  // relevance is decided by the anchor rules below, not by the search query.
+  // Anything the search over-collects is filtered out; anything it misses can
+  // never be recovered, so breadth here matters more than precision.
+  const clause = (field) => companyAddresses.map(a => `${field}:${a}`).join(' OR ')
+  const queries = [clause('from'), clause('to'), clause('cc'), clause('bcc')]
 
-  const [inboundRes, outboundToRes, outboundCcRes] = await Promise.all([
-    gmail.users.messages.list({ userId: 'me', q: `(${fromClause})`, maxResults: 100 }),
-    gmail.users.messages.list({ userId: 'me', q: `(${toClause})`,   maxResults: 100 }),
-    gmail.users.messages.list({ userId: 'me', q: `(${ccClause})`,   maxResults: 100 }),
-  ])
+  const found = await Promise.all(queries.map(q => listAllMessages(gmail, `(${q})`)))
 
-  // Merge + deduplicate by message ID across all addresses/queries
-  const seenIds = new Set()
-  const messages = [
-    ...(inboundRes.data.messages    || []),
-    ...(outboundToRes.data.messages || []),
-    ...(outboundCcRes.data.messages || []),
-  ].filter(m => { if (seenIds.has(m.id)) return false; seenIds.add(m.id); return true })
+  // Keep the candidate message ids per thread — used below to skip threads
+  // that are already fully synced without paying for a threads.get round-trip.
+  const candidatesByThread = new Map()
+  let candidateCount = 0
+  for (const list of found) {
+    for (const m of list) {
+      if (!candidatesByThread.has(m.threadId)) candidatesByThread.set(m.threadId, new Set())
+      candidatesByThread.get(m.threadId).add(m.id)
+      candidateCount++
+    }
+  }
+  const threadIds = [...candidatesByThread.keys()]
+  console.log(`[Email Sync] ${candidateCount} candidate hit(s) across ${threadIds.size} thread(s)`)
 
-  const threadIds = new Set(messages.map(m => m.threadId))
-  console.log(`[Email Sync] Gmail returned ${messages.length} message(s), ${threadIds.size} thread(s)`)
-
-  let synced = 0
-
-  for (const threadId of threadIds) {
-    const threadRes = await gmail.users.threads.get({
-      userId: 'me',
-      id: threadId,
-      format: 'full',
-    })
-
-    const threadMessages = threadRes.data.messages || []
-
-    for (const msg of threadMessages) {
-      const headers = msg.payload?.headers || []
-      const getHeader = (name) => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || ''
-
-      // Application-level strict check, done per-message (handles reply
-      // chains/forwards correctly since each message in the thread carries
-      // its own headers) — extracted bare addresses, so aliases/display
-      // names/multiple recipients in To or Cc all resolve correctly.
-      const fromAddrs       = extractAddresses(getHeader('From'))
-      const recipientAddrs  = [...extractAddresses(getHeader('To')), ...extractAddresses(getHeader('Cc'))]
-
-      const fromIsUser          = fromAddrs.includes(userEmail)
-      const fromIsCompany       = fromAddrs.some(a => targetAddresses.has(a))
-      const recipientHasCompany = recipientAddrs.some(a => targetAddresses.has(a))
-      const recipientHasUser    = recipientAddrs.includes(userEmail)
-
-      const userToCompany = fromIsUser    && recipientHasCompany
-      const companyToUser = fromIsCompany && recipientHasUser
-      if (!userToCompany && !companyToUser) continue
-
-      // Idempotent + never destructive: a message already synced is left
-      // completely untouched — this is what preserves its Activity id,
-      // trackingId, and open-tracking history permanently, and is what keeps
-      // notifications and Activity history from ever disagreeing again.
-      const exists = await prisma.activity.findFirst({ where: { messageId: msg.id } })
-      if (exists) continue
-
-      const subjectRaw = getHeader('Subject') || '(no subject)'
-      const dateHeader = getHeader('Date')
-      const bodyText   = extractTextBody(msg.payload)
-      const emailDate  = dateHeader ? new Date(dateHeader) : new Date()
-
-      await prisma.activity.create({
-        data: {
-          type:        'email',
-          companyId:   companyId || null,
-          userId,
-          title:       `Email – ${subjectRaw}`,
-          body:        bodyText || null,
-          toEmail:     getHeader('To'),
-          fromEmail:   getHeader('From'),
-          subject:     subjectRaw,
-          emailStatus: companyToUser ? 'received' : 'sent',
-          direction:   companyToUser ? 'inbound'  : 'outbound',
-          messageId:   msg.id,
-          threadId,
-          createdAt:   emailDate,
-        },
+  // One lookup for every candidate message instead of one per message later.
+  const allCandidateIds = [...new Set([...candidatesByThread.values()].flatMap(s => [...s]))]
+  const knownRows = allCandidateIds.length
+    ? await prisma.activity.findMany({
+        where: { messageId: { in: allCandidateIds } },
+        select: { messageId: true, threadId: true, companyId: true },
       })
-      synced++
+    : []
+  const knownIds = new Set(knownRows.map(r => r.messageId))
+  const threadsLinkedHere = new Set(knownRows.filter(r => r.companyId === companyId).map(r => r.threadId))
+
+  let synced = 0, adopted = 0, skippedThreads = 0, failedThreads = 0, unchangedThreads = 0
+
+  const processThread = async (threadId) => {
+    // Fast path: every candidate message of this thread is already stored and
+    // already linked to this company — there is nothing new to fetch, so skip
+    // the (expensive) threads.get entirely. A new reply always shows up as a
+    // new candidate id, so genuinely-updated threads still get processed.
+    const candidates = candidatesByThread.get(threadId)
+    if (threadsLinkedHere.has(threadId) && [...candidates].every(id => knownIds.has(id))) {
+      unchangedThreads++
+      return
+    }
+
+    // Per-thread isolation: one failing thread (rate limit, deleted message,
+    // malformed payload) must never abort the whole run and lose the progress
+    // already made on every other thread.
+    try {
+      const threadRes = await gmail.users.threads.get({ userId: 'me', id: threadId, format: 'full' })
+      const threadMessages = threadRes.data.messages || []
+
+      // Thread-level anchoring: find the first message that qualifies. If none
+      // does, the entire thread is irrelevant (this is what drops Cc-only
+      // conversations). If one does, EVERY message in the thread is imported
+      // so the conversation is complete — replies and forwards included.
+      let anchorAddress = null
+      for (const msg of threadMessages) {
+        const a = anchorForMessage(msg, userEmail, companyAddresses)
+        if (a) { anchorAddress = a; break }
+      }
+      if (!anchorAddress) { skippedThreads++; return }
+
+      // One lookup for the whole thread instead of one query per message.
+      const threadMsgIds = threadMessages.map(m => m.id)
+      const existingRows = await prisma.activity.findMany({ where: { messageId: { in: threadMsgIds } } })
+      const existingByMsgId = new Map(existingRows.map(r => [r.messageId, r]))
+
+      for (const msg of threadMessages) {
+        const headers = msg.payload?.headers || []
+        const getHeader = (name) => headers.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value || ''
+
+        const fromAddrs = extractAddresses(getHeader('From'))
+        const isOutbound = fromAddrs.includes(userEmail)
+
+        const existing = existingByMsgId.get(msg.id)
+
+        if (existing) {
+          // Never steal a message that is correctly linked to a DIFFERENT
+          // company (its matched address is still one of that company's own).
+          if (existing.companyId && companyId && existing.companyId !== companyId) {
+            const otherOk = existing.matchedCompanyEmail && !own.has(existing.matchedCompanyEmail)
+            if (otherOk) continue
+          }
+
+          // ADOPT and CORRECT, never skip. An email sent from the standalone
+          // composer is stored with companyId null, and an email linked while
+          // the company had a bad address carries a stale matchedCompanyEmail.
+          // Re-pointing the existing row keeps its id, trackingId and open
+          // history intact — which is why tracking and the Activity view can
+          // no longer disagree.
+          const patch = {}
+          if (existing.companyId !== companyId && companyId) patch.companyId = companyId
+          // Correct the address bucket whenever it is missing OR no longer one
+          // of the company's saved addresses (the stale-link case).
+          if (existing.matchedCompanyEmail !== anchorAddress &&
+              !companyAddresses.includes(existing.matchedCompanyEmail)) {
+            patch.matchedCompanyEmail = anchorAddress
+          }
+          if (!existing.threadId) patch.threadId = threadId
+          if (existing.ccEmail == null && getHeader('Cc')) patch.ccEmail = getHeader('Cc')
+          if (existing.attachments == null) {
+            const atts = extractAttachments(msg.payload)
+            if (atts.length) patch.attachments = atts
+          }
+          if (Object.keys(patch).length) {
+            await prisma.activity.update({ where: { id: existing.id }, data: patch })
+            adopted++
+          }
+          continue
+        }
+
+        const subjectRaw = getHeader('Subject') || '(no subject)'
+        const dateHeader = getHeader('Date')
+        const atts       = extractAttachments(msg.payload)
+
+        await prisma.activity.create({
+          data: {
+            type:        'email',
+            companyId:   companyId || null,
+            userId,
+            title:       `Email – ${subjectRaw}`,
+            body:        extractTextBody(msg.payload) || null,
+            toEmail:     getHeader('To'),
+            ccEmail:     getHeader('Cc') || null,
+            fromEmail:   getHeader('From'),
+            subject:     subjectRaw,
+            emailStatus: isOutbound ? 'sent' : 'received',
+            direction:   isOutbound ? 'outbound' : 'inbound',
+            messageId:   msg.id,
+            threadId,
+            matchedCompanyEmail: anchorAddress,
+            attachments: atts.length ? atts : undefined,
+            createdAt:   dateHeader ? new Date(dateHeader) : new Date(),
+          },
+        })
+        synced++
+      }
+    } catch (threadErr) {
+      failedThreads++
+      console.warn(`[Email Sync] thread ${threadId} failed (continuing):`, threadErr.message)
     }
   }
 
-  console.log(`[Email Sync] Done: synced=${synced}`)
-  return { synced, removed: 0, total: messages.length }
+  // Threads are fetched a few at a time rather than strictly one after another.
+  // Sequential fetching is what made a large mailbox take minutes; the cap keeps
+  // us well inside Gmail's rate limits.
+  const CONCURRENCY = 5
+  let cursor = 0
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, threadIds.length) }, async () => {
+      while (cursor < threadIds.length) {
+        const idx = cursor++
+        await processThread(threadIds[idx])
+      }
+    })
+  )
+
+  // ── Reconciliation ────────────────────────────────────────────────────────
+  // Links are re-validated on every sync, so a company can never keep showing
+  // conversations that stopped belonging to it (e.g. its email address was
+  // corrected after a bad one attached half the mailbox). A conversation is
+  // kept only if some message in that thread actually involves one of the
+  // company's CURRENT addresses — thread-aware, so replies between other
+  // parties inside a genuine conversation are not stripped out.
+  //
+  // Wrongly-linked rows are UNLINKED, never deleted: the row, its trackingId
+  // and its open history all survive, and it can be claimed by the right
+  // company on a later sync.
+  let unlinked = 0
+  if (companyId) {
+    const linked = await prisma.activity.findMany({
+      where: { companyId, type: 'email' },
+      select: { id: true, threadId: true, fromEmail: true, toEmail: true, ccEmail: true },
+    })
+    const byThread = new Map()
+    for (const r of linked) {
+      const k = r.threadId || `single:${r.id}`
+      if (!byThread.has(k)) byThread.set(k, [])
+      byThread.get(k).push(r)
+    }
+    const staleIds = []
+    for (const rows of byThread.values()) {
+      // Exactly the rule used on import (anchorForAddresses) — applied to the
+      // stored headers. Keeping these identical is what makes the module
+      // self-healing: if the matching rules tighten, a re-sync releases rows
+      // that would no longer qualify, instead of leaving them linked forever.
+      const threadStillQualifies = rows.some(r => anchorForAddresses(r.fromEmail, r.toEmail, userEmail, companyAddresses))
+      if (!threadStillQualifies) staleIds.push(...rows.map(r => r.id))
+    }
+    if (staleIds.length) {
+      const r = await prisma.activity.updateMany({
+        where: { id: { in: staleIds } },
+        data: { companyId: null, matchedCompanyEmail: null },
+      })
+      unlinked = r.count
+    }
+  }
+
+  console.log(`[Email Sync] Done: created=${synced}, adopted=${adopted}, unlinked=${unlinked}, threadsUnchanged=${unchangedThreads}, threadsSkipped=${skippedThreads}, threadsFailed=${failedThreads}`)
+  return { synced, adopted, unlinked, removed: 0, total: candidateCount, unchangedThreads, skippedThreads, failedThreads }
 }
+
+// ── Conversation hierarchy: Company → Email Address → Thread → Messages ─────
+// Tracking telemetry (open count/times) is sender-private: it is stripped from
+// the payload for anyone who is not the user who sent the message, so a
+// teammate viewing the same company never sees another rep's open data.
+function publicMessage(a, viewerId) {
+  const isOwnSent = a.direction === 'outbound' && a.userId === viewerId
+  return {
+    id:        a.id,
+    messageId: a.messageId,
+    threadId:  a.threadId,
+    subject:   a.subject,
+    body:      a.body,
+    fromEmail: a.fromEmail,
+    toEmail:   a.toEmail,
+    ccEmail:   a.ccEmail,
+    direction: a.direction,
+    createdAt: a.createdAt,
+    attachments: Array.isArray(a.attachments) ? a.attachments : [],
+    user:      a.user || null,
+    matchedCompanyEmail: a.matchedCompanyEmail,
+    // Sender-only tracking block. Absent entirely for received mail and for
+    // mail sent by a different user.
+    tracking: isOwnSent ? {
+      status:        a.emailStatus || 'sent',
+      openCount:     a.openCount || 0,
+      firstOpenedAt: a.firstOpenedAt,
+      lastOpenedAt:  a.lastOpenedAt,
+      openHistory:   Array.isArray(a.openHistory) ? a.openHistory : [],
+    } : null,
+  }
+}
+
+// GET /api/email/conversations?companyId=…
+// Returns every saved company address (even ones with zero conversations),
+// each with its thread summaries. Message bodies are NOT included — the drawer
+// loads a full thread on demand via /thread/:threadId.
+router.get('/conversations', auth, async (req, res) => {
+  try {
+    const { companyId } = req.query
+    if (!companyId) return res.status(400).json({ message: 'companyId required' })
+
+    const company = await prisma.company.findUnique({ where: { id: companyId } })
+    if (!company) return res.status(404).json({ message: 'Company not found.' })
+
+    const own = await ownAddressSet(req.user.id)
+    const addresses = companyAddressList(company, own)
+
+    // Bodies are deliberately NOT selected here — the list only needs a short
+    // snippet of each thread's latest message, fetched separately below. On a
+    // company with a long history this is the difference between shipping a
+    // few KB and several MB per page load.
+    const rows = await prisma.activity.findMany({
+      where: { companyId, type: 'email' },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true, threadId: true, subject: true, title: true, direction: true,
+        createdAt: true, fromEmail: true, toEmail: true, ccEmail: true,
+        matchedCompanyEmail: true, attachments: true,
+      },
+    })
+
+    // Group into threads first, then file each thread under the company
+    // address it actually involves. A conversation is only ever shown under an
+    // address that genuinely takes part in it — a thread involving none of the
+    // company's current addresses is not shown at all, which is what keeps
+    // unrelated mailbox conversations out of the company record.
+    const threadMap = new Map()
+    for (const row of rows) {
+      const tid = row.threadId || `single:${row.id}`
+      if (!threadMap.has(tid)) threadMap.set(tid, [])
+      threadMap.get(tid).push(row)
+    }
+
+    const buckets = new Map()
+    for (const a of addresses) buckets.set(a, new Map())
+
+    for (const [tid, msgs] of threadMap.entries()) {
+      const participants = new Set(msgs.flatMap(m => [
+        ...extractAddresses(m.fromEmail), ...extractAddresses(m.toEmail), ...extractAddresses(m.ccEmail),
+      ]))
+      // Prefer the address recorded at sync time, but only if it is still a
+      // saved address AND actually appears in the conversation.
+      const recorded = msgs.find(m => m.matchedCompanyEmail && addresses.includes(m.matchedCompanyEmail))?.matchedCompanyEmail
+      const key = (recorded && participants.has(recorded))
+        ? recorded
+        : addresses.find(a => participants.has(a))
+      if (!key) continue   // involves no saved company address → not this company's conversation
+      buckets.get(key).set(tid, msgs)
+    }
+
+    // Snippets: one targeted query for just the latest message of each thread.
+    const latestIds = [...buckets.values()].flatMap(threadMap =>
+      [...threadMap.values()].map(msgs =>
+        [...msgs].sort((x, y) => new Date(x.createdAt) - new Date(y.createdAt)).slice(-1)[0].id)
+    )
+    const snippetRows = latestIds.length
+      ? await prisma.activity.findMany({ where: { id: { in: latestIds } }, select: { id: true, body: true } })
+      : []
+    const snippetById = new Map(snippetRows.map(r => [r.id, (r.body || '').replace(/\s+/g, ' ').trim().slice(0, 160)]))
+
+    const toThreadSummary = (threadId, msgs) => {
+      const sorted = [...msgs].sort((x, y) => new Date(x.createdAt) - new Date(y.createdAt))
+      const first = sorted[0]
+      const last  = sorted[sorted.length - 1]
+      const participants = [...new Set(sorted.flatMap(m => [
+        ...extractAddresses(m.fromEmail), ...extractAddresses(m.toEmail), ...extractAddresses(m.ccEmail),
+      ]))]
+      return {
+        threadId,
+        subject:       first.subject || first.title || '(no subject)',
+        messageCount:  sorted.length,
+        firstMessageAt: first.createdAt,
+        lastMessageAt:  last.createdAt,
+        lastDirection:  last.direction,
+        lastSnippet:    snippetById.get(last.id) || '',
+        hasAttachments: sorted.some(m => Array.isArray(m.attachments) && m.attachments.length > 0),
+        participants,
+      }
+    }
+
+    const buildGroup = (address, threadMap) => {
+      const threads = [...threadMap.entries()]
+        .map(([tid, msgs]) => toThreadSummary(tid, msgs))
+        .sort((x, y) => new Date(y.lastMessageAt) - new Date(x.lastMessageAt))
+      return {
+        address,
+        isPrimary: address === addresses[0],
+        threadCount: threads.length,
+        messageCount: threads.reduce((n, t) => n + t.messageCount, 0),
+        lastActivityAt: threads[0]?.lastMessageAt || null,
+        threads,
+      }
+    }
+
+    // Saved addresses keep the company's own order (primary first) and are
+    // always returned — an address with no conversations still shows, so the
+    // user can see it exists rather than wonder if it was dropped.
+    const groups = addresses.map(a => buildGroup(a, buckets.get(a) || new Map()))
+
+    // Addresses that had to be dropped because they are the viewer's own
+    // connected mailbox — surfaced so the reason is visible in the UI instead
+    // of the address silently disappearing.
+    const savedRaw = [company.email, ...(Array.isArray(company.emails) ? company.emails : [])]
+      .filter(v => typeof v === 'string' && v.trim())
+      .map(v => v.trim().toLowerCase())
+    const ignoredOwnAddresses = [...new Set(savedRaw.filter(a => own.has(a)))]
+
+    res.json({
+      companyId,
+      companyName: company.name,
+      addresses: groups,
+      ignoredOwnAddresses,
+      totalMessages: groups.reduce((n, g) => n + g.messageCount, 0),
+    })
+  } catch (err) {
+    console.error('[Email Conversations] error:', err.message)
+    res.status(500).json({ message: 'Failed to load conversations.' })
+  }
+})
+
+// GET /api/email/thread/:threadId?companyId=…
+// The complete conversation, oldest → newest. Every message is returned; the
+// UI shows them all in sequence rather than collapsing replies behind a count.
+router.get('/thread/:threadId', auth, async (req, res) => {
+  try {
+    const { threadId } = req.params
+    const { companyId } = req.query
+
+    const where = { type: 'email', companyId: companyId || undefined }
+    if (threadId.startsWith('single:')) where.id = threadId.slice(7)
+    else where.threadId = threadId
+
+    const rows = await prisma.activity.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      include: { user: { select: { id: true, name: true, email: true } } },
+    })
+    if (rows.length === 0) return res.status(404).json({ message: 'Conversation not found.' })
+
+    res.json({
+      threadId,
+      subject: rows[0].subject || '(no subject)',
+      messageCount: rows.length,
+      matchedCompanyEmail: rows[0].matchedCompanyEmail || null,
+      messages: rows.map(r => publicMessage(r, req.user.id)),
+    })
+  } catch (err) {
+    console.error('[Email Thread] error:', err.message)
+    res.status(500).json({ message: 'Failed to load conversation.' })
+  }
+})
+
+// GET /api/email/analytics — real send counts, replacing the localStorage-
+// derived KPIs and chart in the Email Tool's Analytics tab. Intentionally
+// separate from the /conversations logic above rather than reusing it, so the
+// company email history/matching code is not touched at all. Scoped to the
+// requesting user, matching the personal-log nature of what it replaces (the
+// old localStorage array was already per-browser).
+router.get('/analytics', auth, async (req, res) => {
+  try {
+    const userId = req.user.id
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const dow = now.getDay()
+    const weekStart = new Date(todayStart.getTime() - ((dow === 0 ? 6 : dow - 1)) * 86400000)
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    const base = { type: 'email', direction: 'outbound', userId }
+    const [total, today, week, month] = await Promise.all([
+      prisma.activity.count({ where: base }),
+      prisma.activity.count({ where: { ...base, createdAt: { gte: todayStart } } }),
+      prisma.activity.count({ where: { ...base, createdAt: { gte: weekStart } } }),
+      prisma.activity.count({ where: { ...base, createdAt: { gte: monthStart } } }),
+    ])
+
+    // Last 7 days, oldest → newest, for the chart.
+    const sevenDaysAgo = new Date(todayStart.getTime() - 6 * 86400000)
+    const recent = await prisma.activity.findMany({
+      where: { ...base, createdAt: { gte: sevenDaysAgo } },
+      select: { createdAt: true },
+    })
+    const last7Days = []
+    for (let i = 6; i >= 0; i--) {
+      const dayStart = new Date(todayStart.getTime() - i * 86400000)
+      const dayEnd = new Date(dayStart.getTime() + 86400000)
+      last7Days.push({
+        date: dayStart.toISOString().slice(0, 10),
+        label: dayStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        count: recent.filter(r => r.createdAt >= dayStart && r.createdAt < dayEnd).length,
+      })
+    }
+
+    res.json({ totalSent: total, sentToday: today, sentWeek: week, sentMonth: month, last7Days })
+  } catch (err) {
+    console.error('[Email Analytics] error:', err.message)
+    res.status(500).json({ message: 'Failed to load analytics.' })
+  }
+})
 
 // DELETE /api/email/gmail/disconnect
 router.delete('/gmail/disconnect', auth, async (req, res) => {

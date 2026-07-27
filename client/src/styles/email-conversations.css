@@ -1,0 +1,162 @@
+/* Email conversations: Company → Email Address → Conversation Thread → Messages
+   Scoped under .ec-* so nothing here can affect existing activity styles. */
+
+.ec-root { display: flex; flex-direction: column; height: 100%; }
+
+.ec-toolbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0;
+}
+.ec-toolbar-msg { font-size: 11px; }
+.ec-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; padding: 5px 10px; border-radius: 6px;
+  border: 1px solid #e2e8f0; background: #fff; color: #334155; cursor: pointer;
+}
+.ec-btn:hover:not(:disabled) { background: #f8fafc; }
+.ec-btn:disabled { opacity: .6; cursor: default; }
+.ec-btn-primary { background: #0f172a; color: #fff; border-color: #0f172a; }
+.ec-btn-primary:hover:not(:disabled) { background: #1e293b; }
+
+.ec-scroll { flex: 1; overflow-y: auto; padding: 8px 0 24px; }
+
+/* ── Address group ─────────────────────────────────────────── */
+.ec-group { border-bottom: 1px solid #f1f5f9; }
+.ec-group-header {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 10px 14px; background: none; border: 0; cursor: pointer; text-align: left;
+}
+.ec-group-header:hover { background: #f8fafc; }
+.ec-group-addr {
+  font-size: 13px; font-weight: 600; color: #0f172a;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ec-tag {
+  font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 4px; background: #ecfeff; color: #0891b2; flex-shrink: 0;
+}
+.ec-count {
+  font-size: 11px; font-weight: 600; color: #64748b;
+  background: #f1f5f9; padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
+}
+.ec-group-meta { margin-left: auto; font-size: 11px; color: #94a3b8; flex-shrink: 0; }
+
+.ec-empty-addr { padding: 8px 14px 12px 44px; font-size: 12px; color: #94a3b8; font-style: italic; }
+
+/* ── Conversation row ──────────────────────────────────────── */
+.ec-thread {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 14px 9px 44px; cursor: pointer; border-top: 1px solid #f8fafc;
+}
+.ec-thread:hover { background: #f8fafc; }
+.ec-thread.active { background: #eff6ff; }
+.ec-thread-main { flex: 1; min-width: 0; }
+.ec-thread-top { display: flex; align-items: center; gap: 7px; }
+.ec-thread-subject {
+  font-size: 13px; font-weight: 600; color: #0f172a;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ec-thread-snippet {
+  font-size: 12px; color: #64748b; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ec-thread-right {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0;
+}
+.ec-thread-date { font-size: 11px; color: #94a3b8; white-space: nowrap; }
+.ec-msgcount {
+  font-size: 10px; font-weight: 700; color: #475569;
+  background: #f1f5f9; padding: 1px 7px; border-radius: 9px;
+}
+
+/* ── Drawer ────────────────────────────────────────────────── */
+.ec-drawer-backdrop {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, .35);
+  z-index: 1200; animation: ecFade .15s ease;
+}
+.ec-drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 560px; max-width: 94vw;
+  background: #fff; z-index: 1201; display: flex; flex-direction: column;
+  box-shadow: -8px 0 32px rgba(15, 23, 42, .18);
+  animation: ecSlide .2s cubic-bezier(.22, 1, .36, 1);
+}
+@keyframes ecFade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ecSlide { from { transform: translateX(100%) } to { transform: translateX(0) } }
+
+.ec-drawer-header {
+  padding: 14px 16px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0;
+}
+.ec-drawer-subject { font-size: 15px; font-weight: 700; color: #0f172a; line-height: 1.35; }
+.ec-drawer-sub {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 5px; font-size: 11px; color: #64748b;
+}
+.ec-drawer-close {
+  position: absolute; top: 12px; right: 12px;
+  background: none; border: 0; cursor: pointer; color: #94a3b8;
+  padding: 4px; border-radius: 5px; line-height: 0;
+}
+.ec-drawer-close:hover { background: #f1f5f9; color: #0f172a; }
+
+.ec-drawer-body { flex: 1; overflow-y: auto; background: #f8fafc; padding: 12px; }
+
+/* ── Message card (all messages rendered, chronological) ───── */
+.ec-msg {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+  margin-bottom: 10px; overflow: hidden;
+}
+.ec-msg.outbound { border-left: 3px solid #3b82f6; }
+.ec-msg.inbound  { border-left: 3px solid #8b5cf6; }
+
+.ec-msg-head { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; }
+.ec-msg-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ec-msg-dir {
+  font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 4px; flex-shrink: 0;
+}
+.ec-msg-dir.outbound { background: #eff6ff; color: #2563eb; }
+.ec-msg-dir.inbound  { background: #f5f3ff; color: #7c3aed; }
+.ec-msg-seq { font-size: 10px; font-weight: 700; color: #94a3b8; flex-shrink: 0; }
+.ec-msg-addr { font-size: 12px; color: #0f172a; word-break: break-all; }
+.ec-msg-label { font-size: 11px; color: #94a3b8; flex-shrink: 0; }
+.ec-msg-time { margin-left: auto; font-size: 11px; color: #94a3b8; white-space: nowrap; flex-shrink: 0; }
+
+.ec-msg-body {
+  padding: 11px 12px; font-size: 13px; color: #334155;
+  line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+}
+.ec-msg-body.clamped { max-height: 260px; overflow: hidden; position: relative; }
+.ec-msg-body.clamped::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 52px;
+  background: linear-gradient(to bottom, rgba(255,255,255,0), #fff);
+}
+.ec-msg-more {
+  display: block; width: 100%; padding: 6px; border: 0; border-top: 1px solid #f1f5f9;
+  background: #fff; color: #2563eb; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.ec-msg-more:hover { background: #f8fafc; }
+
+.ec-atts { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; }
+.ec-att {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: #475569; background: #f8fafc;
+  border: 1px solid #e2e8f0; border-radius: 5px; padding: 3px 8px;
+}
+
+/* Sender-only tracking strip */
+.ec-track {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 7px 12px; background: #f8fafc; border-top: 1px solid #f1f5f9;
+  font-size: 11px;
+}
+.ec-track-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-weight: 700; padding: 2px 7px; border-radius: 4px;
+}
+.ec-track-badge.opened { background: #dcfce7; color: #15803d; }
+.ec-track-badge.sent   { background: #eff6ff; color: #2563eb; }
+.ec-track-meta { color: #94a3b8; }
+
+.ec-loading, .ec-empty {
+  padding: 32px 16px; text-align: center; color: #94a3b8; font-size: 13px;
+}

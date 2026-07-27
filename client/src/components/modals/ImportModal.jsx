@@ -16,25 +16,42 @@ const STEPS = ['Upload File', 'Preview & Map', 'Import']
 // "Lead Owner" also has no matching dynamic field — it's not a free-text array,
 // it resolves to the single ownerId dropdown (matched by name server-side), so
 // it's extracted as a raw column below, same as "Task".
+// Keys are in NORMALIZED form (see normalizeTemplateHeader) — punctuation and
+// spacing are stripped, so "Co. Phone no.", "Co Phone No" and "co-phone-no"
+// all resolve to the same entry. Real-world spreadsheets rarely reproduce the
+// template's punctuation exactly, and an unrecognised header silently imports
+// as blank, so matching is deliberately forgiving here.
 const COMPANY_TEMPLATE_HEADER_ALIASES = {
-  'company name':    'Company Name',
-  'industry':        'Industry',
-  'country':         'Country of Origin',
-  'company - url':   'Company URL',
-  'end- pdp - url':  'End PDP URL',
-  'email':           'Email',
-  'co. phone no.':   'Phone Number',
-  'contact person':  'Contact Person',
-  'linked profile':  'Linked Profile',
-  'cms':             'CMS',
-  'remarks':         'Remarks',
-  'notes':           'Notes',
+  companyname:      'Company Name',
+  industry:         'Industry',
+  country:          'Country of Origin',
+  countryoforigin:  'Country of Origin',
+  companyurl:       'Company URL',
+  website:          'Company URL',
+  endpdpurl:        'End PDP URL',
+  pdpurl:           'End PDP URL',
+  email:            'Email',
+  cophoneno:        'Phone Number',
+  phonenumber:      'Phone Number',
+  phone:            'Phone Number',
+  contactperson:    'Contact Person',
+  linkedprofile:    'Linked Profile',
+  linkedinprofile:  'Linked Profile',
+  cms:              'CMS',
+  remarks:          'Remarks',
+  remark:           'Remarks',
+  notes:            'Notes',
+  leadstatus:       'Lead Status',
 }
 
 // Strip a trailing "(...)" annotation (e.g. "Remarks (Static / Less data /
-// Partnership)" → "Remarks") before alias lookup, then lowercase + trim.
+// Partnership)" → "Remarks"), then reduce to lowercase alphanumerics so
+// differences in spacing, dots and dashes never break a match.
 function normalizeTemplateHeader(h) {
-  return String(h || '').replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase()
+  return String(h || '')
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .replace(/[^a-z0-9]+/gi, '')
+    .toLowerCase()
 }
 
 // Rewrite a parsed row's keys from the template's exact headers to our
@@ -126,8 +143,24 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
       if (raw.length === 0) throw new Error('No data rows found in file.')
       const normalizedRaw = remapCompanyTemplateHeaders(raw)
       const mapped = mapRowsToFields(normalizedRaw, fields)
+
+      // An unrecognised column imports as blank with no visible sign, which is
+      // hard to spot when only one or two fields are affected. Report the
+      // headers that resolved to no field so a mismatch is diagnosable.
+      const knownLabels = new Set(fields.map(f => f.label.toLowerCase()))
+      const knownKeys   = new Set(fields.map(f => f.key.toLowerCase()))
+      const ignoredHeaders = Object.keys(normalizedRaw[0] || {}).filter(h => {
+        const n = normalizeTemplateHeader(h)
+        return !knownLabels.has(h.toLowerCase().trim()) && !knownKeys.has(h.toLowerCase().trim())
+          && !['sno', 'task', 'leadowner'].includes(n)
+      })
+      if (ignoredHeaders.length) {
+        console.warn('[Import] These columns matched no Company field and were imported as blank:', ignoredHeaders)
+        console.warn('[Import] Recognised field labels:', fields.map(f => f.label))
+      }
+      // Needles are in normalized form ("lead owner" → "leadowner").
       const taskValues = extractRawColumn(raw, 'task')
-      const leadOwnerValues = extractRawColumn(raw, 'lead owner')
+      const leadOwnerValues = extractRawColumn(raw, 'leadowner')
       mapped.forEach((r, i) => { r.task = taskValues[i]; r.leadOwnerName = leadOwnerValues[i] })
       setRows(mapped)
 

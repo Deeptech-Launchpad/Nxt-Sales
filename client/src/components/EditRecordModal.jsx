@@ -3,6 +3,7 @@ import { X, Save, Loader2 } from 'lucide-react'
 import api from '../api/client'
 import { INDUSTRIES, COUNTRIES } from '../constants/formOptions'
 import MultiValueInput from './MultiValueInput'
+import EmailConflictWarning from './EmailConflictWarning'
 import { cleanList, editList } from '../utils/multiValue'
 
 // Compact input styling so MultiValueInput matches this modal's .er-input look.
@@ -11,7 +12,7 @@ const ER_INPUT_STYLE = { padding: '8px 10px', border: '1px solid #e2e8f0', borde
 const LEAD_STATUSES = ['New', 'Open', 'In Progress', 'Open Deal', 'Unqualified', 'Attempted to Contact', 'Connected', 'Bad Timing']
 
 // ── Company edit fields ───────────────────────────────────────
-function CompanyForm({ data, onChange, users }) {
+function CompanyForm({ data, onChange, users, companyId }) {
   const f = (key) => ({ value: data[key] || '', onChange: e => onChange(key, e.target.value) })
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -20,6 +21,9 @@ function CompanyForm({ data, onChange, users }) {
       </FormRow>
       <FormRow label="Email">
         <MultiValueInput values={data.emails} onChange={v => onChange('emails', v)} type="email" placeholder="company@example.com" addLabel="Add email" inputStyle={ER_INPUT_STYLE} />
+        {/* excludeCompanyId — this company legitimately owns its own addresses,
+            so it must never be reported as a conflict with itself. */}
+        <EmailConflictWarning emails={data.emails} excludeCompanyId={companyId} />
       </FormRow>
       <FormRow label="Phone Number">
         <MultiValueInput values={data.phones} onChange={v => onChange('phones', v)} type="tel" placeholder="+91 98765 43210" addLabel="Add phone" inputStyle={ER_INPUT_STYLE} />
@@ -154,7 +158,7 @@ export default function EditRecordModal({ id, record, onClose, onSaved }) {
 
         {/* Body */}
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
-          <CompanyForm data={data} onChange={handleChange} users={users} />
+          <CompanyForm data={data} onChange={handleChange} users={users} companyId={id} />
           {error && (
             <p style={{ color: '#ef4444', fontSize: 12, marginTop: 12, fontWeight: 500 }}>{error}</p>
           )}
