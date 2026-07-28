@@ -43,7 +43,9 @@ These were established explicitly by the project owner partway through this enga
 |---|---|---|
 | 1 | Email Sync architecture review + root-cause matching-logic fix | ✅ Done |
 | 2 | Email Module regression checklist + production deployment | ✅ Done |
-| 3 | Email "Continue Existing Thread" bug diagnosis | ⚠️ Diagnosed, **not fixed** |
+| 3 | Email "Continue Existing Thread" bug (§4.7) | ✅ Fixed & verified |
+| 3b | Email orphan-message fast-path bug (§4.8) | ✅ Fixed & verified |
+| 3c | Cc-only conversations not imported (§4.9) | ✅ Investigated — accepted as documented limitation |
 | 4 | Dynamic Dropdown Management + international phone input (Update 2) | ✅ Done |
 | 5 | Navigation fix — logo → Dashboard (Update 4) | ✅ Done |
 | 6 | Company module: search expansion + Pin/Star (Update 5) | ✅ Done |
@@ -102,14 +104,61 @@ Commit for this checkpoint: `9e555e6` — *"feat(email): checkpoint after email 
 - Cosmetic logging bug: `[Email Sync] ${candidateCount} candidate hit(s) across ${threadIds.size} thread(s)` prints "undefined thread(s)" because `threadIds` is an array, not a Set (`.size` should be `.length`). Not fixed.
 - Schema drift: 7 columns exist in the database with no corresponding migration file — `trackingId`, `openCount`, `firstOpenedAt`, `lastOpenedAt`, `openHistory`, `callLogId`, `recordingUrl` (all on `Activity`). Predates this engagement; explicitly deferred by the project owner until after all feature modules are finished.
 
-### 4.7 "Continue Existing Thread" — diagnosed, NOT fixed
+### 4.7 "Continue Existing Thread" — FIXED
 
-Two real bugs were found via code trace (read-only investigation, no code changed):
+**Symptom:** choosing *Continue Existing Thread* sometimes attached the reply to an older message (days or months stale), or to one sent by the other participant, instead of the latest message in the conversation.
 
-1. **Unnormalized header matching**: the `emailMode: 'continue'` lookup in `POST /api/email/send` compares `toEmail`/`fromEmail` columns via exact string equality — but those columns are populated from **raw Gmail headers** during sync (can include display names, mixed case, multiple recipients), while every *other* matching site in the same file (`anchorForAddresses`) correctly runs values through `extractAddresses()` first (lowercases, strips display names). This is the one place in the whole module that skips that normalization. Effect: the lookup can silently miss the true latest message and either continue an older thread or start a new one.
-2. **`userId`-scoped lookup contradicts the company-centric decision (§4.2)**: the continue-lookup filters `userId: req.user.id`, so if a *different* teammate's mailbox sent/received the most recent message in a thread, the current user's "Continue Existing Thread" won't find it — even though the shared Company History view (deliberately unfiltered by `userId`) shows it as one ongoing conversation.
+**Root cause:** the `emailMode: 'continue'` lookup in `POST /api/email/send` compared `toEmail`/`fromEmail` with **exact string equality**, but those columns hold two different shapes depending on how the row was created:
 
-**Status: unresolved.** Recommended fix (not yet implemented): normalize `toEmail`/`fromEmail` at continue-lookup time via `extractAddresses()`, and either drop the `userId` filter or explicitly redesign continuation to be company/address-scoped rather than user-scoped.
+| Row created by | Stored as |
+|---|---|
+| CRM composer (`/send`) | bare address — `a@b.com` |
+| Email Sync | raw Gmail header — `"Name" <a@b.com>`, original casing, possibly several recipients |
+
+Exact equality matched only the bare-lowercase form, so `findFirst(orderBy: createdAt desc)` silently skipped every synced message and landed on an older composer-sent row. Every *other* matching site in the file already normalized via `extractAddresses()`; this was the one place that didn't.
+
+**Fix:** normalize both sides with `extractAddresses()` (broad DB prefilter, then exact normalized opposite-end check in JS). Measured against all 94 real conversation pairs in the database: **88 fixed, 6 already correct, 0 still wrong.**
+
+The `userId: req.user.id` filter on this lookup was **deliberately left in place** by the project owner's decision — to be reviewed separately if a genuine multi-user threading problem appears, rather than bundled into a bug fix.
+
+### 4.8 Orphaned messages stranded by the sync fast-path — FIXED
+
+**Symptom:** messages missing from conversations that had otherwise imported correctly; repeated syncs never recovered them.
+
+**Root cause:** the fast-path in `processThread` treated a thread as fully synced when all its candidate messages merely **existed** in the `Activity` table, regardless of `companyId`:
+
+```js
+const knownIds = new Set(knownRows.map(r => r.messageId))   // any row, any company
+if (threadsLinkedHere.has(threadId) && candidates.every(id => knownIds.has(id))) return
+```
+
+A message sent from the standalone composer is stored with `companyId: null`. Its presence made the thread look complete, so `threads.get` was never called and the adopt-don't-skip logic never ran — leaving the message orphaned **permanently**.
+
+**Fix:** the gate now counts only messages linked to *this* company (`linkedHereIds`). Verified: the affected thread flips from skipped → fetched, while **90 of 91 threads are unchanged** (no additional Gmail API cost).
+
+### 4.9 DOCUMENTED LIMITATION — Cc-only conversations are not imported (accepted, by design)
+
+This is **intentional business behaviour, not a defect.** Recorded here so it is not mistaken for a bug later.
+
+`anchorForAddresses` reads **only the `From` and `To` headers — never `Cc`/`Bcc`** — and requires the connected mailbox and a company address on *opposite ends* of a single message:
+
+- **R1 (user → company):** `From` has the connected mailbox **and** `To` has a company address
+- **R2 (company → user):** `To` has the connected mailbox **and** `From` has a company address
+
+**Consequence:** a genuine conversation is skipped if either party appears only in `Cc`. Because import eligibility therefore depends on *how a person is addressed*, **different mailboxes legitimately import different proportions of the same company's mail.**
+
+Measured on the same company across two connected mailboxes:
+
+| Mailbox | Candidates | Imported | Skipped | Skip rate |
+|---|---|---|---|---|
+| `dtlpsaranya@gmail.com` | 145 | 92 | 53 | 37% |
+| `dtlpadithyan@gmail.com` | 226 | 124 | 102 | 45% |
+
+Of 155 skipped threads across both: **127 (82%) rejected solely because an address was in `Cc` rather than `To`**; 16 (10%) were the genuine third-party co-recipient case the rule exists to exclude; 12 (8%) other.
+
+Independently ruled out during investigation — none of these contribute: pagination truncation (no query approached the `MAX_PAGES` cap), thread-fetch failures (0 across 371 threads), invalid tokens, alias/group delivery, and cross-company ownership blocking.
+
+**Decision (project owner):** keep the strict rule. Accepting Cc as an anchor side would re-admit unrelated conversations — the exact problem the directional rule was introduced to solve. Full per-thread evidence (Thread ID / Subject / From / To / Cc / rejecting clause for all 155 threads) is preserved in **`docs/EMAIL_SYNC_SKIPPED_THREADS_REPORT.md`**.
 
 ---
 
@@ -409,17 +458,17 @@ Documented separately at **`docs/RESTORE_PROJECT.md`**. Summary:
 
 In the order the project owner has been sequencing work (small/contained items first, large efforts last):
 
-1. **Team Chat E5 — File sharing** (multer upload endpoint, local disk storage, mime/size validation, image previews)
-2. **Team Chat E6 — Read receipts, message search, CRM-record attachment, desktop notifications**
-3. **Email "Continue Existing Thread" bugs** (§4.7) — diagnosed, fix not yet implemented:
-   - Normalize `toEmail`/`fromEmail` before the continue-lookup's string comparison
-   - Resolve the `userId`-scoped lookup vs. company-centric architecture conflict
-4. **Email module Critical items still open**:
+**The Email module is considered COMPLETE** as of the Bug 1 / Bug 2 fixes (§4.7, §4.8). The Cc limitation (§4.9) was investigated, evidenced, and **accepted by the project owner** — it is not outstanding work.
+
+Team Chat E1–E6 are likewise complete. Remaining items:
+
+1. **Email module — deferred, not blocking** (all pre-existing, none introduced by recent work):
    - `messageId` unique DB constraint (verified safe, 0 current duplicates)
    - `SyncRun`/audit-provenance table
-5. **Cosmetic**: `threadIds.size` logging bug in `email.js` (should be `.length`)
-6. **Schema drift cleanup** — 7 undocumented columns on `Activity` (see §12) — explicitly deferred until all feature modules are finished, per the project owner's own sequencing rule
-7. **`docs/RESTORE_PROJECT.md`** — created but not yet committed to git (contains environment-specific paths; owner should decide whether to commit or keep local-only)
+   - Cosmetic: `threadIds.size` logging bug in `email.js` (prints "undefined thread(s)"; should be `.length`)
+   - 715 orphan `companyId: null` email rows — invisible in every company view; needs an owner decision on whether to backfill or leave
+2. **Schema drift cleanup** — 7 undocumented columns on `Activity` (see §12) — explicitly deferred until all feature modules are finished, per the project owner's own sequencing rule
+3. **`docs/RESTORE_PROJECT.md`** — contains environment-specific paths; owner to decide whether to commit or keep local-only
 
 ---
 

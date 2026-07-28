@@ -419,18 +419,52 @@ router.post('/send', auth, async (req, res) => {
       // explicit: skip all lookup, send completely fresh
 
     } else if (emailMode === 'continue') {
-      const lastEmail = await prisma.activity.findFirst({
+      // Find the MOST RECENT message exchanged with this recipient, in either
+      // direction, and continue that thread.
+      //
+      // fromEmail/toEmail hold two different shapes depending on how the row
+      // was created: a message sent through this composer stores bare
+      // addresses ("a@b.com"), while a message imported by Email Sync stores
+      // the RAW Gmail header — display name included ("Name <a@b.com>"),
+      // original casing, and possibly several recipients in one string.
+      // Comparing those columns with exact equality therefore skipped every
+      // synced message and silently fell through to an older composer-sent
+      // row, continuing a thread that could be months stale (or one from the
+      // opposite direction). Normalising with extractAddresses() — the same
+      // helper the sync matching rules already use — makes both shapes
+      // compare equal, so "latest" really means latest.
+      const meAddr  = account.email.trim().toLowerCase()
+      const toAddrs = extractAddresses(to)   // the To field may itself carry a display name
+
+      // Broad DB-side prefilter (substring, so it catches both shapes), then
+      // an exact normalised check in JS below — the prefilter may over-match
+      // (e.g. "jey@x.com" also matches "notjey@x.com"), which the precise
+      // check discards. Bounded because only the newest match is needed.
+      const candidates = toAddrs.length === 0 ? [] : await prisma.activity.findMany({
         where: {
           type: 'email',
           threadId: { not: null },
           userId: req.user.id,
-          OR: [
-            { fromEmail: account.email, toEmail: to },
-            { fromEmail: to, toEmail: account.email },
-          ],
+          OR: toAddrs.flatMap(a => [
+            { fromEmail: { contains: a, mode: 'insensitive' } },
+            { toEmail:   { contains: a, mode: 'insensitive' } },
+          ]),
         },
         orderBy: { createdAt: 'desc' },
+        take: 200,
       })
+
+      // Opposite-end pairing, same rule the sync anchor uses: the connected
+      // mailbox on one end and the recipient on the other, either direction.
+      const lastEmail = candidates.find(r => {
+        const from = extractAddresses(r.fromEmail)
+        const rcpt = extractAddresses(r.toEmail)
+        return toAddrs.some(a =>
+          (from.includes(meAddr) && rcpt.includes(a)) ||
+          (from.includes(a) && rcpt.includes(meAddr))
+        )
+      })
+
       if (lastEmail?.threadId) {
         threadId = lastEmail.threadId
         const meta = await resolveThreadMeta(gmail, threadId)
@@ -788,7 +822,13 @@ async function runEmailSync({ userId, companyId, companyAddresses, own = new Set
         select: { messageId: true, threadId: true, companyId: true },
       })
     : []
-  const knownIds = new Set(knownRows.map(r => r.messageId))
+  // Only messages ALREADY LINKED TO THIS COMPANY count as "nothing left to do".
+  // Using mere presence in the Activity table (regardless of companyId) made the
+  // fast path below skip threads that still contained unlinked messages — a
+  // message sent from the standalone composer is stored with companyId null, so
+  // the thread looked fully synced, was never re-fetched, and that message stayed
+  // orphaned permanently instead of being adopted.
+  const linkedHereIds = new Set(knownRows.filter(r => r.companyId === companyId).map(r => r.messageId))
   const threadsLinkedHere = new Set(knownRows.filter(r => r.companyId === companyId).map(r => r.threadId))
 
   let synced = 0, adopted = 0, skippedThreads = 0, failedThreads = 0, unchangedThreads = 0
@@ -798,8 +838,11 @@ async function runEmailSync({ userId, companyId, companyAddresses, own = new Set
     // already linked to this company — there is nothing new to fetch, so skip
     // the (expensive) threads.get entirely. A new reply always shows up as a
     // new candidate id, so genuinely-updated threads still get processed.
+    // The check is against messages linked to THIS company (not merely present
+    // in the table), so a thread holding any unlinked message is still fetched
+    // and that message gets adopted rather than stranded.
     const candidates = candidatesByThread.get(threadId)
-    if (threadsLinkedHere.has(threadId) && [...candidates].every(id => knownIds.has(id))) {
+    if (threadsLinkedHere.has(threadId) && [...candidates].every(id => linkedHereIds.has(id))) {
       unchangedThreads++
       return
     }
