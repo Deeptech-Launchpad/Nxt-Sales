@@ -9,6 +9,9 @@ export default defineConfig({
       // Backend (incl. Google OAuth) is served under /api. /auth/callback is a
       // frontend route handled by the SPA, so it must NOT be proxied.
       '/api': { target: 'http://localhost:4000', changeOrigin: true },
+      // Team Chat real-time layer (Update 3) — needs the websocket upgrade
+      // proxied too, not just plain HTTP.
+      '/socket.io': { target: 'http://localhost:4000', changeOrigin: true, ws: true },
     },
   },
 })

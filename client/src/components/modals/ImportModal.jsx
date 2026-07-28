@@ -2,7 +2,18 @@ import { useState, useRef, useEffect } from 'react'
 import { X, Upload, Download, CheckCircle, AlertCircle, FileText, ChevronRight } from 'lucide-react'
 import { buildTemplateFromFields, parseRawFile, mapRowsToFields } from '../../utils/exportUtils'
 import api from '../../api/client'
+import { useDropdownOptions } from '../../hooks/useDropdownOptions'
 import '../../styles/modal.css'
+
+// Dropdown-mapped columns whose imported values are cross-checked against the
+// admin-managed lists (Update 2). Advisory only — an unmatched value still
+// imports as typed, it's just flagged so it doesn't silently show up later as
+// an option the Company/Deal forms don't recognise.
+const IMPORT_DROPDOWN_FIELDS = {
+  industry:   'company.industry',
+  country:    'company.country',
+  leadStatus: 'company.leadStatus',
+}
 
 const STEPS = ['Upload File', 'Preview & Map', 'Import']
 
@@ -42,6 +53,13 @@ const COMPANY_TEMPLATE_HEADER_ALIASES = {
   remark:           'Remarks',
   notes:            'Notes',
   leadstatus:       'Lead Status',
+}
+
+// Case-insensitive check against an admin-managed option list.
+function matchesDropdown(options, value) {
+  if (!value) return true
+  const v = String(value).trim().toLowerCase()
+  return options.some(o => o.value.toLowerCase() === v)
 }
 
 // Strip a trailing "(...)" annotation (e.g. "Remarks (Static / Less data /
@@ -107,6 +125,12 @@ const COMPANY_IMPORT_TEMPLATE_COLUMNS = [
 // Company bulk-import modal — talks to GET /api/companies/import-fields and
 // POST /api/companies/bulk.
 export default function ImportModal({ isOpen, onClose, onSuccess }) {
+  const { options: industryOptions }   = useDropdownOptions('company.industry')
+  const { options: countryOptions }    = useDropdownOptions('company.country')
+  const { options: leadStatusOptions } = useDropdownOptions('company.leadStatus')
+  const dropdownOptionsByField = {
+    industry: industryOptions, country: countryOptions, leadStatus: leadStatusOptions,
+  }
   const [step, setStep]         = useState(0)
   const [file, setFile]         = useState(null)
   const [rows, setRows]         = useState([])
@@ -235,6 +259,12 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
   const previewCols    = COMPANY_IMPORT_TEMPLATE_COLUMNS.filter(c => c.key).map(c => ({ key: c.key, label: c.header }))
   const duplicateCount = dupInfo.filter(d => d?.isDuplicate).length
 
+  // Rows where Industry/Country/Lead Status don't match any enabled managed
+  // value — advisory only, never blocks the import (see matchesDropdown above).
+  const rowHasDropdownMismatch = (r) =>
+    Object.entries(IMPORT_DROPDOWN_FIELDS).some(([key]) => !matchesDropdown(dropdownOptionsByField[key], r[key]))
+  const dropdownMismatchCount = rows.filter(rowHasDropdownMismatch).length
+
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) { reset(); onClose() } }}>
       <div className="modal-drawer" style={{ width: step === 1 ? 760 : 520 }}>
@@ -317,6 +347,17 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
                 </div>
               )}
 
+              {dropdownMismatchCount > 0 && (
+                <div style={{ display: 'flex', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: 10, marginBottom: 14, fontSize: 12, color: '#92400e' }}>
+                  <AlertCircle size={14} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>
+                    {dropdownMismatchCount} row(s) have an Industry, Country, or Lead Status value that doesn't match
+                    any current option (highlighted below) — they'll still import as typed, but won't appear in those
+                    dropdowns until an admin adds the value under Settings → Dropdown Lists.
+                  </span>
+                </div>
+              )}
+
               {duplicateCount > 0 && (
                 <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 6, padding: 10, marginBottom: 14 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#854d0e', marginBottom: 8 }}>
@@ -377,11 +418,17 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
                             </td>
                           )}
                           <td style={{ padding: '7px 10px', color: '#94a3b8' }}>{i + 1}</td>
-                          {previewCols.map(f => (
-                            <td key={f.key} style={{ padding: '7px 10px', color: f.key === requiredKey && !r[f.key] ? '#ef4444' : '#334155', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {r[f.key] || (f.key === requiredKey ? '⚠ missing' : <span style={{ color: '#cbd5e1' }}>--</span>)}
-                            </td>
-                          ))}
+                          {previewCols.map(f => {
+                            const isDropdownField = Object.prototype.hasOwnProperty.call(IMPORT_DROPDOWN_FIELDS, f.key)
+                            const mismatch = isDropdownField && !matchesDropdown(dropdownOptionsByField[f.key], r[f.key])
+                            return (
+                              <td key={f.key} title={mismatch ? `"${r[f.key]}" doesn't match any current ${f.label} option` : undefined}
+                                style={{ padding: '7px 10px', color: f.key === requiredKey && !r[f.key] ? '#ef4444' : (mismatch ? '#b45309' : '#334155'), background: mismatch ? '#fffbeb' : 'transparent', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {r[f.key] || (f.key === requiredKey ? '⚠ missing' : <span style={{ color: '#cbd5e1' }}>--</span>)}
+                                {mismatch && ' ⚠'}
+                              </td>
+                            )
+                          })}
                           {duplicateCount > 0 && (
                             <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                               {dup?.isDuplicate && (

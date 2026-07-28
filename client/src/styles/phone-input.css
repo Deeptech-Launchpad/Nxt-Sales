@@ -1,0 +1,47 @@
+/* International phone input (react-phone-number-input) — restyled to match
+   the app's plain bordered field look (MultiValueInput's baseInput), since
+   the library ships unstyled by default. */
+
+.PhoneInput {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.PhoneInput:focus-within {
+  border-color: #3b82f6;
+}
+
+.PhoneInputCountry {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.PhoneInputCountryIcon {
+  width: 22px;
+}
+
+.PhoneInputCountrySelectArrow {
+  opacity: 0.55;
+}
+
+.PhoneInputInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  color: #0f172a;
+  font-family: inherit;
+  background: transparent;
+  padding: 0;
+}

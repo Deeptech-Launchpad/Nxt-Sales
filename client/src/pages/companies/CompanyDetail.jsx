@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ChevronDown, ChevronLeft, FileText, Mail, Phone,
   CheckSquare, Calendar, MoreHorizontal,
-  Plus, ExternalLink, Loader2, Pencil, Trash2
+  Plus, ExternalLink, Loader2, Pencil, Trash2, Star
 } from 'lucide-react'
 import api from '../../api/client'
 import NoteModal    from '../../components/activities/NoteModal'
@@ -216,6 +216,16 @@ export default function CompanyDetail() {
               {initials}
             </div>
             <h2 className="detail-entity-name">{displayName}</h2>
+            <button
+              onClick={async () => {
+                const { data } = await api.patch(`/companies/${id}/pin`)
+                setCompany(prev => ({ ...prev, isPinned: data.isPinned }))
+              }}
+              title={company.isPinned ? 'Unpin company' : 'Pin company'}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex' }}
+            >
+              <Star size={16} color={company.isPinned ? '#f59e0b' : '#cbd5e1'} fill={company.isPinned ? '#f59e0b' : 'none'} />
+            </button>
             {company.domain && (
               <a href={/^https?:\/\//i.test(company.domain) ? company.domain : `https://${company.domain}`} target="_blank" rel="noreferrer" className="detail-entity-domain">
                 {company.domain} <ExternalLink size={11} />

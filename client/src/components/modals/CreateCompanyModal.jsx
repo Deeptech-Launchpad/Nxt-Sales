@@ -2,22 +2,11 @@ import { useState, useEffect, useRef } from 'react'
 import { X, ChevronDown, Search } from 'lucide-react'
 import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
-import { INDUSTRIES, COUNTRIES } from '../../constants/formOptions'
+import { useDropdownOptions } from '../../hooks/useDropdownOptions'
 import MultiValueInput from '../MultiValueInput'
 import EmailConflictWarning from '../EmailConflictWarning'
 import { cleanList } from '../../utils/multiValue'
 import '../../styles/modal.css'
-
-const LEAD_STATUSES = [
-  'New',
-  'Open',
-  'In Progress',
-  'Open Deal',
-  'Unqualified',
-  'Attempted to Contact',
-  'Connected',
-  'Bad Timing',
-]
 
 // ── Reusable searchable single-select dropdown ────────────
 function SearchableSelect({ value, onChange, options, placeholder = 'Select…', showEmail = false }) {
@@ -117,6 +106,9 @@ const EMPTY = {
 
 export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
   const { user }    = useAuth()
+  const { options: industries }  = useDropdownOptions('company.industry')
+  const { options: countries }   = useDropdownOptions('company.country')
+  const { options: leadStatuses } = useDropdownOptions('company.leadStatus')
   const [form, setForm]       = useState(EMPTY)
   const [users, setUsers]     = useState([])
   const [saving, setSaving]   = useState(false)
@@ -143,17 +135,17 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
 
   const industryOptions = [
     { value: '', label: 'Select an industry' },
-    ...INDUSTRIES.map(i => ({ value: i, label: i })),
+    ...industries.map(i => ({ value: i.value, label: i.label })),
   ]
 
   const countryOptions = [
     { value: '', label: 'Select a country' },
-    ...COUNTRIES.map(c => ({ value: c, label: c })),
+    ...countries.map(c => ({ value: c.value, label: c.label })),
   ]
 
   const leadStatusOptions = [
     { value: '', label: 'Select a status' },
-    ...LEAD_STATUSES.map(s => ({ value: s, label: s })),
+    ...leadStatuses.map(s => ({ value: s.value, label: s.label })),
   ]
 
   const set = (field, val) => setForm(p => ({ ...p, [field]: val }))

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { TrendingUp, Briefcase, CheckCircle, Mail, Plus } from 'lucide-react'
+import { TrendingUp, Briefcase, CheckCircle, Mail, Plus, Building2, PhoneCall, CalendarClock, AlertTriangle } from 'lucide-react'
 import api from '../api/client'
 import '../styles/dashboard.css'
 
@@ -18,6 +18,8 @@ export default function Dashboard() {
 
   const [loading, setLoading] = useState(true)
   const [deals, setDeals]     = useState([])
+  const [kpis, setKpis]       = useState(null)
+  const [kpisLoading, setKpisLoading] = useState(true)
 
   // All figures below come from the backend DB — nothing hardcoded.
   useEffect(() => {
@@ -29,6 +31,22 @@ export default function Dashboard() {
     })
     return () => { alive = false }
   }, [])
+
+  // 6 KPI widgets (Update 6) — one DB-aggregated call, not derived client-side.
+  useEffect(() => {
+    let alive = true
+    api.get('/dashboard/stats').then(r => { if (alive) setKpis(r.data) }).catch(() => {}).finally(() => { if (alive) setKpisLoading(false) })
+    return () => { alive = false }
+  }, [])
+
+  const kpiCards = [
+    { label: 'Total Companies',       value: kpis?.totalCompanies,       Icon: Building2,     color: '#eff6ff', iconColor: '#3b82f6' },
+    { label: 'Deals in Progress',     value: kpis?.dealsInProgress,      Icon: Briefcase,     color: '#f0fdf4', iconColor: '#22c55e' },
+    { label: 'Won Clients This Month',value: kpis?.wonClientsThisMonth,  Icon: CheckCircle,   color: '#fff1f2', iconColor: '#e63329' },
+    { label: 'Calls Today',           value: kpis?.callsToday,           Icon: PhoneCall,     color: '#fef9ee', iconColor: '#f59e0b' },
+    { label: 'Follow-ups Due Today',  value: kpis?.followUpsDueToday,    Icon: CalendarClock, color: '#f5f3ff', iconColor: '#8b5cf6' },
+    { label: 'Tasks Overdue',         value: kpis?.tasksOverdue,         Icon: AlertTriangle, color: '#fef2f2', iconColor: '#ef4444' },
+  ]
 
   const activeDeals = deals.filter(d => !/won|lost/i.test(d.stage || ''))
   const wonDeals    = deals.filter(d => /won/i.test(d.stage || ''))
@@ -54,6 +72,18 @@ export default function Dashboard() {
               <Icon size={20} color={iconColor} />
             </div>
             <div className="stat-value">{loading ? '—' : value}</div>
+            <div className="stat-label">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="stats-grid">
+        {kpiCards.map(({ label, value, Icon, color, iconColor }) => (
+          <div key={label} className="stat-card">
+            <div className="stat-icon-wrap" style={{ background: color }}>
+              <Icon size={20} color={iconColor} />
+            </div>
+            <div className="stat-value">{kpisLoading ? '—' : (value ?? 0)}</div>
             <div className="stat-label">{label}</div>
           </div>
         ))}

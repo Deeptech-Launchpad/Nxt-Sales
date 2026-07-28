@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, LayoutGrid, List, Download, Plus,
-  ChevronDown, SlidersHorizontal, Pencil, Upload, Columns, Trash2
+  ChevronDown, SlidersHorizontal, Pencil, Upload, Columns, Trash2, Star
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
+import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import FilterDropdown from '../components/filters/FilterDropdown'
 import CreateCompanyModal from '../components/modals/CreateCompanyModal'
 import ImportModal from '../components/modals/ImportModal'
@@ -150,17 +151,11 @@ const DATE_OPTIONS = [
   { value: 'last_90',    label: 'Last 90 Days'   },
 ]
 
-const LEAD_STATUS_OPTIONS = [
-  { value: 'New',                  label: 'New'                  },
-  { value: 'Open',                 label: 'Open'                 },
-  { value: 'In Progress',          label: 'In Progress'          },
-  { value: 'Open Deal',            label: 'Open Deal'            },
-  { value: 'Unqualified',          label: 'Unqualified'          },
-  { value: 'Attempted to Contact', label: 'Attempted to Contact' },
-  { value: 'Connected',            label: 'Connected'            },
-  { value: 'Bad Timing',           label: 'Bad Timing'           },
-  { value: 'Unassigned',           label: 'Unassigned'           },
-]
+// 'Unassigned' is a filter-only pseudo-value meaning "no status set" — it's
+// never stored on a Company record, so it stays a hardcoded filter option
+// rather than a managed dropdown value (see useDropdownOptions('company.leadStatus')
+// for the real, admin-managed list this is appended to below).
+const UNASSIGNED_STATUS_OPTION = { value: 'Unassigned', label: 'Unassigned' }
 
 const TABS = [
   { key: 'all',        label: 'All companies'        },
@@ -171,6 +166,11 @@ const TABS = [
 export default function Companies() {
   const navigate      = useNavigate()
   const { user }      = useAuth()
+  const { options: leadStatusValues } = useDropdownOptions('company.leadStatus')
+  const leadStatusOptions = [
+    ...leadStatusValues.map(s => ({ value: s.value, label: s.label })),
+    UNASSIGNED_STATUS_OPTION,
+  ]
 
   const [companies, setCompanies]     = useState([])
   const [total, setTotal]             = useState(0)
@@ -279,6 +279,12 @@ export default function Companies() {
   const allSelected = companies.length > 0 && selected.length === companies.length
   const toggleAll   = () => setSelected(allSelected ? [] : companies.map(c => c.id))
   const toggleOne   = (id) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+
+  const togglePin = async (e, id) => {
+    e.stopPropagation()
+    const { data } = await api.patch(`/companies/${id}/pin`)
+    setCompanies(prev => prev.map(c => c.id === id ? { ...c, isPinned: data.isPinned } : c))
+  }
 
   const deleteSelected = async () => {
     if (!selected.length) return
@@ -396,7 +402,7 @@ export default function Companies() {
           />
           <FilterDropdown
             label="Lead status"
-            options={LEAD_STATUS_OPTIONS}
+            options={leadStatusOptions}
             selected={leadStatusFilter}
             onChange={v => { setLeadStatusFilter(v); setPage(1) }}
           />
@@ -436,18 +442,28 @@ export default function Companies() {
           <thead>
             <tr>
               <th><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
+              <th style={{ width: 30 }} />
               <th>COMPANY</th>
               {orderedVisibleFields.map(f => <th key={f.key}>{f.label.toUpperCase()}</th>)}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={2 + orderedVisibleFields.length} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading...</td></tr>
+              <tr><td colSpan={3 + orderedVisibleFields.length} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading...</td></tr>
             ) : companies.length === 0 ? (
-              <tr><td colSpan={2 + orderedVisibleFields.length} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No companies found</td></tr>
+              <tr><td colSpan={3 + orderedVisibleFields.length} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No companies found</td></tr>
             ) : companies.map(c => (
               <tr key={c.id}>
                 <td><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} /></td>
+                <td>
+                  <button
+                    onClick={e => togglePin(e, c.id)}
+                    title={c.isPinned ? 'Unpin company' : 'Pin company'}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', padding: 2 }}
+                  >
+                    <Star size={15} color={c.isPinned ? '#f59e0b' : '#cbd5e1'} fill={c.isPinned ? '#f59e0b' : 'none'} />
+                  </button>
+                </td>
                 <td className="name-cell">
                   <span className="avatar" style={{ fontSize: '10px', letterSpacing: '-0.5px' }}>
                     {(c.name || '??').slice(0, 2).toUpperCase()}

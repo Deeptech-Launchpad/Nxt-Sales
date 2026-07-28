@@ -28,6 +28,9 @@ model User {
   emailAccounts    EmailAccount[]
   sentMessages     ChatMessage[]  @relation("SentMessages")
   receivedMessages ChatMessage[]  @relation("ReceivedMessages")
+  createdConversations Conversation[]
+  conversationMemberships ConversationMember[]
+  chatMentions ChatMention[]
 }
 
 model Company {
@@ -51,6 +54,7 @@ model Company {
   remarks               String?
   contactPersons        Json?
   linkedProfiles        Json?
+  isPinned              Boolean    @default(false)
   deletedAt             DateTime?
   activities     Activity[]
   deals          Deal[]
@@ -63,6 +67,7 @@ model Company {
   @@index([createdAt])
   @@index([leadStatus])
   @@index([name])
+  @@index([isPinned])
 }
 
 model Deal {
@@ -172,19 +177,94 @@ model CallLog {
   @@index([companyId])
 }
 
+// Team Chat (Update 3). Group chat + real-time layer built as an evolution of
+// the original 1:1-only design — fromUserId/toUserId/isRead are the pre-E2
+// columns, kept (nullable-compatible) until the E2 backfill script has moved
+// every row onto conversationId and a separate follow-up migration drops them.
+model Conversation {
+  id            String    @id @default(cuid())
+  isGroup       Boolean   @default(false)
+  name          String?   // group name; null for 1:1 (UI derives the display name from the other member)
+  createdById   String
+  lastMessageAt DateTime?
+  lastMessageId String?   // denormalized for fast sidebar sort/preview
+  createdAt     DateTime  @default(now())
+  createdBy     User      @relation(fields: [createdById], references: [id])
+  members       ConversationMember[]
+  messages      ChatMessage[]
+
+  @@index([lastMessageAt])
+}
+
+model ConversationMember {
+  id             String    @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime  @default(now())
+  lastReadAt     DateTime? // per-member read cursor — avoids scanning every message for unread counts
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
 model ChatMessage {
-  id         String   @id @default(cuid())
-  fromUserId String
-  toUserId   String
-  body       String
-  isRead     Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  fromUser   User     @relation("SentMessages",     fields: [fromUserId], references: [id], onDelete: Cascade)
-  toUser     User     @relation("ReceivedMessages", fields: [toUserId],   references: [id], onDelete: Cascade)
+  id             String   @id @default(cuid())
+  fromUserId     String
+  toUserId       String?  // null for group messages — no single recipient; superseded by conversationId + ConversationMember for both 1:1 and group
+  body           String
+  isRead         Boolean  @default(false)
+  conversationId String?
+  replyToId      String?
+  editedAt       DateTime?
+  deletedAt      DateTime?
+  pinnedAt       DateTime?
+  createdAt      DateTime @default(now())
+  fromUser       User     @relation("SentMessages",     fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser         User?    @relation("ReceivedMessages", fields: [toUserId],   references: [id], onDelete: Cascade)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo        ChatMessage?  @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies        ChatMessage[] @relation("MessageReplies")
+  mentions       ChatMention[]
 
   @@index([fromUserId])
   @@index([toUserId])
   @@index([createdAt])
+  @@index([conversationId])
+}
+
+// @Mentions (Update 3 / E4) — a join table rather than a JSON array on
+// ChatMessage so "messages mentioning me" is an indexed query, not a scan.
+model ChatMention {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  createdAt DateTime @default(now())
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+// Centralized, admin-managed values for dropdown fields (Update 2) — replaces
+// hardcoded arrays scattered across Company/Deal forms, filters, and Bulk
+// Import so a value can be added/renamed/reordered/disabled without a code
+// change. `value` is what's stored on Company/Deal records and is immutable
+// once created; `label` is the editable display text.
+model DropdownOption {
+  id        String   @id @default(cuid())
+  fieldKey  String
+  value     String
+  label     String
+  order     Int      @default(0)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([fieldKey, value])
+  @@index([fieldKey])
 }
 
 model EmailAccount {

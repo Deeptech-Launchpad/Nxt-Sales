@@ -58,9 +58,27 @@ function dateRangeFor(key) {
   return map[key] || null
 }
 
+// linkedProfiles is a JSONB array — Prisma's query builder can't do a
+// contains-over-array-elements match, so this runs the same
+// jsonb_array_elements_text pattern already used by /email-conflicts,
+// guarded against JSON null the same way (see that endpoint's comment).
+async function companyIdsWithLinkedProfileMatch(search) {
+  const rows = await prisma.$queryRaw`
+    SELECT id FROM "Company"
+    WHERE EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements_text(
+        CASE WHEN jsonb_typeof("linkedProfiles") = 'array' THEN "linkedProfiles" ELSE '[]'::jsonb END
+      ) AS p
+      WHERE p ILIKE ${'%' + search + '%'}
+    )
+  `
+  return rows.map(r => r.id)
+}
+
 // Shared filter builder — used by both the paginated list and the export
 // endpoint so "export with applied filters" always matches the on-screen list.
-function buildCompanyWhere(query, userId) {
+async function buildCompanyWhere(query, userId) {
   const { search, view, owners, leadStatuses, createDate } = query
   // Companies in the Recycle Bin are archived — excluded from every normal
   // list/search/export view. Only the dedicated Recycle Bin routes look past this.
@@ -92,10 +110,13 @@ function buildCompanyWhere(query, userId) {
   }
 
   if (search) {
+    const linkedProfileIds = await companyIdsWithLinkedProfileMatch(search)
     where.OR = [
       { name:   { contains: search, mode: 'insensitive' } },
       { email:  { contains: search, mode: 'insensitive' } },
       { domain: { contains: search, mode: 'insensitive' } },
+      { phone:  { contains: search, mode: 'insensitive' } },
+      ...(linkedProfileIds.length ? [{ id: { in: linkedProfileIds } }] : []),
     ]
   }
 
@@ -106,12 +127,12 @@ function buildCompanyWhere(query, userId) {
 router.get('/', auth, async (req, res) => {
   try {
     const { page = 1, limit = 100 } = req.query
-    const where = buildCompanyWhere(req.query, req.user.id)
+    const where = await buildCompanyWhere(req.query, req.user.id)
 
     const [companies, total] = await Promise.all([
       prisma.company.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
         skip: (Number(page) - 1) * Number(limit),
         take: Number(limit),
         include: { owner: { select: { id: true, name: true, email: true } } },
@@ -134,7 +155,7 @@ router.get('/import-fields', auth, (req, res) => res.json(getImportFields('Compa
 // so Export always captures the full filtered set, not just the visible page.
 router.get('/export', auth, async (req, res) => {
   try {
-    const where = buildCompanyWhere(req.query, req.user.id)
+    const where = await buildCompanyWhere(req.query, req.user.id)
     const companies = await prisma.company.findMany({
       where,
       orderBy: { createdAt: 'desc' },
@@ -434,6 +455,7 @@ router.post('/bulk', auth, async (req, res) => {
 router.get('/recycle-bin', auth, async (req, res) => {
   try {
     const { search } = req.query
+    const linkedProfileIds = search ? await companyIdsWithLinkedProfileMatch(search) : []
     const where = {
       deletedAt: { not: null },
       ...(search && {
@@ -441,6 +463,8 @@ router.get('/recycle-bin', auth, async (req, res) => {
           { name:   { contains: search, mode: 'insensitive' } },
           { email:  { contains: search, mode: 'insensitive' } },
           { domain: { contains: search, mode: 'insensitive' } },
+          { phone:  { contains: search, mode: 'insensitive' } },
+          ...(linkedProfileIds.length ? [{ id: { in: linkedProfileIds } }] : []),
         ],
       }),
     }
@@ -531,6 +555,25 @@ router.post('/', auth, async (req, res) => {
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: err.message || 'Server error.' })
+  }
+})
+
+// ── PATCH /api/companies/:id/pin — toggle Pin/Star (Update 5) ────────────
+router.patch('/:id/pin', auth, async (req, res) => {
+  try {
+    const { id } = req.params
+    const existing = await prisma.company.findUnique({ where: { id }, select: { deletedAt: true, isPinned: true } })
+    if (!existing || existing.deletedAt) return res.status(404).json({ message: 'Company not found.' })
+
+    const company = await prisma.company.update({
+      where: { id },
+      data: { isPinned: !existing.isPinned },
+      select: { id: true, isPinned: true },
+    })
+    res.json(company)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: 'Server error.' })
   }
 })
 

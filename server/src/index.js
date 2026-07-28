@@ -14,7 +14,10 @@ const calendarRoutes  = require('./routes/calendar')
 const callhippoRoutes = require('./routes/callhippo')
 const chatRoutes      = require('./routes/chat')
 const notificationRoutes = require('./routes/notifications')
+const dropdownRoutes  = require('./routes/dropdowns')
+const dashboardRoutes = require('./routes/dashboard')
 const { startRecycleBinPurgeSweep } = require('./jobs/purgeRecycleBin')
+const { initSocket } = require('./realtime/socket')
 
 require('./config/passport')
 
@@ -41,6 +44,8 @@ app.use('/api/calendar',   calendarRoutes)
 app.use('/api/callhippo',  callhippoRoutes)
 app.use('/api/chat',       chatRoutes)
 app.use('/api/notifications', notificationRoutes)
+app.use('/api/dropdowns', dropdownRoutes)
+app.use('/api/dashboard', dashboardRoutes)
 
 app.get('/health', (_, res) => res.json({ status: 'ok', app: 'NXT Sales' }))
 
@@ -48,6 +53,8 @@ const server = app.listen(PORT, () => {
   console.log(`✓ Server running on http://localhost:${PORT}`)
   startRecycleBinPurgeSweep()
 })
+
+initSocket(server)
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {

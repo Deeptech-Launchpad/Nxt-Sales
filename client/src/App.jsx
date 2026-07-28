@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import Layout from './components/layout/Layout'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
+import DropdownManager from './pages/settings/DropdownManager'
 import Dashboard from './pages/Dashboard'
 import Companies from './pages/Companies'
 import Deals from './pages/Deals'
@@ -18,6 +19,8 @@ import Chat from './pages/Chat'
 import EmailTool from './pages/EmailTool'
 import UserManagement from './pages/UserManagement'
 import AcceptInvite from './pages/AcceptInvite'
+import ForgotPassword from './pages/ForgotPassword'
+import ResetPassword from './pages/ResetPassword'
 import AuthCallback from './pages/AuthCallback'
 
 function PrivateRoute({ children }) {
@@ -36,6 +39,8 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/" element={<PrivateRoute><NotificationProvider><Layout /></NotificationProvider></PrivateRoute>}>
             <Route index element={<Navigate to="/dashboard" replace />} />
@@ -53,6 +58,7 @@ export default function App() {
             <Route path="users" element={<UserManagement />} />
             <Route path="profile" element={<Profile />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="settings/dropdowns" element={<DropdownManager />} />
           </Route>
           <Route path="/accept-invite" element={<AcceptInvite />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

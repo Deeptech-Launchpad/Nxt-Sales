@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, Save, Loader2 } from 'lucide-react'
 import api from '../api/client'
-import { INDUSTRIES, COUNTRIES } from '../constants/formOptions'
+import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import MultiValueInput from './MultiValueInput'
 import EmailConflictWarning from './EmailConflictWarning'
 import { cleanList, editList } from '../utils/multiValue'
@@ -9,10 +9,11 @@ import { cleanList, editList } from '../utils/multiValue'
 // Compact input styling so MultiValueInput matches this modal's .er-input look.
 const ER_INPUT_STYLE = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }
 
-const LEAD_STATUSES = ['New', 'Open', 'In Progress', 'Open Deal', 'Unqualified', 'Attempted to Contact', 'Connected', 'Bad Timing']
-
 // ── Company edit fields ───────────────────────────────────────
 function CompanyForm({ data, onChange, users, companyId }) {
+  const { options: industries }   = useDropdownOptions('company.industry')
+  const { options: countries }    = useDropdownOptions('company.country')
+  const { options: leadStatuses } = useDropdownOptions('company.leadStatus')
   const f = (key) => ({ value: data[key] || '', onChange: e => onChange(key, e.target.value) })
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -34,19 +35,19 @@ function CompanyForm({ data, onChange, users, companyId }) {
       <FormRow label="Industry">
         <select className="er-input" {...f('industry')}>
           <option value="">Select industry</option>
-          {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+          {industries.map(i => <option key={i.id} value={i.value}>{i.label}</option>)}
         </select>
       </FormRow>
       <FormRow label="Country of Origin">
         <select className="er-input" {...f('country')}>
           <option value="">Select country</option>
-          {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+          {countries.map(c => <option key={c.id} value={c.value}>{c.label}</option>)}
         </select>
       </FormRow>
       <FormRow label="Lead Status">
         <select className="er-input" {...f('leadStatus')}>
           <option value="">Select status</option>
-          {LEAD_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+          {leadStatuses.map(s => <option key={s.id} value={s.value}>{s.label}</option>)}
         </select>
       </FormRow>
       <FormRow label="End PDP URL">

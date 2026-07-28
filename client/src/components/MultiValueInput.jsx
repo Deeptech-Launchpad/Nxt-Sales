@@ -1,4 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react'
+import PhoneInput from 'react-phone-number-input'
+import 'react-phone-number-input/style.css'
+import '../styles/phone-input.css'
 
 // A repeatable list of inputs — add / edit / delete multiple values.
 // The first row is the Primary value. Style-agnostic: pass `inputStyle` to match
@@ -36,13 +39,23 @@ export default function MultiValueInput({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {list.map((v, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input
-            type={type}
-            value={v}
-            onChange={e => update(i, e.target.value)}
-            placeholder={i === 0 ? placeholder : `${placeholder} (additional)`}
-            style={baseInput}
-          />
+          {type === 'tel' ? (
+            <PhoneInput
+              international
+              defaultCountry="US"
+              value={v || undefined}
+              onChange={val => update(i, val || '')}
+              placeholder={i === 0 ? placeholder : `${placeholder} (additional)`}
+            />
+          ) : (
+            <input
+              type={type}
+              value={v}
+              onChange={e => update(i, e.target.value)}
+              placeholder={i === 0 ? placeholder : `${placeholder} (additional)`}
+              style={baseInput}
+            />
+          )}
           {i === 0 ? (
             <span style={{
               fontSize: 10, fontWeight: 600, color: '#0d9488',

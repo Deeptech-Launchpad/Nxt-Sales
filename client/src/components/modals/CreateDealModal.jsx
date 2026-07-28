@@ -1,10 +1,7 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import api from '../../api/client'
-import {
-  COUNTRIES, DEAL_STAGES, CLIENT_TYPES, SERVICE_REQUIREMENTS,
-  OPPORTUNITY_TYPES, STRATEGIC_IMPORTANCE, EXPECTED_OUTCOMES,
-} from '../../constants/formOptions'
+import { useDropdownOptions } from '../../hooks/useDropdownOptions'
 import '../../styles/modal.css'
 
 const emptyForm = {
@@ -20,6 +17,15 @@ const emptyForm = {
 // dashboard as well as on the linked record.
 export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
   const isEdit = !!deal
+  // Country is the same managed list Company uses ('company.country') — it's
+  // genuinely one shared set of values, not a separate Deal-only list.
+  const { options: countries }            = useDropdownOptions('company.country')
+  const { options: dealStages }           = useDropdownOptions('deal.stage')
+  const { options: clientTypes }          = useDropdownOptions('deal.clientType')
+  const { options: serviceRequirements }  = useDropdownOptions('deal.serviceRequirement')
+  const { options: opportunityTypes }     = useDropdownOptions('deal.opportunityType')
+  const { options: strategicImportances } = useDropdownOptions('deal.strategicImportance')
+  const { options: expectedOutcomes }     = useDropdownOptions('deal.expectedOutcome')
   const [form, setForm] = useState(() => deal ? {
     title:               deal.title || '',
     country:             deal.country || '',
@@ -97,7 +103,7 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
             <label>Country</label>
             <select value={form.country} onChange={e => set('country', e.target.value)}>
               <option value="">Select a country</option>
-              {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {countries.map(c => <option key={c.id} value={c.value}>{c.label}</option>)}
             </select>
           </div>
 
@@ -115,7 +121,7 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
             <label>Client Type</label>
             <select value={form.clientType} onChange={e => set('clientType', e.target.value)}>
               <option value="">Select client type</option>
-              {CLIENT_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
+              {clientTypes.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
             </select>
           </div>
 
@@ -138,7 +144,7 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
             <label>Service Requirements</label>
             <select value={form.serviceRequirement} onChange={e => set('serviceRequirement', e.target.value)}>
               <option value="">Select service requirement</option>
-              {SERVICE_REQUIREMENTS.map(v => <option key={v} value={v}>{v}</option>)}
+              {serviceRequirements.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
             </select>
           </div>
 
@@ -151,7 +157,7 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
             <label>Opportunity Type</label>
             <select value={form.opportunityType} onChange={e => set('opportunityType', e.target.value)}>
               <option value="">Select opportunity type</option>
-              {OPPORTUNITY_TYPES.map(v => <option key={v} value={v}>{v}</option>)}
+              {opportunityTypes.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
             </select>
           </div>
 
@@ -164,7 +170,7 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
             <label>Strategic Importance</label>
             <select value={form.strategicImportance} onChange={e => set('strategicImportance', e.target.value)}>
               <option value="">Select strategic importance</option>
-              {STRATEGIC_IMPORTANCE.map(v => <option key={v} value={v}>{v}</option>)}
+              {strategicImportances.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
             </select>
           </div>
 
@@ -172,14 +178,14 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
             <label>Expected Outcome</label>
             <select value={form.expectedOutcome} onChange={e => set('expectedOutcome', e.target.value)}>
               <option value="">Select expected outcome</option>
-              {EXPECTED_OUTCOMES.map(v => <option key={v} value={v}>{v}</option>)}
+              {expectedOutcomes.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
             </select>
           </div>
 
           <div className="form-group">
             <label>Deal Stage</label>
             <select value={form.stage} onChange={e => set('stage', e.target.value)}>
-              {DEAL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+              {dealStages.map(s => <option key={s.id} value={s.value}>{s.label}</option>)}
             </select>
           </div>
 

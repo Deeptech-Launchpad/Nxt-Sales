@@ -64,12 +64,17 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar-modern">
-      {/* Header */}
+      {/* Header — logo always returns to the Dashboard, from any page */}
       <div className="sidebar-header-modern">
-        <div className="logo-section-modern">
+        <button
+          type="button"
+          className="logo-section-modern"
+          onClick={() => navigate('/dashboard')}
+          style={{ background: 'none', border: 'none', padding: 0, width: '100%', cursor: 'pointer' }}
+        >
           <img src="/AltiusNXT_Logo-01.png" alt="AltiusNxt" className="logo-img-modern" />
           <span className="app-name-modern">NXT Sales</span>
-        </div>
+        </button>
       </div>
 
       {/* Search */}
