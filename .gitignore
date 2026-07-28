@@ -11,3 +11,6 @@ server/dist/
 # Excluded: contain a hardcoded secret — kept out of the repo
 get-user-and-test.js
 server/test-task-flow.js
+
+# User-uploaded chat files (Update 3 / E5) — local disk storage, not repo content
+server/uploads/

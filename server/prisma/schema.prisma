@@ -31,6 +31,7 @@ model User {
   createdConversations Conversation[]
   conversationMemberships ConversationMember[]
   chatMentions ChatMention[]
+  chatMessageReceipts ChatMessageReceipt[]
 }
 
 model Company {
@@ -220,6 +221,8 @@ model ChatMessage {
   editedAt       DateTime?
   deletedAt      DateTime?
   pinnedAt       DateTime?
+  attachments    Json?     // [{filename, mimeType, size, url}] — same shape as Activity.attachments (E5)
+  attachedRecord Json?     // {type: 'company'|'deal', id, label} snapshot at send time (E6) — no polymorphic FK
   createdAt      DateTime @default(now())
   fromUser       User     @relation("SentMessages",     fields: [fromUserId], references: [id], onDelete: Cascade)
   toUser         User?    @relation("ReceivedMessages", fields: [toUserId],   references: [id], onDelete: Cascade)
@@ -227,11 +230,29 @@ model ChatMessage {
   replyTo        ChatMessage?  @relation("MessageReplies", fields: [replyToId], references: [id])
   replies        ChatMessage[] @relation("MessageReplies")
   mentions       ChatMention[]
+  receipts       ChatMessageReceipt[]
 
   @@index([fromUserId])
   @@index([toUserId])
   @@index([createdAt])
   @@index([conversationId])
+}
+
+// Read receipts (E6) — per-recipient, since a group message has one status
+// PER MEMBER, not a single global flag. deliveredAt is set only when the
+// message was actually pushed to that member's live socket (E1's presence
+// layer); readAt is set when their client marks the conversation read.
+model ChatMessageReceipt {
+  id          String    @id @default(cuid())
+  messageId   String
+  userId      String
+  deliveredAt DateTime?
+  readAt      DateTime?
+  message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
 }
 
 // @Mentions (Update 3 / E4) — a join table rather than a JSON array on

@@ -95,4 +95,15 @@ function getIO() {
   return io
 }
 
-module.exports = { initSocket, getIO }
+// Exposed for chat.js — E6 uses this to know whether a message was actually
+// pushed live (→ "Delivered") and to route the new-message / notification
+// events to a specific member's connected tabs.
+function getOnlineSocketIds(userId) {
+  return socketsFor(userId)
+}
+
+function isUserOnline(userId) {
+  return (onlineSockets.get(userId)?.size || 0) > 0
+}
+
+module.exports = { initSocket, getIO, getOnlineSocketIds, isUserOnline }

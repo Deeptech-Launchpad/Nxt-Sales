@@ -1,5 +1,6 @@
 require('dotenv').config()
 const express = require('express')
+const path    = require('path')
 const cors    = require('cors')
 const session = require('express-session')
 const passport = require('passport')
@@ -46,6 +47,9 @@ app.use('/api/chat',       chatRoutes)
 app.use('/api/notifications', notificationRoutes)
 app.use('/api/dropdowns', dropdownRoutes)
 app.use('/api/dashboard', dashboardRoutes)
+
+// Chat file uploads (Update 3 / E5) — local disk, served back read-only.
+app.use('/uploads/chat', express.static(path.join(__dirname, '../uploads/chat')))
 
 app.get('/health', (_, res) => res.json({ status: 'ok', app: 'NXT Sales' }))
 

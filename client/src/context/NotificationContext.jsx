@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback } f
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
 import api from '../api/client'
+import { getSocket } from '../socket'
 
 const NotificationContext = createContext(null)
 export const useNotifications = () => useContext(NotificationContext)
@@ -147,6 +148,38 @@ export function NotificationProvider({ children }) {
     const id = setInterval(poll, POLL_MS)
     return () => clearInterval(id)
   }, [user, poll])
+
+  // Team Chat desktop/in-app notifications (Update 3 / E6) — event-driven via
+  // the shared socket instead of polling, since Chat already maintains this
+  // connection (Update 3 / E1). Mounted app-wide (this provider wraps the
+  // whole Layout) so a message notifies even while viewing a different page.
+  useEffect(() => {
+    if (!user) return
+    const socket = getSocket()
+    if (!socket.connected) socket.connect()
+
+    const onNewMessage = ({ conversationId, message }) => {
+      if (message.fromUserId === user.id) return // never notify for your own sent messages
+      const n = {
+        id: `chat_${message.id}`,
+        type: 'chat',
+        title: `New message from ${message.fromUser?.name || 'a teammate'}`,
+        description: message.body || (message.attachments?.length ? 'Sent an attachment' : ''),
+        datetime: message.createdAt,
+        read: false,
+        link: '/chat',
+      }
+      setNotifications(prev => {
+        if (prev.some(p => p.id === n.id)) return prev
+        fireDesktop(n)
+        return [n, ...prev].slice(0, 100)
+      })
+    }
+
+    socket.on('chat:new-message', onNewMessage)
+    return () => socket.off('chat:new-message', onNewMessage)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, fireDesktop])
 
   // ── Actions ──
   const markRead     = useCallback((id) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n)), [])
