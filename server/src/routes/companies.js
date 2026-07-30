@@ -39,6 +39,39 @@ function splitCaret(v) {
   return cleanArr(String(v).split('^'))
 }
 
+// In-memory duplicate index for bulk import/preview — replaces a `findFirst`
+// DB round trip per row (the original approach, fine for a handful of rows
+// but a 10,000+ row import made 10,000+ sequential queries, slow enough to
+// exceed the reverse-proxy's timeout). Same match semantics as the old
+// `OR: [name, email, phone, domain]` query: name is checked first, then
+// email/phone/domain, so a row with a conflicting signal across two
+// different existing companies resolves deterministically instead of
+// whatever order the database happened to return (that order was never
+// guaranteed anyway — this is a reasonable, stable replacement for it).
+function buildDupLookup(existingCompanies) {
+  const byName = new Map(), byEmail = new Map(), byPhone = new Map(), byDomain = new Map()
+  const index = (co) => {
+    byName.set(co.name.toLowerCase(), co)
+    if (co.email)  byEmail.set(co.email.toLowerCase(), co)
+    if (co.phone)  byPhone.set(co.phone, co)
+    if (co.domain) byDomain.set(co.domain, co)
+  }
+  existingCompanies.forEach(index)
+  return {
+    find(name, email, phone, domain) {
+      return byName.get(String(name).trim().toLowerCase())
+        || (email  && byEmail.get(String(email).toLowerCase().trim()))
+        || (phone  && byPhone.get(String(phone).trim()))
+        || (domain && byDomain.get(String(domain).trim()))
+        || null
+    },
+    // Call after creating/updating a company mid-batch so a later row in the
+    // SAME import that duplicates it is still caught — matching the original
+    // per-row-query behavior, where every row saw all earlier writes.
+    index,
+  }
+}
+
 function dateRangeFor(key) {
   const now   = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -253,24 +286,23 @@ router.post('/check-duplicates', auth, async (req, res) => {
     const { companies } = req.body
     if (!Array.isArray(companies)) return res.status(400).json({ message: 'companies array required.' })
 
-    const results = []
-    for (const c of companies) {
+    // One bulk pre-fetch + in-memory lookup instead of a `findFirst` DB round
+    // trip per row — a large import (thousands of rows) previously issued one
+    // sequential query per row, slow enough to exceed the reverse-proxy's
+    // response timeout. Recycle-Binned companies are archived — excluded here
+    // exactly as the old per-row query excluded them, so they never block a
+    // new company from being created/imported with the same identity.
+    const dupLookup = buildDupLookup(await prisma.company.findMany({
+      where: { deletedAt: null },
+      select: { id: true, name: true, email: true, phone: true, domain: true },
+    }))
+
+    const results = companies.map(c => {
       const name = c.name ? String(c.name).trim() : ''
-      if (!name) { results.push({ isDuplicate: false, existing: null }); continue }
-
-      const dupConditions = [{ name: { equals: name, mode: 'insensitive' } }]
-      if (c.email)  dupConditions.push({ email: String(c.email).toLowerCase().trim() })
-      if (c.phone)  dupConditions.push({ phone: String(c.phone).trim() })
-      if (c.domain) dupConditions.push({ domain: String(c.domain).trim() })
-
-      // Recycle-Binned companies are archived — they must never block a new
-      // company from being created/imported with the same identity.
-      const existing = await prisma.company.findFirst({ where: { deletedAt: null, OR: dupConditions } })
-      results.push({
-        isDuplicate: !!existing,
-        existing: existing ? { id: existing.id, name: existing.name } : null,
-      })
-    }
+      if (!name) return { isDuplicate: false, existing: null }
+      const existing = dupLookup.find(name, c.email, c.phone, c.domain)
+      return { isDuplicate: !!existing, existing: existing ? { id: existing.id, name: existing.name } : null }
+    })
 
     res.json({ results })
   } catch (err) {
@@ -301,6 +333,20 @@ router.post('/bulk', auth, async (req, res) => {
     const allUsers = await prisma.user.findMany({ select: { id: true, name: true } })
     const userIdByName = new Map(allUsers.map(u => [u.name.toLowerCase().trim(), u.id]))
 
+    // One bulk pre-fetch + in-memory lookup instead of a `findFirst` DB round
+    // trip per row (see buildDupLookup) — the prior per-row query made a
+    // large import (thousands of rows) slow enough to exceed the reverse-
+    // proxy's response timeout. Select every field the backfill logic below
+    // reads via `existingDup[key]`.
+    const dupLookup = buildDupLookup(await prisma.company.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true, name: true, email: true, emails: true, phone: true, phones: true,
+        domain: true, industry: true, country: true, leadStatus: true, endPdpUrl: true,
+        cms: true, remarks: true, ownerId: true, contactPersons: true, linkedProfiles: true,
+      },
+    }))
+
     for (const c of companies) {
       try {
         if (!c.name || !String(c.name).trim()) { errors.push('Missing company name — row skipped'); failed++; continue }
@@ -321,13 +367,10 @@ router.post('/bulk', auth, async (req, res) => {
         // /check-duplicates and the single-company create route. A row that
         // matches an existing company (by name, email, phone, or domain) is
         // never turned into a second company — instead it backfills any
-        // currently-blank fields on the match (see below).
-        const dupConditions = [{ name: { equals: String(c.name).trim(), mode: 'insensitive' } }]
-        if (emailList[0])  dupConditions.push({ email: emailList[0].toLowerCase() })
-        if (phoneList[0])  dupConditions.push({ phone: phoneList[0] })
-        if (c.domain && String(c.domain).trim()) dupConditions.push({ domain: String(c.domain).trim() })
-        // Recycle-Binned companies are archived — never block a fresh import row.
-        const existingDup = await prisma.company.findFirst({ where: { deletedAt: null, OR: dupConditions } })
+        // currently-blank fields on the match (see below). Recycle-Binned
+        // companies are archived — excluded from dupLookup's pre-fetch above,
+        // so they never block a fresh import row.
+        const existingDup = dupLookup.find(c.name, emailList[0], phoneList[0], c.domain && String(c.domain).trim())
         if (existingDup) {
           // Backfill only — a matched row fills in fields the existing company
           // doesn't have yet; anything already filled in is left untouched, so
@@ -361,6 +404,12 @@ router.post('/bulk', auth, async (req, res) => {
           const filledKeys = Object.keys(data)
           if (filledKeys.length) {
             await prisma.company.update({ where: { id: existingDup.id }, data })
+            // Keep the in-memory dup index in sync so a LATER row in this same
+            // import that duplicates this company (e.g. matches it by a field
+            // just filled in above) is still caught, same as when every row
+            // queried the database directly.
+            Object.assign(existingDup, data)
+            dupLookup.index(existingDup)
           }
 
           // Notes/Task are additive Activity records (not Company columns), so
@@ -409,6 +458,9 @@ router.post('/bulk', auth, async (req, res) => {
           },
         })
         created++
+        // Index this new company so a LATER row in this same import that
+        // duplicates it is caught, same as when every row queried the DB directly.
+        dupLookup.index(newCompany)
 
         // If the import row has a Notes/Task column, save it as an Activity —
         // reusing the same Activity table manual Notes/Tasks use (Company →
