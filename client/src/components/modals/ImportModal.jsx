@@ -62,12 +62,17 @@ function matchesDropdown(options, value) {
   return options.some(o => o.value.toLowerCase() === v)
 }
 
-// Strip a trailing "(...)" annotation (e.g. "Remarks (Static / Less data /
+// Strip "(...)" annotation(s) (e.g. "Remarks (Static / Less data /
 // Partnership)" → "Remarks"), then reduce to lowercase alphanumerics so
-// differences in spacing, dots and dashes never break a match.
+// differences in spacing, dots and dashes never break a match. Matches
+// anywhere in the string (not just a strict trailing "...)$" anchor) so a
+// header stays recognisable even with trailing punctuation/markers after the
+// annotation (e.g. a required-field "*") or a second parenthetical — "Remarks"
+// is the only template column with an annotated header, so this only widens
+// matching for that one column; every other header has no parens to begin with.
 function normalizeTemplateHeader(h) {
   return String(h || '')
-    .replace(/\s*\([^)]*\)\s*$/, '')
+    .replace(/\([^)]*\)/g, '')
     .replace(/[^a-z0-9]+/gi, '')
     .toLowerCase()
 }
@@ -79,7 +84,14 @@ function remapCompanyTemplateHeaders(raw) {
   return raw.map(row => {
     const out = {}
     for (const [k, v] of Object.entries(row)) {
-      const alias = COMPANY_TEMPLATE_HEADER_ALIASES[normalizeTemplateHeader(k)]
+      const normalized = normalizeTemplateHeader(k)
+      // Exact alias match first; "Remarks" gets one more narrow fallback since
+      // it's the only column whose real-world header text varies (business
+      // spreadsheets append/reword its "(Static / Less data / Partnership)"
+      // annotation over time) — a normalized header containing "remark" as a
+      // substring is unambiguous enough to trust without a full exact match.
+      const alias = COMPANY_TEMPLATE_HEADER_ALIASES[normalized]
+        || (normalized.includes('remark') ? 'Remarks' : undefined)
       out[alias || k] = v
     }
     return out

@@ -21,7 +21,7 @@ const MoreBadge = ({ n }) => n > 0
   : null
 
 const COLUMNS_STORAGE_KEY = 'mwz_companies_visible_columns'
-const DEFAULT_COLUMNS = ['country', 'industry', 'email', 'phone', 'domain']
+const DEFAULT_COLUMNS = ['country', 'industry', 'email', 'phone', 'domain', 'cms', 'remarks']
 
 // Lead Owner (ownerId) is intentionally excluded from the server's dynamic
 // Company field list — that list is shared with the Import Template, and
