@@ -4,6 +4,7 @@ const jwt      = require('jsonwebtoken')
 const crypto   = require('crypto')
 const passport = require('passport')
 const { PrismaClient } = require('@prisma/client')
+const { upsertLeadOwnerOption } = require('./users')
 
 const prisma = new PrismaClient()
 const SECRET = process.env.JWT_SECRET || 'dev-secret'
@@ -47,6 +48,9 @@ router.post('/register', async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10)
     const user = await prisma.user.create({ data: { name, email, passwordHash } })
+    // New accounts default to status 'active' (schema default) — register
+    // them as an assignable Lead Owner immediately, same as any active user.
+    await upsertLeadOwnerOption(user, true)
 
     res.status(201).json({ success: true, token: signToken(user), user: { id: user.id, name: user.name, email: user.email, role: user.role } })
   } catch (err) {
@@ -177,6 +181,8 @@ router.post('/accept-invite', async (req, res) => {
       data: { passwordHash, status: 'active', inviteToken: null, inviteExpires: null },
       select: { id: true, name: true, email: true, role: true, avatar: true },
     })
+    // Now active — enable their Lead Owner option (created disabled at invite time).
+    await upsertLeadOwnerOption(user, true)
 
     res.json({ success: true, token: signToken(user), user })
   } catch (err) {

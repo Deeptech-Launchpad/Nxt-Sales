@@ -5,16 +5,6 @@ import api from '../../api/client'
 import { useDropdownOptions } from '../../hooks/useDropdownOptions'
 import '../../styles/modal.css'
 
-// Dropdown-mapped columns whose imported values are cross-checked against the
-// admin-managed lists (Update 2). Advisory only — an unmatched value still
-// imports as typed, it's just flagged so it doesn't silently show up later as
-// an option the Company/Deal forms don't recognise.
-const IMPORT_DROPDOWN_FIELDS = {
-  industry:   'company.industry',
-  country:    'company.country',
-  leadStatus: 'company.leadStatus',
-}
-
 const STEPS = ['Upload File', 'Preview & Map', 'Import']
 
 // Exact-header aliases for the standard Company bulk-import template. The
@@ -55,9 +45,12 @@ const COMPANY_TEMPLATE_HEADER_ALIASES = {
   leadstatus:       'Lead Status',
 }
 
-// Case-insensitive check against an admin-managed option list.
+// Case-insensitive check against an admin-managed option list. `options` is
+// undefined for a dropdown field this modal has no live hook for (e.g. a
+// custom dropdown field not yet wired into dropdownOptionsByField below) —
+// skip the check rather than throw, same as "no value to check" below.
 function matchesDropdown(options, value) {
-  if (!value) return true
+  if (!value || !options) return true
   const v = String(value).trim().toLowerCase()
   return options.some(o => o.value.toLowerCase() === v)
 }
@@ -271,10 +264,18 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
   const previewCols    = COMPANY_IMPORT_TEMPLATE_COLUMNS.filter(c => c.key).map(c => ({ key: c.key, label: c.header }))
   const duplicateCount = dupInfo.filter(d => d?.isDuplicate).length
 
+  // Which of the dynamic field list's keys are dropdown-backed (Dynamic
+  // Dropdown Detection) — sourced from `fields` (GET /companies/import-fields)
+  // instead of a hardcoded map, so a newly-registered dropdown column is
+  // picked up automatically. dropdownOptionsByField above only has live
+  // option lists for the 3 built-in fields it calls useDropdownOptions for;
+  // matchesDropdown treats any other key's missing options as "always match".
+  const importDropdownFieldKeys = new Set(fields.filter(f => f.dropdownFieldKey).map(f => f.key))
+
   // Rows where Industry/Country/Lead Status don't match any enabled managed
   // value — advisory only, never blocks the import (see matchesDropdown above).
   const rowHasDropdownMismatch = (r) =>
-    Object.entries(IMPORT_DROPDOWN_FIELDS).some(([key]) => !matchesDropdown(dropdownOptionsByField[key], r[key]))
+    [...importDropdownFieldKeys].some(key => !matchesDropdown(dropdownOptionsByField[key], r[key]))
   const dropdownMismatchCount = rows.filter(rowHasDropdownMismatch).length
 
   return (
@@ -431,7 +432,7 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
                           )}
                           <td style={{ padding: '7px 10px', color: '#94a3b8' }}>{i + 1}</td>
                           {previewCols.map(f => {
-                            const isDropdownField = Object.prototype.hasOwnProperty.call(IMPORT_DROPDOWN_FIELDS, f.key)
+                            const isDropdownField = importDropdownFieldKeys.has(f.key)
                             const mismatch = isDropdownField && !matchesDropdown(dropdownOptionsByField[f.key], r[f.key])
                             return (
                               <td key={f.key} title={mismatch ? `"${r[f.key]}" doesn't match any current ${f.label} option` : undefined}

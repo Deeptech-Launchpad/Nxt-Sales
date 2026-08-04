@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, LayoutGrid, List, Download, Plus,
-  ChevronDown, SlidersHorizontal, Pencil, Upload, Columns, Trash2, Star
+  ChevronDown, SlidersHorizontal, Pencil, Upload, Trash2, Star
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
@@ -10,8 +10,10 @@ import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import FilterDropdown from '../components/filters/FilterDropdown'
 import CreateCompanyModal from '../components/modals/CreateCompanyModal'
 import ImportModal from '../components/modals/ImportModal'
+import EditColumnsMenu from '../components/EditColumnsMenu'
 import { valueList } from '../utils/multiValue'
 import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUtils'
+import { renderCustomCell } from '../utils/customFieldRender'
 import '../styles/contacts.css'
 
 // "+N" badge when a company has more than one email.
@@ -89,48 +91,6 @@ function CompanyExportMenu({ fetchAllForExport, columns }) {
   )
 }
 
-// ── Edit Columns dropdown — shows every Create-Company field as a checkbox;
-// Save updates the visible table columns and remembers the choice.
-function EditColumnsMenu({ fields, visibleColumns, onSave }) {
-  const [open, setOpen]   = useState(false)
-  const [draft, setDraft] = useState(visibleColumns)
-  const ref = useRef(null)
-
-  useEffect(() => { if (open) setDraft(visibleColumns) }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [])
-
-  const toggle = (key) => setDraft(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
-  const save   = () => { onSave(draft); setOpen(false) }
-
-  const toggleable = fields.filter(f => f.key !== 'name') // Company name column is always shown
-
-  return (
-    <div style={{ position: 'relative' }} ref={ref}>
-      <button className="btn-action btn-sm" onClick={() => setOpen(o => !o)}>
-        <Columns size={13} /> Edit columns
-      </button>
-      {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 3000, minWidth: 240, maxHeight: 340, overflowY: 'auto', padding: 8 }}>
-          {toggleable.map(f => (
-            <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', fontSize: 13, color: '#334155', cursor: 'pointer', borderRadius: 4 }}>
-              <input type="checkbox" checked={draft.includes(f.key)} onChange={() => toggle(f.key)} />
-              {f.label}
-            </label>
-          ))}
-          <div style={{ borderTop: '1px solid #f1f5f9', marginTop: 6, paddingTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn-primary" style={{ fontSize: 12, padding: '6px 14px' }} onClick={save}>Save</button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 const PAGE_SIZE = 100
 
 // Compact page-number window (current ±2, plus first/last) so the pager stays
@@ -189,7 +149,7 @@ export default function Companies() {
   const [ownerFilter,      setOwnerFilter]      = useState([])
   const [createDateFilter, setCreateDateFilter] = useState([])
   const [leadStatusFilter, setLeadStatusFilter] = useState([])
-  const [users, setUsers]                       = useState([])
+  const { options: ownerDropdownOptions } = useDropdownOptions('company.ownerId')
 
   // Dynamic field list (all Create-Company fields) + user's chosen visible columns
   const [companyFields, setCompanyFields]     = useState([])
@@ -207,11 +167,6 @@ export default function Companies() {
     localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(cols))
   }
 
-  // Load users for Company Owner filter
-  useEffect(() => {
-    api.get('/users').then(r => setUsers(r.data)).catch(() => {})
-  }, [])
-
   // Recycle Bin badge count — refreshed on mount and after any delete action
   // on this page (deleting moves companies into the bin, changing the count).
   const fetchRecycleBinCount = useCallback(() => {
@@ -226,9 +181,9 @@ export default function Companies() {
 
   const ownerOptions = [
     { value: user?.id || 'me', label: `Me (${user?.name || 'You'})` },
-    ...users
-      .filter(u => u.id !== user?.id)
-      .map(u => ({ value: u.id, label: u.name })),
+    ...ownerDropdownOptions
+      .filter(o => o.value !== user?.id)
+      .map(o => ({ value: o.value, label: o.label })),
     { value: 'unassigned', label: 'Unassigned' },
   ]
 
@@ -336,6 +291,7 @@ export default function Companies() {
     if (f.key === 'ownerId') {
       return c.owner?.name || '--'
     }
+    if (f.key.startsWith('custom.')) return renderCustomCell(f.type, c[f.key])
     const v = c[f.key]
     if (Array.isArray(v)) return v.length ? v.join(', ') : '--'
     return (v === null || v === undefined || v === '') ? '--' : String(v)

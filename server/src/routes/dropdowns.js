@@ -1,6 +1,7 @@
 const router = require('express').Router()
 const auth   = require('../middleware/authMiddleware')
 const { PrismaClient } = require('@prisma/client')
+const { BUILT_IN_DROPDOWN_FIELDS } = require('../constants/dropdownFields')
 
 const prisma = new PrismaClient()
 
@@ -8,6 +9,27 @@ const prisma = new PrismaClient()
 // arrays across Company/Deal forms, filters, and Bulk Import. Any logged-in
 // user can manage these today (no stricter role gate exists elsewhere in the
 // app yet), so this only requires `auth`, same as every other route here.
+
+// GET /api/dropdowns/fields — every field this system can manage: the 9
+// built-in ones (BUILT_IN_DROPDOWN_FIELDS) plus every active custom field
+// whose type is dropdown/multiselect (Dynamic Custom Fields). Declared before
+// /:fieldKey so Express doesn't capture "fields" as a fieldKey.
+router.get('/fields', auth, async (req, res) => {
+  try {
+    const customDropdownFields = await prisma.customFieldDefinition.findMany({
+      where: { enabled: true, type: { in: ['dropdown', 'multiselect'] } },
+      orderBy: { order: 'asc' },
+    })
+    const fields = [
+      ...BUILT_IN_DROPDOWN_FIELDS.map(f => ({ fieldKey: f.fieldKey, label: f.label, group: f.fieldKey.split('.')[0] === 'company' ? 'Company' : 'Deal' })),
+      ...customDropdownFields.map(f => ({ fieldKey: `${f.entity.toLowerCase()}.custom.${f.key}`, label: f.label, group: f.entity, custom: true })),
+    ]
+    res.json(fields)
+  } catch (err) {
+    console.error('[Dropdowns] fields list error:', err.message)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
 
 // GET /api/dropdowns/:fieldKey — enabled options, ordered. Used by every
 // consuming form/filter/import mapper.
@@ -130,30 +152,44 @@ router.delete('/:id', auth, async (req, res) => {
   }
 })
 
-// Company/Deal fields this system currently manages, mapped to every
-// table + column that stores that value, so a delete can check real usage
-// before allowing a hard removal. 'company.country' lists both — it's a
-// single shared list (CreateDealModal reuses the same managed values as
-// Company), so either table's usage must block a hard delete.
-const USAGE_LOOKUP = {
-  'company.industry':   [{ model: 'company', column: 'industry' }],
-  'company.country':    [{ model: 'company', column: 'country' }, { model: 'deal', column: 'country' }],
-  'company.leadStatus':  [{ model: 'company', column: 'leadStatus' }],
-  'deal.stage':                [{ model: 'deal', column: 'stage' }],
-  'deal.clientType':           [{ model: 'deal', column: 'clientType' }],
-  'deal.serviceRequirement':   [{ model: 'deal', column: 'serviceRequirement' }],
-  'deal.opportunityType':      [{ model: 'deal', column: 'opportunityType' }],
-  'deal.strategicImportance':  [{ model: 'deal', column: 'strategicImportance' }],
-  'deal.expectedOutcome':      [{ model: 'deal', column: 'expectedOutcome' }],
+// Matches a custom-field-backed dropdown key, e.g. "company.custom.gstStatus"
+// -> { entity: 'Company', key: 'gstStatus' }. The literal ".custom." segment
+// can never appear in a real Prisma column name, so this can't collide with
+// a built-in fieldKey.
+function parseCustomFieldKey(fieldKey) {
+  const m = /^(company|deal)\.custom\.(.+)$/.exec(fieldKey)
+  if (!m) return null
+  return { entity: m[1] === 'company' ? 'Company' : 'Deal', key: m[2] }
 }
 
+// Checks real usage before a hard delete: built-in fields are checked against
+// their real Company/Deal column(s) via BUILT_IN_DROPDOWN_FIELDS (unchanged
+// behavior from the old USAGE_LOOKUP, just registry-driven); custom fields
+// are checked against CustomFieldValue. An unrecognized fieldKey defensively
+// returns false, same as before.
 async function isValueInUse(fieldKey, value) {
-  const targets = USAGE_LOOKUP[fieldKey]
-  if (!targets) return false
-  for (const t of targets) {
-    const count = await prisma[t.model].count({ where: { [t.column]: value } })
-    if (count > 0) return true
+  const builtIn = BUILT_IN_DROPDOWN_FIELDS.find(f => f.fieldKey === fieldKey)
+  if (builtIn) {
+    const targets = [{ model: builtIn.model, column: builtIn.column }, ...(builtIn.extraUsage || [])]
+    for (const t of targets) {
+      const count = await prisma[t.model].count({ where: { [t.column]: value } })
+      if (count > 0) return true
+    }
+    return false
   }
+
+  const custom = parseCustomFieldKey(fieldKey)
+  if (custom) {
+    const field = await prisma.customFieldDefinition.findUnique({
+      where: { entity_key: { entity: custom.entity, key: custom.key } },
+    })
+    if (!field) return false
+    const count = await prisma.customFieldValue.count({
+      where: { fieldId: field.id, OR: [{ textValue: value }, { listValue: { array_contains: [value] } }] },
+    })
+    return count > 0
+  }
+
   return false
 }
 

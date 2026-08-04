@@ -6,6 +6,7 @@ import Layout from './components/layout/Layout'
 import Profile from './pages/Profile'
 import Settings from './pages/Settings'
 import DropdownManager from './pages/settings/DropdownManager'
+import CustomFieldsManager from './pages/settings/CustomFieldsManager'
 import Dashboard from './pages/Dashboard'
 import Companies from './pages/Companies'
 import Deals from './pages/Deals'
@@ -59,6 +60,7 @@ export default function App() {
             <Route path="profile" element={<Profile />} />
             <Route path="settings" element={<Settings />} />
             <Route path="settings/dropdowns" element={<DropdownManager />} />
+            <Route path="settings/custom-fields" element={<CustomFieldsManager />} />
           </Route>
           <Route path="/accept-invite" element={<AcceptInvite />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

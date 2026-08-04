@@ -1,10 +1,11 @@
 import { useNavigate } from 'react-router-dom'
-import { Settings as SettingsIcon, User, Bell, Shield, Plug, Palette, ListChecks } from 'lucide-react'
+import { Settings as SettingsIcon, User, Bell, Shield, Plug, Palette, ListChecks, ListPlus } from 'lucide-react'
 
 // Settings — most sections are UI-only placeholders for now; "Dropdown
-// Lists" (Update 2) is the first functional one.
+// Lists" (Update 2) and "Custom Fields" (Dynamic Custom Fields) are functional.
 const SECTIONS = [
   { Icon: ListChecks, title: 'Dropdown Lists', desc: 'Manage Industry, Country, Lead Status, and Deal option values.', to: '/settings/dropdowns' },
+  { Icon: ListPlus,   title: 'Custom Fields',  desc: 'Add business-specific fields to Company and Deal records.', to: '/settings/custom-fields' },
   { Icon: User,   title: 'Account',       desc: 'Manage your name, email and profile details.' },
   { Icon: Bell,   title: 'Notifications', desc: 'Choose which alerts you receive and how.' },
   { Icon: Shield, title: 'Security',      desc: 'Password and sign-in preferences.' },

@@ -3,6 +3,10 @@
 // copies) so cutting over to the DB-backed admin system doesn't change any
 // option list that's already live. Idempotent — upserts on the
 // (fieldKey, value) unique constraint, safe to re-run.
+// Not run at app startup — a bootstrap script only. The 9 fieldKeys below
+// must stay in sync with server/src/constants/dropdownFields.js, now the
+// canonical runtime registry for these same fields (Dynamic Dropdown
+// Detection) — if that naming convention ever changes, update both.
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 

@@ -4,16 +4,18 @@ import api from '../api/client'
 import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import MultiValueInput from './MultiValueInput'
 import EmailConflictWarning from './EmailConflictWarning'
+import CustomFieldsSection, { extractCustomFieldValues } from './CustomFieldsSection'
 import { cleanList, editList } from '../utils/multiValue'
 
 // Compact input styling so MultiValueInput matches this modal's .er-input look.
 const ER_INPUT_STYLE = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }
 
 // ── Company edit fields ───────────────────────────────────────
-function CompanyForm({ data, onChange, users, companyId }) {
+function CompanyForm({ data, onChange, companyId }) {
   const { options: industries }   = useDropdownOptions('company.industry')
   const { options: countries }    = useDropdownOptions('company.country')
   const { options: leadStatuses } = useDropdownOptions('company.leadStatus')
+  const { options: owners }       = useDropdownOptions('company.ownerId')
   const f = (key) => ({ value: data[key] || '', onChange: e => onChange(key, e.target.value) })
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -65,12 +67,17 @@ function CompanyForm({ data, onChange, users, companyId }) {
       <FormRow label="Lead Owner">
         <select className="er-input" {...f('ownerId')}>
           <option value="">No owner</option>
-          {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          {owners.map(o => <option key={o.id} value={o.value}>{o.label}</option>)}
         </select>
       </FormRow>
       <FormRow label="Linked Profile">
         <MultiValueInput values={data.linkedProfiles} onChange={v => onChange('linkedProfiles', v)} type="text" placeholder="Profile URL or label" addLabel="Add linked profile" inputStyle={ER_INPUT_STYLE} />
       </FormRow>
+      <CustomFieldsSection
+        entity="Company"
+        values={data.customFields}
+        onChange={(key, value) => onChange('customFields', { ...data.customFields, [key]: value })}
+      />
     </div>
   )
 }
@@ -94,15 +101,10 @@ export default function EditRecordModal({ id, record, onClose, onSaved }) {
     phones: editList(record.phone, record.phones),
     contactPersons: editList(null, record.contactPersons),
     linkedProfiles: editList(null, record.linkedProfiles),
+    customFields: extractCustomFieldValues(record),
   }))
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
-  const [users,   setUsers]   = useState([])
-
-  // Lead Owner dropdown — loads all system users for the owner select.
-  useEffect(() => {
-    api.get('/users').then(r => setUsers(r.data)).catch(() => {})
-  }, [])
 
   const handleChange = (key, value) => setData(prev => ({ ...prev, [key]: value }))
 
@@ -159,7 +161,7 @@ export default function EditRecordModal({ id, record, onClose, onSaved }) {
 
         {/* Body */}
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
-          <CompanyForm data={data} onChange={handleChange} users={users} companyId={id} />
+          <CompanyForm data={data} onChange={handleChange} companyId={id} />
           {error && (
             <p style={{ color: '#ef4444', fontSize: 12, marginTop: 12, fontWeight: 500 }}>{error}</p>
           )}

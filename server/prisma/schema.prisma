@@ -288,6 +288,63 @@ model DropdownOption {
   @@index([fieldKey])
 }
 
+// User-defined fields on Company/Deal (Dynamic Custom Fields) — metadata-driven,
+// not a JSON blob and not one table per field. `key` is generated once from
+// `label` at creation and is permanently immutable afterward (never re-derived
+// on rename) — it's the identifier Import/Export/filters/API/DropdownOption's
+// fieldKey convention all key off, so renaming the display label can never
+// orphan stored data. Built-in Company/Deal columns are never rows here —
+// this table only ever describes fields that don't already exist as a real
+// Prisma column (enforced at the route layer via DMMF introspection), so
+// built-in and custom fields can never be confused with one another.
+model CustomFieldDefinition {
+  id          String    @id @default(cuid())
+  entity      String    // "Company" | "Deal"
+  key         String    // machine key, e.g. "gstNumber" — immutable after creation
+  label       String    // display label — freely editable, never affects `key`
+  type        String    // "text" | "textarea" | "number" | "email" | "phone" | "date" | "checkbox" | "dropdown" | "multiselect" | "url" | "currency" | "percentage"
+  required    Boolean   @default(false)
+  order       Int       @default(0)
+  enabled     Boolean   @default(true)
+  helpText    String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  values      CustomFieldValue[]
+
+  @@unique([entity, key])
+  @@index([entity, enabled, order])
+}
+
+// One row per (field, record). `recordId` is a Company.id or Deal.id per
+// field.entity — intentionally polymorphic (Prisma can't FK one column to two
+// different parent tables), so it carries no @relation to Company/Deal.
+// Orphan prevention for that gap lives in purgeRecycleBin.js (explicit cleanup
+// at both real hard-delete points, in the same transaction as the parent
+// delete, plus a periodic anti-join sweep) — see that file for the other half
+// of this contract. Only the ONE typed column matching the field's declared
+// type is ever populated per row; the rest stay null.
+model CustomFieldValue {
+  id          String    @id @default(cuid())
+  fieldId     String
+  field       CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  recordId    String
+  textValue   String?   @db.Text
+  numberValue Decimal?  @db.Decimal(18, 4)
+  dateValue   DateTime?
+  boolValue   Boolean?
+  listValue   Json?     // multiselect — array of strings, same convention as Company.contactPersons/linkedProfiles
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([fieldId, recordId])
+  @@index([recordId])
+  @@index([fieldId, textValue])
+  @@index([fieldId, numberValue])
+  @@index([fieldId, dateValue])
+  @@index([fieldId, boolValue])
+}
+
 model EmailAccount {
   id           String    @id @default(cuid())
   userId       String

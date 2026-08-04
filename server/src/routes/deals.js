@@ -1,6 +1,11 @@
 const router = require('express').Router()
 const auth   = require('../middleware/authMiddleware')
 const { PrismaClient } = require('@prisma/client')
+const { getImportFields } = require('../utils/importFields')
+const {
+  validateAndShapeCustomFieldInput, writeCustomFieldValues, attachCustomFieldValues,
+  CustomFieldValidationError,
+} = require('../utils/customFieldValues')
 
 const prisma = new PrismaClient()
 
@@ -29,6 +34,18 @@ function buildDealData(body) {
   return data
 }
 
+// GET /api/deals/import-fields (before /:id-shaped routes so a literal
+// "import-fields" path segment is never captured as anything else — Deal has
+// no /:id GET route today, but keeping the same convention as companies.js).
+router.get('/import-fields', auth, async (req, res) => {
+  try {
+    res.json(await getImportFields('Deal'))
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
 // GET /api/deals
 // No params → the logged-in user's deals (global Deals dashboard, unchanged).
 // ?companyId=… → all deals for that company (Company details page).
@@ -48,6 +65,7 @@ router.get('/', auth, async (req, res) => {
       },
       orderBy: { createdAt: 'desc' },
     })
+    await attachCustomFieldValues('Deal', deals)
     res.json(deals)
   } catch (err) {
     res.status(500).json({ message: 'Server error.' })
@@ -58,9 +76,23 @@ router.get('/', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     if (!req.body.title) return res.status(400).json({ message: 'Title is required.' })
-    const deal = await prisma.deal.create({
-      data: { ...buildDealData(req.body), ownerId: req.user.id },
+
+    // Validate custom fields BEFORE any write — new, separate write path
+    // appended after the existing fixed-field logic, never merged into it.
+    let shapedCustomFields
+    try {
+      shapedCustomFields = await validateAndShapeCustomFieldInput('Deal', req.body.customFields)
+    } catch (e) {
+      if (e instanceof CustomFieldValidationError) return res.status(400).json({ message: 'Invalid custom field value(s).', errors: e.errors })
+      throw e
+    }
+
+    const deal = await prisma.$transaction(async (tx) => {
+      const created = await tx.deal.create({ data: { ...buildDealData(req.body), ownerId: req.user.id } })
+      await writeCustomFieldValues(created.id, shapedCustomFields, tx)
+      return created
     })
+    await attachCustomFieldValues('Deal', [deal])
     res.status(201).json(deal)
   } catch (err) {
     res.status(500).json({ message: 'Server error.' })
@@ -70,18 +102,38 @@ router.post('/', auth, async (req, res) => {
 // PUT /api/deals/:id
 router.put('/:id', auth, async (req, res) => {
   try {
-    await prisma.deal.updateMany({ where: { id: req.params.id, ownerId: req.user.id }, data: buildDealData(req.body) })
-    const deal = await prisma.deal.findUnique({ where: { id: req.params.id } })
+    let shapedCustomFields
+    try {
+      shapedCustomFields = await validateAndShapeCustomFieldInput('Deal', req.body.customFields)
+    } catch (e) {
+      if (e instanceof CustomFieldValidationError) return res.status(400).json({ message: 'Invalid custom field value(s).', errors: e.errors })
+      throw e
+    }
+
+    const deal = await prisma.$transaction(async (tx) => {
+      await tx.deal.updateMany({ where: { id: req.params.id, ownerId: req.user.id }, data: buildDealData(req.body) })
+      await writeCustomFieldValues(req.params.id, shapedCustomFields, tx)
+      return tx.deal.findUnique({ where: { id: req.params.id } })
+    })
+    if (deal) await attachCustomFieldValues('Deal', [deal])
     res.json(deal)
   } catch (err) {
     res.status(500).json({ message: 'Server error.' })
   }
 })
 
-// DELETE /api/deals/:id
+// DELETE /api/deals/:id — Deal has no soft-delete/Recycle Bin, this is an
+// immediate hard delete. Cleans up any Custom Field values for this deal in
+// the SAME transaction (CustomFieldValue.recordId is intentionally
+// polymorphic with no database foreign key — see purgeRecycleBin.js for the
+// other half of this data-integrity contract, including the periodic
+// orphan-sweep safety net).
 router.delete('/:id', auth, async (req, res) => {
   try {
-    await prisma.deal.deleteMany({ where: { id: req.params.id, ownerId: req.user.id } })
+    await prisma.$transaction([
+      prisma.customFieldValue.deleteMany({ where: { recordId: req.params.id } }),
+      prisma.deal.deleteMany({ where: { id: req.params.id, ownerId: req.user.id } }),
+    ])
     res.json({ success: true })
   } catch (err) {
     res.status(500).json({ message: 'Server error.' })

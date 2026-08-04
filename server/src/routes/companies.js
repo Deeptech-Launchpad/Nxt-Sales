@@ -2,6 +2,10 @@ const router = require('express').Router()
 const auth   = require('../middleware/authMiddleware')
 const { PrismaClient } = require('@prisma/client')
 const { getImportFields } = require('../utils/importFields')
+const {
+  validateAndShapeCustomFieldInput, writeCustomFieldValues, attachCustomFieldValues,
+  CustomFieldValidationError, getFieldDefinitions, shapeCustomFieldInputSync, bulkFetchDropdownValues,
+} = require('../utils/customFieldValues')
 
 const prisma = new PrismaClient()
 
@@ -109,10 +113,45 @@ async function companyIdsWithLinkedProfileMatch(search) {
   return rows.map(r => r.id)
 }
 
+// Resolves a `customFilters` query param (JSON-encoded {key: value}, e.g.
+// `{"gstStatus":"Filed"}`) to matching Company ids — same precedent as
+// companyIdsWithLinkedProfileMatch above, but AND-ing across every filter
+// key (an id must match ALL specified custom fields, not any one of them),
+// so each key gets its own single query (one per ACTIVE FILTER, not per
+// row — a UI filter bar has a handful of active filters at most, nowhere
+// near import-sized row counts, so this is not the N+1 shape that bulk
+// import had to be fixed for). Returns null if no filters were given (the
+// caller then leaves `where.id` untouched) or [] if a filter can't match
+// anything (unknown key, or the intersection is empty).
+async function companyIdsWithCustomFieldMatch(customFiltersJson) {
+  let filters
+  try { filters = JSON.parse(customFiltersJson) } catch { return null }
+  if (!filters || typeof filters !== 'object') return null
+  const keys = Object.keys(filters)
+  if (!keys.length) return null
+
+  const defs = await prisma.customFieldDefinition.findMany({ where: { entity: 'Company', key: { in: keys } } })
+  const byKey = new Map(defs.map(d => [d.key, d]))
+
+  let matched = null
+  for (const [key, value] of Object.entries(filters)) {
+    const def = byKey.get(key)
+    if (!def) return [] // filtering on an unknown/removed field can never match anything
+    const rows = await prisma.customFieldValue.findMany({
+      where: { fieldId: def.id, OR: [{ textValue: String(value) }, { listValue: { array_contains: [String(value)] } }] },
+      select: { recordId: true },
+    })
+    const ids = new Set(rows.map(r => r.recordId))
+    matched = matched === null ? ids : new Set([...matched].filter(id => ids.has(id)))
+    if (matched.size === 0) break
+  }
+  return [...matched]
+}
+
 // Shared filter builder — used by both the paginated list and the export
 // endpoint so "export with applied filters" always matches the on-screen list.
 async function buildCompanyWhere(query, userId) {
-  const { search, view, owners, leadStatuses, createDate } = query
+  const { search, view, owners, leadStatuses, createDate, customFilters } = query
   // Companies in the Recycle Bin are archived — excluded from every normal
   // list/search/export view. Only the dedicated Recycle Bin routes look past this.
   const where = { deletedAt: null }
@@ -153,6 +192,17 @@ async function buildCompanyWhere(query, userId) {
     ]
   }
 
+  // Custom fields (Dynamic Custom Fields) are filterable via this dedicated
+  // param, deliberately NOT blended into the free-text `search` above — that
+  // would mean an extra per-custom-field subquery on every keystroke, the
+  // same N-subqueries-per-search shape that risks the timeout bulk import
+  // already hit once. `where.id` combines with `where.OR` (search) as an
+  // implicit AND at the top level — both conditions must hold when present.
+  if (customFilters) {
+    const ids = await companyIdsWithCustomFieldMatch(customFilters)
+    if (ids !== null) where.id = { in: ids }
+  }
+
   return where
 }
 
@@ -172,6 +222,7 @@ router.get('/', auth, async (req, res) => {
       }),
       prisma.company.count({ where }),
     ])
+    await attachCustomFieldValues('Company', companies)
 
     res.json({ companies, total, page: Number(page) })
   } catch (err) {
@@ -181,7 +232,14 @@ router.get('/', auth, async (req, res) => {
 })
 
 // ── GET /api/companies/import-fields (before /:id so it isn't captured) ────────
-router.get('/import-fields', auth, (req, res) => res.json(getImportFields('Company')))
+router.get('/import-fields', auth, async (req, res) => {
+  try {
+    res.json(await getImportFields('Company'))
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
 
 // ── GET /api/companies/export (before /:id) ─────────────────────────────────
 // Returns EVERY company matching the current filters/search — no pagination —
@@ -328,10 +386,13 @@ router.post('/bulk', auth, async (req, res) => {
 
     // Lead Owner is the same single-owner field Companies always had (ownerId,
     // a real system user) — the import column is a name, matched case-
-    // insensitively against real users. No match falls back to the importing
-    // user, same as the previous always-import-as-me default.
+    // insensitively and whitespace-normalized against real users. Each row
+    // keeps the owner named in the file: blank/"Unassigned" -> no owner,
+    // a real match -> that user, an unrecognized name -> the row fails
+    // validation instead of silently falling back to the importing user.
+    const normalizeOwnerName = (s) => String(s).trim().toLowerCase().replace(/\s+/g, ' ')
     const allUsers = await prisma.user.findMany({ select: { id: true, name: true } })
-    const userIdByName = new Map(allUsers.map(u => [u.name.toLowerCase().trim(), u.id]))
+    const userIdByName = new Map(allUsers.map(u => [normalizeOwnerName(u.name), u.id]))
 
     // One bulk pre-fetch + in-memory lookup instead of a `findFirst` DB round
     // trip per row (see buildDupLookup) — the prior per-row query made a
@@ -347,6 +408,18 @@ router.post('/bulk', auth, async (req, res) => {
       },
     }))
 
+    // Custom field values (Dynamic Custom Fields) — same "one bulk prefetch,
+    // no per-row query" discipline as dupLookup above. Import rows carry
+    // custom field values as flat `custom.<key>` properties (matching the
+    // convention every other consumer of the unified field list uses), not
+    // the nested `customFields: {...}` shape the single-record routes take.
+    // Validated/shaped per row below via shapeCustomFieldInputSync (zero DB
+    // queries); actual writes are batched ONCE after the whole loop finishes
+    // — see below.
+    const customFieldDefs = await getFieldDefinitions('Company')
+    const dropdownValuesByFieldKey = await bulkFetchDropdownValues('Company', customFieldDefs)
+    const customFieldTouches = [] // { recordId, isNew, shaped }
+
     for (const c of companies) {
       try {
         if (!c.name || !String(c.name).trim()) { errors.push('Missing company name — row skipped'); failed++; continue }
@@ -361,7 +434,34 @@ router.post('/bulk', auth, async (req, res) => {
         const linkedProfileList = splitCaret(c.linkedProfiles)
 
         const leadOwnerName = c.leadOwnerName ? String(c.leadOwnerName).trim() : ''
-        const matchedOwnerId = leadOwnerName ? userIdByName.get(leadOwnerName.toLowerCase()) : null
+        const normalizedLeadOwner = leadOwnerName ? normalizeOwnerName(leadOwnerName) : ''
+        let matchedOwnerId = null
+        if (normalizedLeadOwner && normalizedLeadOwner !== 'unassigned') {
+          matchedOwnerId = userIdByName.get(normalizedLeadOwner) || null
+          if (!matchedOwnerId) {
+            failed++
+            errors.push(`${c.name}: Lead Owner "${leadOwnerName}" does not match any existing user — row skipped`)
+            continue
+          }
+        }
+
+        // Custom field values for this row, validated/shaped with zero DB
+        // queries (pre-fetched defs/dropdown-values above) — a bad value
+        // fails just this row, matching every other row-level failure here.
+        let shapedCustomFields = []
+        if (customFieldDefs.length) {
+          const rawCustomFields = {}
+          for (const k in c) if (k.startsWith('custom.') && c[k] !== '') rawCustomFields[k.slice(7)] = c[k]
+          if (Object.keys(rawCustomFields).length) {
+            const { shaped, errors: cfErrors } = shapeCustomFieldInputSync('Company', customFieldDefs, rawCustomFields, dropdownValuesByFieldKey)
+            if (cfErrors.length) {
+              failed++
+              errors.push(`${c.name}: ${cfErrors.map(e => e.message).join('; ')}`)
+              continue
+            }
+            shapedCustomFields = shaped
+          }
+        }
 
         // Duplicate detection during bulk import — same fields/logic as
         // /check-duplicates and the single-company create route. A row that
@@ -386,7 +486,7 @@ router.post('/bulk', auth, async (req, res) => {
           setIfBlank('endPdpUrl',             c.endPdpUrl || null)
           setIfBlank('cms',                   c.cms || null)
           setIfBlank('remarks',               c.remarks || null)
-          setIfBlank('ownerId',               matchedOwnerId || null)
+          setIfBlank('ownerId',               matchedOwnerId)
 
           // Email/Phone: scalar + array are one unit — only fill when the
           // company has NEITHER, so any existing email/phone is left as-is.
@@ -427,6 +527,8 @@ router.post('/bulk', auth, async (req, res) => {
             }).catch(e => console.error(`Import task creation failed for ${existingDup.id}:`, e.message))
           }
 
+          if (shapedCustomFields.length) customFieldTouches.push({ recordId: existingDup.id, isNew: false, shaped: shapedCustomFields })
+
           if (filledKeys.length) {
             updated++
             messages.push(`${c.name}: matched existing company "${existingDup.name}" — filled ${filledKeys.length} missing field(s), existing data unchanged.`)
@@ -449,7 +551,7 @@ router.post('/bulk', auth, async (req, res) => {
             country:               c.country || null,
             leadStatus:            c.leadStatus || null,
             status:                'Lead',
-            ownerId:               matchedOwnerId || req.user.id,
+            ownerId:               matchedOwnerId,
             endPdpUrl:             c.endPdpUrl || null,
             cms:                   c.cms || null,
             remarks:               c.remarks || null,
@@ -461,6 +563,7 @@ router.post('/bulk', auth, async (req, res) => {
         // Index this new company so a LATER row in this same import that
         // duplicates it is caught, same as when every row queried the DB directly.
         dupLookup.index(newCompany)
+        if (shapedCustomFields.length) customFieldTouches.push({ recordId: newCompany.id, isNew: true, shaped: shapedCustomFields })
 
         // If the import row has a Notes/Task column, save it as an Activity —
         // reusing the same Activity table manual Notes/Tasks use (Company →
@@ -492,6 +595,54 @@ router.post('/bulk', auth, async (req, res) => {
       } catch (rowErr) {
         failed++
         errors.push(`${c.name || 'unknown'}: ${rowErr.message}`)
+      }
+    }
+
+    // Batched custom-field write — exactly two queries total (one prefetch,
+    // one/two createMany) regardless of import size, never one per row. New
+    // companies can never already have a value, so those touches write
+    // directly; backfilled companies respect the same "only fill currently-
+    // blank fields, never overwrite" rule the built-in fields already follow
+    // above — checked here via one bulk prefetch of current values, not a
+    // query per row.
+    if (customFieldTouches.length) {
+      const toRow = (fieldId, recordId, r) => ({
+        fieldId, recordId,
+        textValue: r.textValue ?? null, numberValue: r.numberValue ?? null,
+        dateValue: r.dateValue ?? null, boolValue: r.boolValue ?? null, listValue: r.listValue ?? null,
+      })
+
+      const newRows = customFieldTouches
+        .filter(t => t.isNew)
+        .flatMap(t => t.shaped.filter(r => !r.clear).map(r => toRow(r.fieldId, t.recordId, r)))
+      if (newRows.length) {
+        await prisma.customFieldValue.createMany({ data: newRows, skipDuplicates: true })
+      }
+
+      const backfillTouches = customFieldTouches.filter(t => !t.isNew)
+      if (backfillTouches.length) {
+        const fieldIds  = [...new Set(backfillTouches.flatMap(t => t.shaped.map(r => r.fieldId)))]
+        const recordIds = [...new Set(backfillTouches.map(t => t.recordId))]
+        const current = await prisma.customFieldValue.findMany({
+          where: { fieldId: { in: fieldIds }, recordId: { in: recordIds } },
+        })
+        const currentByKey = new Map(current.map(v => [`${v.fieldId}:${v.recordId}`, v]))
+        const isRowBlank = (v) => !v || (
+          v.textValue == null && v.numberValue == null && v.dateValue == null &&
+          v.boolValue == null && (v.listValue == null || (Array.isArray(v.listValue) && v.listValue.length === 0))
+        )
+
+        const backfillRows = []
+        for (const t of backfillTouches) {
+          for (const r of t.shaped) {
+            if (r.clear) continue // nothing to backfill for an explicit blank
+            if (!isRowBlank(currentByKey.get(`${r.fieldId}:${t.recordId}`))) continue // already has a value — never overwrite
+            backfillRows.push(toRow(r.fieldId, t.recordId, r))
+          }
+        }
+        if (backfillRows.length) {
+          await prisma.customFieldValue.createMany({ data: backfillRows, skipDuplicates: true })
+        }
       }
     }
 
@@ -544,6 +695,7 @@ router.get('/:id', auth, async (req, res) => {
     // A Recycle-Binned company behaves as if it no longer exists to every
     // normal view — including direct-link access to its detail page.
     if (!company || company.deletedAt) return res.status(404).json({ message: 'Company not found.' })
+    await attachCustomFieldValues('Company', [company])
     res.json(company)
   } catch (err) {
     console.error(err)
@@ -556,8 +708,19 @@ router.post('/', auth, async (req, res) => {
   try {
     const { name, email, phone, industry, leadStatus, status, ownerId,
             domain, country, emails, phones,
-            endPdpUrl, cms, remarks, contactPersons, linkedProfiles } = req.body
+            endPdpUrl, cms, remarks, contactPersons, linkedProfiles, customFields } = req.body
     if (!name) return res.status(400).json({ message: 'Company name is required.' })
+
+    // Validate custom fields BEFORE any write, so a bad value never leaves a
+    // half-created record — this is a new, separate write path appended
+    // after the existing fixed-field logic below, never merged into it.
+    let shapedCustomFields
+    try {
+      shapedCustomFields = await validateAndShapeCustomFieldInput('Company', customFields)
+    } catch (e) {
+      if (e instanceof CustomFieldValidationError) return res.status(400).json({ message: 'Invalid custom field value(s).', errors: e.errors })
+      throw e
+    }
 
     const emailList = cleanArr(emails, email)
     const phoneList = cleanArr(phones, phone)
@@ -582,27 +745,32 @@ router.post('/', auth, async (req, res) => {
       })
     }
 
-    const company = await prisma.company.create({
-      data: {
-        name:            name.trim(),
-        email:           primaryEmail,
-        emails:          emailList.length ? emailList : null,
-        phone:           primaryPhone,
-        phones:          phoneList.length ? phoneList : null,
-        industry:        industry || null,
-        leadStatus:      leadStatus || null,
-        status:          status    || 'Lead',
-        ownerId:         ownerId   || req.user.id,
-        domain:                domain                || null,
-        country:               country               || null,
-        endPdpUrl:             endPdpUrl             || null,
-        cms:                   cms                   || null,
-        remarks:               remarks               || null,
-        contactPersons:        contactPersonList.length ? contactPersonList : null,
-        linkedProfiles:        linkedProfileList.length ? linkedProfileList : null,
-      },
-      include: { owner: { select: { id: true, name: true, email: true } } },
+    const company = await prisma.$transaction(async (tx) => {
+      const created = await tx.company.create({
+        data: {
+          name:            name.trim(),
+          email:           primaryEmail,
+          emails:          emailList.length ? emailList : null,
+          phone:           primaryPhone,
+          phones:          phoneList.length ? phoneList : null,
+          industry:        industry || null,
+          leadStatus:      leadStatus || null,
+          status:          status    || 'Lead',
+          ownerId:         ownerId   || req.user.id,
+          domain:                domain                || null,
+          country:               country               || null,
+          endPdpUrl:             endPdpUrl             || null,
+          cms:                   cms                   || null,
+          remarks:               remarks               || null,
+          contactPersons:        contactPersonList.length ? contactPersonList : null,
+          linkedProfiles:        linkedProfileList.length ? linkedProfileList : null,
+        },
+        include: { owner: { select: { id: true, name: true, email: true } } },
+      })
+      await writeCustomFieldValues(created.id, shapedCustomFields, tx)
+      return created
     })
+    await attachCustomFieldValues('Company', [company])
     res.status(201).json(company)
   } catch (err) {
     console.error(err)
@@ -642,7 +810,17 @@ router.put('/:id', auth, async (req, res) => {
 
     const { name, email, phone, industry, leadStatus, status, ownerId,
             domain, country, emails, phones,
-            endPdpUrl, cms, remarks, contactPersons, linkedProfiles } = req.body
+            endPdpUrl, cms, remarks, contactPersons, linkedProfiles, customFields } = req.body
+
+    // Validate custom fields BEFORE any write — new, separate write path
+    // appended after the existing fixed-field logic, never merged into it.
+    let shapedCustomFields
+    try {
+      shapedCustomFields = await validateAndShapeCustomFieldInput('Company', customFields)
+    } catch (e) {
+      if (e instanceof CustomFieldValidationError) return res.status(400).json({ message: 'Invalid custom field value(s).', errors: e.errors })
+      throw e
+    }
 
     // Recompute the multi-value lists + primary only when arrays were sent.
     const emailList = emails !== undefined ? cleanArr(emails, email) : null
@@ -650,28 +828,33 @@ router.put('/:id', auth, async (req, res) => {
     const contactPersonList = contactPersons !== undefined ? cleanArr(contactPersons) : null
     const linkedProfileList = linkedProfiles !== undefined ? cleanArr(linkedProfiles) : null
 
-    const company = await prisma.company.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name: name.trim() }),
-        ...(emailList ? { email: emailList[0] ? emailList[0].toLowerCase() : null, emails: emailList.length ? emailList : null }
-                      : (email !== undefined && { email: email ? email.toLowerCase().trim() : null })),
-        ...(phoneList ? { phone: phoneList[0] || null, phones: phoneList.length ? phoneList : null }
-                      : (phone !== undefined && { phone: phone || null })),
-        ...(industry !== undefined && { industry: industry || null }),
-        ...(leadStatus !== undefined && { leadStatus: leadStatus || null }),
-        ...(status !== undefined && { status: status || 'Lead' }),
-        ...(ownerId !== undefined && { ownerId: ownerId || null }),
-        ...(domain !== undefined && { domain: domain || null }),
-        ...(country !== undefined && { country: country || null }),
-        ...(endPdpUrl !== undefined && { endPdpUrl: endPdpUrl || null }),
-        ...(cms !== undefined && { cms: cms || null }),
-        ...(remarks !== undefined && { remarks: remarks || null }),
-        ...(contactPersonList && { contactPersons: contactPersonList.length ? contactPersonList : null }),
-        ...(linkedProfileList && { linkedProfiles: linkedProfileList.length ? linkedProfileList : null }),
-      },
-      include: { owner: { select: { id: true, name: true, email: true } } },
+    const company = await prisma.$transaction(async (tx) => {
+      const updated = await tx.company.update({
+        where: { id },
+        data: {
+          ...(name !== undefined && { name: name.trim() }),
+          ...(emailList ? { email: emailList[0] ? emailList[0].toLowerCase() : null, emails: emailList.length ? emailList : null }
+                        : (email !== undefined && { email: email ? email.toLowerCase().trim() : null })),
+          ...(phoneList ? { phone: phoneList[0] || null, phones: phoneList.length ? phoneList : null }
+                        : (phone !== undefined && { phone: phone || null })),
+          ...(industry !== undefined && { industry: industry || null }),
+          ...(leadStatus !== undefined && { leadStatus: leadStatus || null }),
+          ...(status !== undefined && { status: status || 'Lead' }),
+          ...(ownerId !== undefined && { ownerId: ownerId || null }),
+          ...(domain !== undefined && { domain: domain || null }),
+          ...(country !== undefined && { country: country || null }),
+          ...(endPdpUrl !== undefined && { endPdpUrl: endPdpUrl || null }),
+          ...(cms !== undefined && { cms: cms || null }),
+          ...(remarks !== undefined && { remarks: remarks || null }),
+          ...(contactPersonList && { contactPersons: contactPersonList.length ? contactPersonList : null }),
+          ...(linkedProfileList && { linkedProfiles: linkedProfileList.length ? linkedProfileList : null }),
+        },
+        include: { owner: { select: { id: true, name: true, email: true } } },
+      })
+      await writeCustomFieldValues(id, shapedCustomFields, tx)
+      return updated
     })
+    await attachCustomFieldValues('Company', [company])
 
     res.json(company)
   } catch (err) {

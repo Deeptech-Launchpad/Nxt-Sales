@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X } from 'lucide-react'
 import api from '../../api/client'
 import { useDropdownOptions } from '../../hooks/useDropdownOptions'
+import CustomFieldsSection, { extractCustomFieldValues } from '../CustomFieldsSection'
 import '../../styles/modal.css'
 
 const emptyForm = {
@@ -44,7 +45,8 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
     stage:               deal.stage || 'Discussion',
     closeDate:           deal.closeDate ? deal.closeDate.slice(0, 10) : '',
     notes:               deal.notes || '',
-  } : emptyForm)
+    customFields:        extractCustomFieldValues(deal),
+  } : { ...emptyForm, customFields: {} })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
 
@@ -71,6 +73,7 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
       stage:               form.stage,
       closeDate:           form.closeDate || null,
       notes:               form.notes || null,
+      customFields:        form.customFields,
     }
     try {
       const { data } = isEdit
@@ -198,6 +201,12 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
             <label>Notes</label>
             <textarea rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} />
           </div>
+
+          <CustomFieldsSection
+            entity="Deal"
+            values={form.customFields}
+            onChange={(key, value) => setForm(p => ({ ...p, customFields: { ...p.customFields, [key]: value } }))}
+          />
 
           {error && <p style={{ color: '#ef4444', fontSize: 12, margin: '4px 0 0', fontWeight: 500 }}>{error}</p>}
         </div>
