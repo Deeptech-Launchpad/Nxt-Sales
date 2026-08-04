@@ -386,13 +386,16 @@ router.post('/bulk', auth, async (req, res) => {
 
     // Lead Owner is the same single-owner field Companies always had (ownerId,
     // a real system user) — the import column is a name, matched case-
-    // insensitively and whitespace-normalized against real users. Each row
+    // insensitively and whitespace-normalized against ACTIVE users only
+    // (a deactivated user's name must not resolve — same rule Settings →
+    // Dropdown Lists' Lead Owner list enforces for live selectors). Each row
     // keeps the owner named in the file: blank/"Unassigned" -> no owner,
-    // a real match -> that user, an unrecognized name -> the row fails
-    // validation instead of silently falling back to the importing user.
+    // a real active-user match -> that user, an unrecognized/inactive name
+    // -> the row fails validation instead of silently falling back to the
+    // importing user.
     const normalizeOwnerName = (s) => String(s).trim().toLowerCase().replace(/\s+/g, ' ')
-    const allUsers = await prisma.user.findMany({ select: { id: true, name: true } })
-    const userIdByName = new Map(allUsers.map(u => [normalizeOwnerName(u.name), u.id]))
+    const activeUsers = await prisma.user.findMany({ where: { status: 'active' }, select: { id: true, name: true } })
+    const userIdByName = new Map(activeUsers.map(u => [normalizeOwnerName(u.name), u.id]))
 
     // One bulk pre-fetch + in-memory lookup instead of a `findFirst` DB round
     // trip per row (see buildDupLookup) — the prior per-row query made a

@@ -10,6 +10,30 @@ const prisma = new PrismaClient()
 // user can manage these today (no stricter role gate exists elsewhere in the
 // app yet), so this only requires `auth`, same as every other route here.
 
+const LEAD_OWNER_FIELD_KEY = 'company.ownerId'
+
+// Lead Owner is NOT a curated DropdownOption list like every other managed
+// field — it must always exactly mirror the live set of active users, with
+// no possibility of drifting (a manually-disabled row, a stale cached label
+// after a rename, a deleted row hiding someone who's still active). So its
+// options are computed live from the User table on every read instead of
+// being sourced from the DropdownOption table at all. "Unassigned" is a
+// permanent, synthetic first entry (value: '') that is never a real row —
+// nothing to delete means it can never be removed, satisfying "this should
+// never be removed" trivially and for every environment (including a fresh
+// production DB) with no seeding required.
+async function getLeadOwnerOptions() {
+  const users = await prisma.user.findMany({
+    where: { status: 'active' },
+    select: { id: true, name: true },
+    orderBy: { name: 'asc' },
+  })
+  return [
+    { id: 'unassigned', fieldKey: LEAD_OWNER_FIELD_KEY, value: '', label: 'Unassigned', order: -1, enabled: true, protected: true },
+    ...users.map((u, i) => ({ id: u.id, fieldKey: LEAD_OWNER_FIELD_KEY, value: u.id, label: u.name, order: i, enabled: true })),
+  ]
+}
+
 // GET /api/dropdowns/fields — every field this system can manage: the 9
 // built-in ones (BUILT_IN_DROPDOWN_FIELDS) plus every active custom field
 // whose type is dropdown/multiselect (Dynamic Custom Fields). Declared before
@@ -35,6 +59,9 @@ router.get('/fields', auth, async (req, res) => {
 // consuming form/filter/import mapper.
 router.get('/:fieldKey', auth, async (req, res) => {
   try {
+    if (req.params.fieldKey === LEAD_OWNER_FIELD_KEY) {
+      return res.json(await getLeadOwnerOptions())
+    }
     const options = await prisma.dropdownOption.findMany({
       where: { fieldKey: req.params.fieldKey, enabled: true },
       orderBy: { order: 'asc' },
@@ -50,12 +77,16 @@ router.get('/:fieldKey', auth, async (req, res) => {
 // grouped for the management screen.
 router.get('/', auth, async (req, res) => {
   try {
-    const rows = await prisma.dropdownOption.findMany({ orderBy: [{ fieldKey: 'asc' }, { order: 'asc' }] })
+    const rows = await prisma.dropdownOption.findMany({
+      where: { fieldKey: { not: LEAD_OWNER_FIELD_KEY } },
+      orderBy: [{ fieldKey: 'asc' }, { order: 'asc' }],
+    })
     const grouped = {}
     for (const row of rows) {
       if (!grouped[row.fieldKey]) grouped[row.fieldKey] = []
       grouped[row.fieldKey].push(row)
     }
+    grouped[LEAD_OWNER_FIELD_KEY] = await getLeadOwnerOptions()
     res.json(grouped)
   } catch (err) {
     console.error('[Dropdowns] admin list error:', err.message)
@@ -69,6 +100,9 @@ router.post('/', auth, async (req, res) => {
     const { fieldKey, value, label } = req.body
     if (!fieldKey || !value?.trim()) {
       return res.status(400).json({ message: 'fieldKey and value are required.' })
+    }
+    if (fieldKey === LEAD_OWNER_FIELD_KEY) {
+      return res.status(400).json({ message: 'Lead Owner always reflects active users automatically and cannot be edited here.' })
     }
     const max = await prisma.dropdownOption.aggregate({
       where: { fieldKey },
@@ -100,6 +134,10 @@ router.patch('/reorder', auth, async (req, res) => {
     if (!Array.isArray(orderedIds) || orderedIds.length === 0) {
       return res.status(400).json({ message: 'orderedIds must be a non-empty array.' })
     }
+    const leadOwnerRow = await prisma.dropdownOption.findFirst({ where: { id: { in: orderedIds }, fieldKey: LEAD_OWNER_FIELD_KEY } })
+    if (leadOwnerRow) {
+      return res.status(400).json({ message: 'Lead Owner always reflects active users automatically and cannot be edited here.' })
+    }
     await prisma.$transaction(
       orderedIds.map((id, index) =>
         prisma.dropdownOption.update({ where: { id }, data: { order: index } })
@@ -117,6 +155,10 @@ router.patch('/reorder', auth, async (req, res) => {
 // Company/Deal record that already stored the old string.
 router.patch('/:id', auth, async (req, res) => {
   try {
+    const existing = await prisma.dropdownOption.findUnique({ where: { id: req.params.id } })
+    if (existing?.fieldKey === LEAD_OWNER_FIELD_KEY) {
+      return res.status(400).json({ message: 'Lead Owner always reflects active users automatically and cannot be edited here.' })
+    }
     const { label, enabled } = req.body
     const data = {}
     if (label !== undefined) data.label = label.trim()
@@ -136,6 +178,9 @@ router.delete('/:id', auth, async (req, res) => {
   try {
     const option = await prisma.dropdownOption.findUnique({ where: { id: req.params.id } })
     if (!option) return res.status(404).json({ message: 'Not found.' })
+    if (option.fieldKey === LEAD_OWNER_FIELD_KEY) {
+      return res.status(400).json({ message: 'Lead Owner always reflects active users automatically and cannot be edited here.' })
+    }
 
     const inUse = await isValueInUse(option.fieldKey, option.value)
     if (inUse) {

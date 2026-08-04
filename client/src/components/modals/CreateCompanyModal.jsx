@@ -48,7 +48,8 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
 
   const emailByUserId = new Map(users.map(u => [u.id, u.email]))
   const ownerOptions = [
-    { value: '', label: 'No owner', email: '' },
+    // ownerDropdownOptions already starts with the permanent "Unassigned"
+    // entry (value: '') injected by GET /api/dropdowns/company.ownerId.
     ...ownerDropdownOptions.map(o => ({ value: o.value, label: o.label, email: emailByUserId.get(o.value) || '' })),
   ]
 

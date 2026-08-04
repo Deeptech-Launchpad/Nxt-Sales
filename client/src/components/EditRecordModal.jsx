@@ -65,8 +65,8 @@ function CompanyForm({ data, onChange, companyId }) {
         <MultiValueInput values={data.contactPersons} onChange={v => onChange('contactPersons', v)} type="text" placeholder="Name - Role" addLabel="Add contact person" inputStyle={ER_INPUT_STYLE} />
       </FormRow>
       <FormRow label="Lead Owner">
+        {/* owners already starts with the permanent "Unassigned" entry (value: '') */}
         <select className="er-input" {...f('ownerId')}>
-          <option value="">No owner</option>
           {owners.map(o => <option key={o.id} value={o.value}>{o.label}</option>)}
         </select>
       </FormRow>

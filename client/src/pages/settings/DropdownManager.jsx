@@ -30,21 +30,13 @@ export default function DropdownManager() {
   const [error, setError]       = useState('')
   const [editingId, setEditingId]   = useState(null)
   const [editingLabel, setEditingLabel] = useState('')
-  const [allUsers, setAllUsers] = useState([]) // for the Lead Owner field's user-picker Add UI
-  const [pickedUserId, setPickedUserId] = useState('')
 
+  // Lead Owner is not a curated list like every other managed field — it
+  // always mirrors the live set of active users plus a permanent
+  // "Unassigned" entry (see GET /api/dropdowns/company.ownerId in
+  // dropdowns.js), so there is nothing to add/edit/delete/reorder here; it's
+  // rendered read-only below instead of the normal editable row controls.
   const isLeadOwnerField = selectedKey === 'company.ownerId'
-
-  // Lead Owner's "Add" UI is a picker over real users, not free text — its
-  // options are User rows (see server/src/routes/users.js's
-  // upsertLeadOwnerOption), so adding one here just registers an existing
-  // user as an assignable option, it never creates a new user.
-  useEffect(() => {
-    if (isLeadOwnerField && allUsers.length === 0) {
-      api.get('/users/manage').then(r => setAllUsers(r.data || [])).catch(() => {})
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLeadOwnerField])
 
   // Field list loads once — a custom field's dropdown/multiselect status
   // doesn't change without a page navigation back here.
@@ -68,9 +60,6 @@ export default function DropdownManager() {
   useEffect(load, [])
 
   const options = byField[selectedKey] || []
-  const addableUsers = isLeadOwnerField
-    ? allUsers.filter(u => !options.some(o => o.value === u.id))
-    : []
 
   const refreshAfterWrite = () => {
     load()
@@ -87,19 +76,6 @@ export default function DropdownManager() {
       refreshAfterWrite()
     } catch (e) {
       setError(e?.response?.data?.message || 'Failed to add value.')
-    }
-  }
-
-  const addLeadOwner = async () => {
-    const user = allUsers.find(u => u.id === pickedUserId)
-    if (!user) return
-    setError('')
-    try {
-      await api.post('/dropdowns', { fieldKey: selectedKey, value: user.id, label: user.name })
-      setPickedUserId('')
-      refreshAfterWrite()
-    } catch (e) {
-      setError(e?.response?.data?.message || 'Failed to add user.')
     }
   }
 
@@ -185,6 +161,13 @@ export default function DropdownManager() {
           ) : (
             <>
               {error && <p style={{ color: '#ef4444', fontSize: 12.5, marginTop: 0 }}>{error}</p>}
+
+              {isLeadOwnerField && (
+                <p style={{ fontSize: 12.5, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', marginTop: 0 }}>
+                  Lead Owner always shows every active user automatically, plus the permanent "Unassigned" option — it isn't manually managed here. Deactivate a user in User Management to remove them as an assignable owner.
+                </p>
+              )}
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
                 {options.length === 0 && (
                   <p style={{ fontSize: 13, color: '#94a3b8' }}>No values yet — add one below.</p>
@@ -195,74 +178,56 @@ export default function DropdownManager() {
                     border: '1px solid #f1f5f9', borderRadius: 7,
                     opacity: opt.enabled ? 1 : 0.5, background: opt.enabled ? '#fff' : '#f8fafc',
                   }}>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <button onClick={() => move(i, -1)} disabled={i === 0} style={{ background: 'none', border: 'none', cursor: i === 0 ? 'default' : 'pointer', color: i === 0 ? '#e2e8f0' : '#64748b', padding: 0, lineHeight: 0 }}>
-                        <ChevronUp size={14} />
-                      </button>
-                      <button onClick={() => move(i, 1)} disabled={i === options.length - 1} style={{ background: 'none', border: 'none', cursor: i === options.length - 1 ? 'default' : 'pointer', color: i === options.length - 1 ? '#e2e8f0' : '#64748b', padding: 0, lineHeight: 0 }}>
-                        <ChevronDown size={14} />
-                      </button>
-                    </div>
-
-                    {editingId === opt.id ? (
-                      <>
-                        <input
-                          autoFocus
-                          value={editingLabel}
-                          onChange={e => setEditingLabel(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && saveLabel(opt)}
-                          style={{ flex: 1, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 13 }}
-                        />
-                        <button onClick={() => saveLabel(opt)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a' }}><Check size={16} /></button>
-                        <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={16} /></button>
-                      </>
+                    {isLeadOwnerField ? (
+                      <span style={{ flex: 1, fontSize: 13.5, color: opt.protected ? '#64748b' : '#0f172a', fontStyle: opt.protected ? 'italic' : 'normal' }}>
+                        {opt.label}
+                      </span>
                     ) : (
                       <>
-                        <span style={{ flex: 1, fontSize: 13.5, color: '#0f172a' }}>{opt.label}</span>
-                        <button onClick={() => { setEditingId(opt.id); setEditingLabel(opt.label) }} title="Rename" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
-                          <Pencil size={14} />
-                        </button>
-                        <button onClick={() => toggleEnabled(opt)} title={opt.enabled ? 'Disable' : 'Enable'}
-                          style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: '1px solid', cursor: 'pointer',
-                            borderColor: opt.enabled ? '#bbf7d0' : '#e2e8f0', color: opt.enabled ? '#16a34a' : '#94a3b8', background: opt.enabled ? '#f0fdf4' : '#fff' }}>
-                          {opt.enabled ? 'Enabled' : 'Disabled'}
-                        </button>
-                        <button onClick={() => removeValue(opt)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
-                          <Trash2 size={14} />
-                        </button>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <button onClick={() => move(i, -1)} disabled={i === 0} style={{ background: 'none', border: 'none', cursor: i === 0 ? 'default' : 'pointer', color: i === 0 ? '#e2e8f0' : '#64748b', padding: 0, lineHeight: 0 }}>
+                            <ChevronUp size={14} />
+                          </button>
+                          <button onClick={() => move(i, 1)} disabled={i === options.length - 1} style={{ background: 'none', border: 'none', cursor: i === options.length - 1 ? 'default' : 'pointer', color: i === options.length - 1 ? '#e2e8f0' : '#64748b', padding: 0, lineHeight: 0 }}>
+                            <ChevronDown size={14} />
+                          </button>
+                        </div>
+
+                        {editingId === opt.id ? (
+                          <>
+                            <input
+                              autoFocus
+                              value={editingLabel}
+                              onChange={e => setEditingLabel(e.target.value)}
+                              onKeyDown={e => e.key === 'Enter' && saveLabel(opt)}
+                              style={{ flex: 1, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 13 }}
+                            />
+                            <button onClick={() => saveLabel(opt)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a' }}><Check size={16} /></button>
+                            <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={16} /></button>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ flex: 1, fontSize: 13.5, color: '#0f172a' }}>{opt.label}</span>
+                            <button onClick={() => { setEditingId(opt.id); setEditingLabel(opt.label) }} title="Rename" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+                              <Pencil size={14} />
+                            </button>
+                            <button onClick={() => toggleEnabled(opt)} title={opt.enabled ? 'Disable' : 'Enable'}
+                              style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: '1px solid', cursor: 'pointer',
+                                borderColor: opt.enabled ? '#bbf7d0' : '#e2e8f0', color: opt.enabled ? '#16a34a' : '#94a3b8', background: opt.enabled ? '#f0fdf4' : '#fff' }}>
+                              {opt.enabled ? 'Enabled' : 'Disabled'}
+                            </button>
+                            <button onClick={() => removeValue(opt)} title="Delete" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444' }}>
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
                 ))}
               </div>
 
-              {isLeadOwnerField ? (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <select
-                    value={pickedUserId}
-                    onChange={e => setPickedUserId(e.target.value)}
-                    style={{ flex: 1, padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13, color: pickedUserId ? '#0f172a' : '#94a3b8' }}
-                  >
-                    <option value="">
-                      {addableUsers.length === 0 ? 'All users are already added' : 'Select a user to add…'}
-                    </option>
-                    {addableUsers.map(u => (
-                      <option key={u.id} value={u.id}>{u.name} ({u.email})</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={addLeadOwner}
-                    disabled={!pickedUserId}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#fff',
-                      background: pickedUserId ? '#3b82f6' : '#93c5fd', border: 'none', borderRadius: 6,
-                      cursor: pickedUserId ? 'pointer' : 'default',
-                    }}
-                  >
-                    <Plus size={14} /> Add
-                  </button>
-                </div>
-              ) : (
+              {!isLeadOwnerField && (
                 <div style={{ display: 'flex', gap: 8 }}>
                   <input
                     value={newValue}

@@ -181,8 +181,11 @@ export default function Companies() {
 
   const ownerOptions = [
     { value: user?.id || 'me', label: `Me (${user?.name || 'You'})` },
+    // ownerDropdownOptions' own permanent Unassigned entry (value: '') is
+    // excluded here — this filter uses the 'unassigned' sentinel value below
+    // instead, which buildCompanyWhere interprets server-side (ownerId: null).
     ...ownerDropdownOptions
-      .filter(o => o.value !== user?.id)
+      .filter(o => o.value !== user?.id && o.value !== '')
       .map(o => ({ value: o.value, label: o.label })),
     { value: 'unassigned', label: 'Unassigned' },
   ]

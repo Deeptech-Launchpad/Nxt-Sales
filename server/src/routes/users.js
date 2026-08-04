@@ -4,41 +4,11 @@ const auth   = require('../middleware/authMiddleware')
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 
-// Lead Owner management (Settings → Dropdown Lists) is backed by the SAME
-// DropdownOption table every other managed field uses — fieldKey
-// 'company.ownerId', value = User.id, label = User.name (see
-// server/src/constants/dropdownFields.js). This keeps every user in sync as
-// an assignable "option" without a new table, and lets Add/Edit/Delete/
-// Enable-Disable/Reorder all work through the existing generic /api/dropdowns
-// routes with zero new endpoints. `enabled` here mirrors `status === 'active'`
-// (GET /users already only returns active users for owner selectors) — kept
-// in sync at every status transition below, on top of which Settings can
-// still independently disable an active user's option for curation.
-const LEAD_OWNER_FIELD_KEY = 'company.ownerId'
-
-async function upsertLeadOwnerOption(user, enabled) {
-  try {
-    const existing = await prisma.dropdownOption.findUnique({
-      where: { fieldKey_value: { fieldKey: LEAD_OWNER_FIELD_KEY, value: user.id } },
-    })
-    let order = existing?.order
-    if (order === undefined) {
-      const max = await prisma.dropdownOption.aggregate({
-        where: { fieldKey: LEAD_OWNER_FIELD_KEY },
-        _max: { order: true },
-      })
-      order = (max._max.order ?? -1) + 1
-    }
-    await prisma.dropdownOption.upsert({
-      where: { fieldKey_value: { fieldKey: LEAD_OWNER_FIELD_KEY, value: user.id } },
-      create: { fieldKey: LEAD_OWNER_FIELD_KEY, value: user.id, label: user.name, enabled, order },
-      update: { enabled },
-    })
-  } catch (err) {
-    // Never let this block the real user-management action it's attached to.
-    console.error('[Lead Owner sync] failed for user', user.id, err.message)
-  }
-}
+// Lead Owner management (Settings → Dropdown Lists) always reflects the
+// live set of active users — computed on read directly from the User table
+// (see getLeadOwnerOptions in server/src/routes/dropdowns.js), so there is
+// no sync step needed here: activating/deactivating/deleting a user takes
+// effect immediately with no extra bookkeeping.
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 function genToken() {
@@ -135,9 +105,6 @@ router.post('/invite', auth, async (req, res) => {
         inviteExpires,
       },
     })
-    // Registered as a Lead Owner option immediately, but disabled until they
-    // accept the invite (status becomes 'active') — see accept-invite in auth.js.
-    await upsertLeadOwnerOption(user, false)
 
     const clientUrl  = process.env.CLIENT_URL || 'http://localhost:3000'
     const inviteLink = `${clientUrl}/accept-invite?token=${inviteToken}`
@@ -197,7 +164,6 @@ router.patch('/:id/status', auth, async (req, res) => {
       data: { status },
       select: { id: true, name: true, email: true, role: true, status: true },
     })
-    await upsertLeadOwnerOption(user, status === 'active')
     res.json(user)
   } catch (err) {
     console.error(err)
@@ -253,10 +219,6 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(400).json({ message: 'You cannot delete your own account.' })
     }
     await prisma.user.delete({ where: { id: req.params.id } })
-    // Best-effort — the user row itself is already gone either way; this just
-    // tidies up their now-orphaned Lead Owner option (harmless if it's already
-    // gone, or if this fails for any reason).
-    await prisma.dropdownOption.deleteMany({ where: { fieldKey: LEAD_OWNER_FIELD_KEY, value: req.params.id } }).catch(() => {})
     res.json({ success: true })
   } catch (err) {
     console.error(err)
@@ -265,5 +227,3 @@ router.delete('/:id', auth, async (req, res) => {
 })
 
 module.exports = router
-module.exports.upsertLeadOwnerOption = upsertLeadOwnerOption
-module.exports.LEAD_OWNER_FIELD_KEY = LEAD_OWNER_FIELD_KEY
