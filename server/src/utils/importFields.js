@@ -28,18 +28,18 @@ const CONFIG = {
     requiredKey: 'title',
     exclude: ['id', 'createdAt', 'updatedAt', 'companyId', 'ownerId'],
     labels: {
-      title: 'Deal Name', value: 'Estimated Deal Value (USD)', stage: 'Deal Stage',
+      title: 'Deal Name', value: 'Estimated Deal Value', currency: 'Currency', stage: 'Deal Stage',
       country: 'Country', companyName: 'Company Name', domainName: 'Domain Name',
       clientType: 'Client Type', contactPerson: 'Contact Person',
       contactPhone: 'Contact Phone Number', contactEmail: 'Contact Email',
       serviceRequirement: 'Service Requirements', clientWebsiteUrl: 'Client Website URL',
       opportunityType: 'Opportunity Type', strategicImportance: 'Strategic Importance',
-      expectedOutcome: 'Expected Outcome', closeDate: 'Close Date', notes: 'Notes',
+      expectedOutcome: 'Expected Outcome', notes: 'Notes',
     },
     order: ['title', 'country', 'companyName', 'domainName', 'clientType',
       'contactPerson', 'contactPhone', 'contactEmail', 'serviceRequirement',
-      'clientWebsiteUrl', 'opportunityType', 'value', 'strategicImportance',
-      'expectedOutcome', 'stage', 'closeDate', 'notes'],
+      'clientWebsiteUrl', 'opportunityType', 'value', 'currency', 'strategicImportance',
+      'expectedOutcome', 'stage', 'notes'],
   },
 }
 

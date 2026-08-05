@@ -1,15 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import api from '../../api/client'
 import { useDropdownOptions } from '../../hooks/useDropdownOptions'
 import CustomFieldsSection, { extractCustomFieldValues } from '../CustomFieldsSection'
+import { DEAL_CURRENCIES } from '../../utils/formatCurrency'
 import '../../styles/modal.css'
 
 const emptyForm = {
   title: '', country: '', companyName: '', domainName: '', clientType: '',
   contactPerson: '', contactPhone: '', contactEmail: '', serviceRequirement: '',
-  clientWebsiteUrl: '', opportunityType: '', value: '', strategicImportance: '',
-  expectedOutcome: '', stage: 'Discussion', closeDate: '', notes: '',
+  clientWebsiteUrl: '', opportunityType: '', value: '', currency: 'USD', strategicImportance: '',
+  expectedOutcome: '', stage: 'Discussion', notes: '',
 }
 
 // Create or edit a deal. Pass `deal` (an existing deal record) to edit it —
@@ -40,10 +41,10 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
     clientWebsiteUrl:    deal.clientWebsiteUrl || '',
     opportunityType:     deal.opportunityType || '',
     value:               deal.value || '',
+    currency:            deal.currency || 'USD',
     strategicImportance: deal.strategicImportance || '',
     expectedOutcome:     deal.expectedOutcome || '',
     stage:               deal.stage || 'Discussion',
-    closeDate:           deal.closeDate ? deal.closeDate.slice(0, 10) : '',
     notes:               deal.notes || '',
     customFields:        extractCustomFieldValues(deal),
   } : { ...emptyForm, customFields: {} })
@@ -51,6 +52,19 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
   const [error, setError]   = useState('')
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
+
+  // Deal Stage has no safe hardcoded default — the Deal Stage list under
+  // Settings → Dropdown Lists is fully admin-configurable and might not even
+  // include "Discussion" (a renamed/rebuilt stage set, e.g. production using
+  // only 4 custom stages). Once the live list loads, swap the placeholder
+  // default for the first real stage so a new deal is never silently created
+  // with a stage value that doesn't match any actual option.
+  useEffect(() => {
+    if (!isEdit && dealStages.length > 0 && !dealStages.some(s => s.value === form.stage)) {
+      set('stage', dealStages[0].value)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dealStages])
 
   const save = async () => {
     if (!form.title.trim()) { setError('Deal name is required.'); return }
@@ -68,10 +82,10 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
       clientWebsiteUrl:    form.clientWebsiteUrl || null,
       opportunityType:     form.opportunityType || null,
       value:               form.value ? Number(form.value) : 0,
+      currency:            form.currency || 'USD',
       strategicImportance: form.strategicImportance || null,
       expectedOutcome:     form.expectedOutcome || null,
       stage:               form.stage,
-      closeDate:           form.closeDate || null,
       notes:               form.notes || null,
       customFields:        form.customFields,
     }
@@ -165,8 +179,13 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
           </div>
 
           <div className="form-group">
-            <label>Estimated Deal Value (USD)</label>
-            <input type="number" value={form.value} onChange={e => set('value', e.target.value)} placeholder="0" step="0.01" />
+            <label>Estimated Deal Value</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input type="number" min="0" value={form.value} onChange={e => set('value', e.target.value)} placeholder="0" style={{ flex: 2 }} />
+              <select value={form.currency} onChange={e => set('currency', e.target.value)} style={{ flex: 1 }}>
+                {DEAL_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
           </div>
 
           <div className="form-group">
@@ -190,11 +209,6 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
             <select value={form.stage} onChange={e => set('stage', e.target.value)}>
               {dealStages.map(s => <option key={s.id} value={s.value}>{s.label}</option>)}
             </select>
-          </div>
-
-          <div className="form-group">
-            <label>Close date</label>
-            <input type="date" value={form.closeDate} onChange={e => set('closeDate', e.target.value)} />
           </div>
 
           <div className="form-group">

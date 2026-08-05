@@ -215,6 +215,19 @@ export default function Companies() {
 
   useEffect(() => { fetchCompanies() }, [fetchCompanies])
 
+  // Carried to Company Details via navigate(..., { state }) so its
+  // Previous/Next buttons can walk this exact filtered/sorted/tab-scoped
+  // list — same param shape fetchCompanies sends, minus page/limit (the
+  // neighbor lookup isn't page-bound, only filter-bound).
+  const listContext = {
+    view: activeTab === 'all' ? undefined : activeTab,
+    ...(search && { search }),
+    ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
+    ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
+    ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
+  }
+  const openCompany = (id) => navigate(`/companies/${id}`, { state: { listContext } })
+
   // Export: fetch EVERY company matching the current filters/search (no page
   // limit) — the dedicated /companies/export endpoint mirrors the same filter
   // logic as the paginated list so "current filters" always matches exactly.
@@ -427,7 +440,7 @@ export default function Companies() {
                   <span className="avatar" style={{ fontSize: '10px', letterSpacing: '-0.5px' }}>
                     {(c.name || '??').slice(0, 2).toUpperCase()}
                   </span>
-                  <span className="link-style" onClick={() => navigate(`/companies/${c.id}`)}>{c.name}</span>
+                  <span className="link-style" onClick={() => openCompany(c.id)}>{c.name}</span>
                 </td>
                 {orderedVisibleFields.map(f => <td key={f.key}>{renderCompanyCell(f, c)}</td>)}
               </tr>

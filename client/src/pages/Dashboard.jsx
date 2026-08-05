@@ -8,7 +8,7 @@ import '../styles/dashboard.css'
 const quickActions = [
   { label: 'New Deal',    Icon: TrendingUp, color: '#fef9ee', iconColor: '#f59e0b', to: '/deals' },
   { label: 'Send Email',  Icon: Mail,       color: '#f0fdf4', iconColor: '#22c55e', to: '/email' },
-  { label: 'Create Task', Icon: Plus,       color: '#fff1f2', iconColor: '#e63329', to: '/activities' },
+  { label: 'Create Task', Icon: Plus,       color: '#fff1f2', iconColor: '#e63329', to: '/tasks' },
 ]
 
 export default function Dashboard() {

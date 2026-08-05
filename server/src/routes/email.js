@@ -1,7 +1,7 @@
 const router = require('express').Router()
 const auth = require('../middleware/authMiddleware')
 const crypto = require('crypto')
-const { PrismaClient } = require('@prisma/client')
+const { PrismaClient, Prisma } = require('@prisma/client')
 const prisma = new PrismaClient()
 
 // ── Email open tracking ──────────────────────────────────────────────────────
@@ -1162,6 +1162,158 @@ router.get('/conversations', auth, async (req, res) => {
   } catch (err) {
     console.error('[Email Conversations] error:', err.message)
     res.status(500).json({ message: 'Failed to load conversations.' })
+  }
+})
+
+// ── CRM-relevance matching (Inbox business rule) ────────────────────────────
+// Inbox must show ONLY conversations involving a CRM company/deal contact —
+// never the connected mailbox's personal mail, newsletters, or notification
+// senders (GitHub, Google, ChatGPT, Adobe, UiPath, etc). This is purely a
+// listing filter: it does not touch how emails are stored or synced, and an
+// Activity row that fails this match still exists untouched in the table —
+// it is simply excluded from this one view.
+//
+// "Known CRM identifier" = a company's saved email(s)/domain, or a deal's
+// contact email/domain — matched live against current data (not the
+// possibly-stale companyId/matchedCompanyEmail an old sync recorded), so the
+// filter self-heals the same way /sync's reconciliation pass already does:
+// if a company's address changes, Inbox reflects that on the very next call.
+//
+// Cached briefly rather than re-queried on every keystroke/page click — the
+// same large-table-refetch concern noted below (Companies can run 16,000+
+// rows), except here it is ONE lightweight, capped-lifetime query instead of
+// a per-request full fetch.
+let crmAddressCache = { emails: new Set(), domains: new Set(), expiresAt: 0 }
+const CRM_ADDRESS_TTL_MS = 60_000
+
+function addKnownDomain(set, v) {
+  if (typeof v !== 'string' || !v.trim()) return
+  const d = v.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+  if (d) set.add(d)
+}
+
+async function getCrmAddresses() {
+  if (Date.now() < crmAddressCache.expiresAt) return crmAddressCache
+
+  const [companies, deals] = await Promise.all([
+    prisma.company.findMany({ where: { deletedAt: null }, select: { email: true, emails: true, domain: true } }),
+    prisma.deal.findMany({ select: { contactEmail: true, domainName: true } }),
+  ])
+
+  const emails = new Set()
+  const domains = new Set()
+  const addEmail = (v) => { if (typeof v === 'string' && v.trim()) emails.add(v.trim().toLowerCase()) }
+
+  for (const c of companies) {
+    addEmail(c.email)
+    if (Array.isArray(c.emails)) c.emails.forEach(addEmail)
+    addKnownDomain(domains, c.domain)
+  }
+  for (const d of deals) {
+    addEmail(d.contactEmail)
+    addKnownDomain(domains, d.domainName)
+  }
+
+  crmAddressCache = { emails, domains, expiresAt: Date.now() + CRM_ADDRESS_TTL_MS }
+  return crmAddressCache
+}
+
+// GET /api/email/inbox — global, cross-company inbox (Inbox module).
+// Unlike /conversations above (which buckets threads under one company's
+// saved addresses — a fundamentally per-company operation), this has no
+// single company to bucket against: it needs one row per THREAD across the
+// whole table, newest-first, correctly paginated. A plain findMany({skip,
+// take}) over raw message rows would paginate messages, not conversations,
+// and fetching everything to group in JS would repeat the exact full-fetch
+// mistake this project already got burned by once (see the bulk-import
+// incident). So this uses a real DISTINCT ON query instead: one Activity row
+// per thread (its latest message, matching whatever filters are active),
+// ordered by that message's time, sliced with LIMIT/OFFSET at the SQL level.
+// COALESCE(threadId, 'single:'||id) mirrors the exact same fallback key
+// /conversations already uses in JS for a standalone (non-threaded) email —
+// without it, Postgres's DISTINCT ON would treat every NULL threadId as the
+// same group and collapse all standalone emails into a single row.
+//
+// The CRM-relevance match runs as a real SQL EXISTS condition (not a
+// post-fetch JS filter), so it applies to the COUNT and the paginated query
+// identically — page/total stay accurate instead of pages coming back
+// short after junk rows are filtered out client-side.
+router.get('/inbox', auth, async (req, res) => {
+  try {
+    const page  = Math.max(1, parseInt(req.query.page, 10) || 1)
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50))
+    const { search, direction, companyId, dateFrom, dateTo } = req.query
+
+    const { emails: crmEmails, domains: crmDomains } = await getCrmAddresses()
+    // No CRM data at all → nothing can qualify (rather than every message
+    // vacuously "matching" an empty rule set).
+    if (crmEmails.size === 0 && crmDomains.size === 0) {
+      return res.json({ items: [], total: 0, page, pages: 1 })
+    }
+
+    const conditions = [Prisma.sql`type = 'email'`]
+    if (direction) conditions.push(Prisma.sql`direction = ${direction}`)
+    if (companyId) conditions.push(Prisma.sql`"companyId" = ${companyId}`)
+    if (search && search.trim()) {
+      const q = `%${search.trim()}%`
+      conditions.push(Prisma.sql`(subject ILIKE ${q} OR "fromEmail" ILIKE ${q} OR "toEmail" ILIKE ${q})`)
+    }
+    if (dateFrom) conditions.push(Prisma.sql`"createdAt" >= ${new Date(dateFrom)}`)
+    if (dateTo) conditions.push(Prisma.sql`"createdAt" <= ${new Date(dateTo)}`)
+    // At least one participant (From or To) must resolve to a known CRM
+    // email or domain. Same address-extraction rule as extractAddresses()
+    // above (identical character class), applied here as SQL so it can run
+    // as one EXISTS per row instead of fetching every row into Node first.
+    conditions.push(Prisma.sql`EXISTS (
+      SELECT 1 FROM regexp_matches(COALESCE("fromEmail", '') || ' ' || COALESCE("toEmail", ''), ${EMAIL_ADDR_RE.source}, 'g') AS addr
+      WHERE lower(addr[1]) = ANY(${[...crmEmails]}::text[])
+         OR lower(split_part(addr[1], '@', 2)) = ANY(${[...crmDomains]}::text[])
+    )`)
+    const whereClause = Prisma.join(conditions, ' AND ')
+
+    const countRows = await prisma.$queryRaw`
+      SELECT COUNT(DISTINCT COALESCE("threadId", 'single:' || id))::int AS count
+      FROM "Activity" WHERE ${whereClause}
+    `
+    const total = countRows[0]?.count || 0
+
+    const rows = await prisma.$queryRaw`
+      SELECT * FROM (
+        SELECT DISTINCT ON (COALESCE("threadId", 'single:' || id)) *
+        FROM "Activity"
+        WHERE ${whereClause}
+        ORDER BY COALESCE("threadId", 'single:' || id), "createdAt" DESC
+      ) t
+      ORDER BY t."createdAt" DESC
+      LIMIT ${limit} OFFSET ${(page - 1) * limit}
+    `
+
+    // Company names resolved via one targeted query keyed on just the
+    // companyIds present on this page — not a global join.
+    const companyIds = [...new Set(rows.map(r => r.companyId).filter(Boolean))]
+    const companies = companyIds.length
+      ? await prisma.company.findMany({ where: { id: { in: companyIds } }, select: { id: true, name: true } })
+      : []
+    const companyNameById = new Map(companies.map(c => [c.id, c.name]))
+
+    const items = rows.map(r => ({
+      id: r.id,
+      threadId: r.threadId || `single:${r.id}`,
+      companyId: r.companyId,
+      companyName: r.companyId ? (companyNameById.get(r.companyId) || null) : null,
+      subject: r.subject || r.title || '(no subject)',
+      snippet: (r.body || '').replace(/\s+/g, ' ').trim().slice(0, 160),
+      direction: r.direction,
+      fromEmail: r.fromEmail,
+      toEmail: r.toEmail,
+      createdAt: r.createdAt,
+      hasAttachments: Array.isArray(r.attachments) && r.attachments.length > 0,
+    }))
+
+    res.json({ items, total, page, pages: Math.max(1, Math.ceil(total / limit)) })
+  } catch (err) {
+    console.error('[Email Inbox] error:', err.message)
+    res.status(500).json({ message: 'Failed to load inbox.' })
   }
 })
 

@@ -22,7 +22,8 @@ model User {
   signatureImage   String?        @db.Text
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
-  activities       Activity[]
+  activities       Activity[]     @relation("ActivityCreator")
+  assignedActivities Activity[]   @relation("ActivityAssignee")
   companies        Company[]
   deals            Deal[]
   emailAccounts    EmailAccount[]
@@ -75,10 +76,10 @@ model Deal {
   id        String    @id @default(cuid())
   title     String
   value     Float     @default(0)
+  currency  String    @default("USD")
   stage     String    @default("Discussion")
   companyId String?
   ownerId   String
-  closeDate DateTime?
   notes     String?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -143,7 +144,8 @@ model Activity {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   company       Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  user          User      @relation(fields: [userId], references: [id])
+  user          User      @relation("ActivityCreator", fields: [userId], references: [id])
+  assignedTo    User?     @relation("ActivityAssignee", fields: [assignedToId], references: [id])
 
   @@index([companyId])
   @@index([messageId])
@@ -151,6 +153,7 @@ model Activity {
   @@index([userId])
   @@index([threadId])
   @@index([matchedCompanyEmail])
+  @@index([assignedToId])
 }
 
 model CallLog {

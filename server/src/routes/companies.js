@@ -706,6 +706,75 @@ router.get('/:id', auth, async (req, res) => {
   }
 })
 
+// ── GET /api/companies/:id/neighbors — Previous/Next on Company Details ────
+// Answers "what comes right before/after this company" under whatever
+// search/filter/tab context the caller was viewing on the Companies list —
+// reuses buildCompanyWhere() unchanged, so the result set is always exactly
+// the one GET / would show for the same query params. Pure read, no writes,
+// no change to any existing list/detail behavior.
+//
+// GET / has no sort param — its fixed order is [isPinned desc, createdAt
+// desc] with no tie-breaker (see below). id is added here ONLY as a
+// tie-breaker so "the very next/previous row" is well-defined when two
+// companies share a createdAt timestamp; it does not alter what GET /
+// itself displays.
+function buildAdjacentWhere(current, id, direction) {
+  const sameGroup = {
+    isPinned: current.isPinned,
+    OR: direction === 'after'
+      ? [
+          { createdAt: { lt: current.createdAt } },
+          { createdAt: current.createdAt, id: { lt: id } },
+        ]
+      : [
+          { createdAt: { gt: current.createdAt } },
+          { createdAt: current.createdAt, id: { gt: id } },
+        ],
+  }
+  // The entire unpinned block ranks below the entire pinned block, so
+  // crossing that boundary is a second, separate candidate branch — not
+  // expressible as a same-group tuple comparison.
+  const otherGroup =
+    direction === 'after'  && current.isPinned  ? { isPinned: false } :
+    direction === 'before' && !current.isPinned ? { isPinned: true }  :
+    null
+  return { OR: otherGroup ? [sameGroup, otherGroup] : [sameGroup] }
+}
+
+router.get('/:id/neighbors', auth, async (req, res) => {
+  try {
+    const { id } = req.params
+    const current = await prisma.company.findUnique({
+      where: { id },
+      select: { isPinned: true, createdAt: true, deletedAt: true },
+    })
+    if (!current || current.deletedAt) return res.status(404).json({ message: 'Company not found.' })
+
+    const baseWhere = await buildCompanyWhere(req.query, req.user.id)
+
+    const [next, prev] = await Promise.all([
+      prisma.company.findFirst({
+        where: { AND: [baseWhere, buildAdjacentWhere(current, id, 'after')] },
+        orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        select: { id: true, name: true },
+      }),
+      prisma.company.findFirst({
+        where: { AND: [baseWhere, buildAdjacentWhere(current, id, 'before')] },
+        orderBy: [{ isPinned: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        select: { id: true, name: true },
+      }),
+    ])
+
+    res.json({
+      prevId: prev?.id || null, prevName: prev?.name || null,
+      nextId: next?.id || null, nextName: next?.name || null,
+    })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
 // ── POST /api/companies ───────────────────────────────────
 router.post('/', auth, async (req, res) => {
   try {

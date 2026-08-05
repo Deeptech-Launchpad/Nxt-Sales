@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
-  ChevronDown, ChevronLeft, FileText, Mail, Phone,
+  ChevronDown, ChevronLeft, ChevronRight, FileText, Mail, Phone,
   CheckSquare, Calendar, MoreHorizontal,
   Plus, ExternalLink, Loader2, Pencil, Trash2, Star
 } from 'lucide-react'
@@ -15,6 +15,7 @@ import EditRecordModal   from '../../components/EditRecordModal'
 import CreateDealModal   from '../../components/modals/CreateDealModal'
 import { valueList } from '../../utils/multiValue'
 import { invalidateCompanyEmail } from '../../utils/emailCache'
+import { formatCurrency } from '../../utils/formatCurrency'
 import '../../styles/detail-page.css'
 import '../../styles/activity-modals.css'
 
@@ -107,14 +108,24 @@ function IntelligenceTab({ company }) {
 }
 
 export default function CompanyDetail() {
-  const { id }   = useParams()
-  const navigate = useNavigate()
+  const { id }     = useParams()
+  const navigate   = useNavigate()
+  const location   = useLocation()
+
+  // Carried over from Companies.jsx's row click (see openCompany there) so
+  // Previous/Next below walks the exact same filtered/sorted/tab-scoped list
+  // the user was viewing — not the unfiltered full table. Arriving here any
+  // other way (direct link, bookmark, browser back) has no context, so it
+  // falls back to the unfiltered "All companies" order, same as opening
+  // Companies fresh with no filters applied.
+  const listContext = location.state?.listContext || {}
 
   const [company,    setCompany]    = useState(null)
   const [loading,    setLoading]    = useState(true)
   const [notFound,   setNotFound]   = useState(false)
   const [centerTab,  setCenterTab]  = useState('Overview')
   const [recentActs, setRecentActs] = useState([])
+  const [neighbors,  setNeighbors]  = useState({ prevId: null, nextId: null })
 
   const [activeModal,     setActiveModal]     = useState(null)
   const [feedRefreshKey,  setFeedRefreshKey]  = useState(0)
@@ -130,6 +141,26 @@ export default function CompanyDetail() {
       .catch(e => { if (e.response?.status === 404) setNotFound(true) })
       .finally(() => setLoading(false))
   }, [id])
+
+  // Previous/Next navigation — recomputed for every company shown (not just
+  // once) since "next" from company B, arrived at via company A's "Next",
+  // must itself point further into the same list.
+  useEffect(() => {
+    if (!id) return
+    api.get(`/companies/${id}/neighbors`, { params: listContext })
+      .then(r => setNeighbors({ prevId: r.data.prevId, nextId: r.data.nextId }))
+      .catch(() => setNeighbors({ prevId: null, nextId: null }))
+  }, [id, JSON.stringify(listContext)])
+
+  // Keeps the current tab (Overview/Activities/Intelligence) as-is across a
+  // Prev/Next switch — only the :id param and this component's data change,
+  // centerTab is untouched — and carries listContext forward so continued
+  // Prev/Next clicks keep walking the same list instead of losing context
+  // after one hop.
+  const goToCompany = (targetId) => {
+    if (!targetId) return
+    navigate(`/companies/${targetId}`, { state: { listContext } })
+  }
 
   // Deals linked to this company (also visible on the global Deals dashboard).
   const fetchDeals = () => {
@@ -209,6 +240,24 @@ export default function CompanyDetail() {
             <span className="detail-back-link" onClick={() => navigate('/companies')}>
               <ChevronLeft size={14} /> Companies
             </span>
+            <div className="detail-prevnext">
+              <button
+                className="detail-prevnext-btn"
+                disabled={!neighbors.prevId}
+                onClick={() => goToCompany(neighbors.prevId)}
+                title="Previous company"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <button
+                className="detail-prevnext-btn"
+                disabled={!neighbors.nextId}
+                onClick={() => goToCompany(neighbors.nextId)}
+                title="Next company"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
 
           <div className="detail-entity-header">
@@ -401,7 +450,7 @@ export default function CompanyDetail() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                       <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>
-                        {d.value > 0 ? Number(d.value).toLocaleString() : '--'}
+                        {formatCurrency(d.value, d.currency)}
                       </span>
                       <button onClick={() => setEditDeal(d)} title="Edit deal" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', padding: 2 }}><Pencil size={13} /></button>
                       <button onClick={() => handleDeleteDeal(d.id)} title="Delete deal" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444', padding: 2 }}><Trash2 size={13} /></button>

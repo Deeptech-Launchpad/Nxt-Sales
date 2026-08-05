@@ -3,6 +3,7 @@ import { X, CheckSquare } from 'lucide-react'
 import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 import { useDraggable } from '../../hooks/useDraggable'
+import CompanyPicker from '../CompanyPicker'
 import '../../styles/activity-modals.css'
 
 function tomorrowStr() {
@@ -10,19 +11,30 @@ function tomorrowStr() {
   return d.toISOString().slice(0, 10)
 }
 
-export default function TaskModal({ isOpen = true, companyId, contactName, onClose, onSaved, onActivitySaved }) {
+// Pass `activity` (an existing task Activity record) to edit it — otherwise
+// a new task is created. `companyId` pre-links to a company (the Company
+// Detail page always supplies this); when neither `activity` nor `companyId`
+// carries a company (i.e. opened from the global Tasks dashboard's "Create
+// task" button with nothing pre-selected), a CompanyPicker is shown and a
+// company must be chosen before saving.
+export default function TaskModal({ isOpen = true, activity, companyId, contactName, onClose, onSaved, onActivitySaved }) {
   const { user }  = useAuth()
+  const isEdit = !!activity
   const [users, setUsers] = useState([])
   const { dragRef, pos } = useDraggable()
 
-  const [taskName,  setTaskName]  = useState('')
-  const [body,      setBody]      = useState('')
-  const [dueDate,   setDueDate]   = useState(tomorrowStr())
-  const [priority,  setPriority]  = useState('none')
-  const [taskStatus, setTaskStatus] = useState('not_started')
-  const [assignedTo, setAssignedTo] = useState(user?.id || '')
+  const [pickedCompanyId, setPickedCompanyId]     = useState(isEdit ? activity.companyId : (companyId || ''))
+  const [pickedCompanyName, setPickedCompanyName] = useState(isEdit ? (activity.company?.name || '') : '')
+  const [taskName,  setTaskName]  = useState(isEdit ? (activity.title || '') : '')
+  const [body,      setBody]      = useState(isEdit ? (activity.body || '') : '')
+  const [dueDate,   setDueDate]   = useState(isEdit ? (activity.dueDate ? activity.dueDate.slice(0, 10) : '') : tomorrowStr())
+  const [priority,  setPriority]  = useState(isEdit ? (activity.priority || 'none') : 'none')
+  const [taskStatus, setTaskStatus] = useState(isEdit ? (activity.taskStatus || 'not_started') : 'not_started')
+  const [assignedTo, setAssignedTo] = useState(isEdit ? (activity.assignedToId || '') : (user?.id || ''))
   const [saving,    setSaving]    = useState(false)
   const [error,     setError]     = useState('')
+
+  const needsCompanyPicker = !companyId && !(isEdit && activity.companyId)
 
   useEffect(() => {
     api.get('/users').then(r => setUsers(r.data)).catch(() => {})
@@ -30,23 +42,25 @@ export default function TaskModal({ isOpen = true, companyId, contactName, onClo
 
   const save = async () => {
     if (!taskName.trim()) { setError('Task name is required.'); return }
+    if (needsCompanyPicker && !pickedCompanyId) { setError('Please select a company.'); return }
     setSaving(true); setError('')
     try {
-      const { data } = await api.post('/activities', {
-        type: 'task',
-        companyId,
+      const payload = {
         title:      taskName.trim(),
         body:       body || null,
         dueDate:    dueDate ? new Date(dueDate).toISOString() : null,
         priority,
         taskStatus,
         assignedToId: assignedTo || null,
-      })
+      }
+      const { data } = isEdit
+        ? await api.put(`/activities/${activity.id}`, payload)
+        : await api.post('/activities', { ...payload, type: 'task', companyId: pickedCompanyId })
       if (onSaved) onSaved(data)
       if (onActivitySaved) onActivitySaved(data)
       onClose()
     } catch (e) {
-      setError(e?.response?.data?.message || 'Failed to create task.')
+      setError(e?.response?.data?.message || `Failed to ${isEdit ? 'update' : 'create'} task.`)
     } finally {
       setSaving(false)
     }
@@ -58,13 +72,24 @@ export default function TaskModal({ isOpen = true, companyId, contactName, onClo
     <div className="act-popup-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="act-popup" ref={dragRef} style={{ width: 580, transform: `translate(${pos.x}px, ${pos.y}px)` }}>
         <div className="act-popup-header">
-          <div className="act-popup-title"><CheckSquare size={15} /> Create task{contactName ? ` — ${contactName}` : ''}</div>
+          <div className="act-popup-title"><CheckSquare size={15} /> {isEdit ? 'Edit task' : 'Create task'}{contactName ? ` — ${contactName}` : ''}</div>
           <div className="act-popup-header-actions">
             <button className="act-popup-icon-btn" onClick={onClose}><X size={15} /></button>
           </div>
         </div>
 
         <div className="act-popup-body">
+          {needsCompanyPicker && (
+            <div className="act-form-group" style={{ marginBottom: 12 }}>
+              <label>Company *</label>
+              <CompanyPicker
+                value={pickedCompanyId}
+                label={pickedCompanyName}
+                onChange={(id, name) => { setPickedCompanyId(id); setPickedCompanyName(name) }}
+              />
+            </div>
+          )}
+
           <div className="act-form-group" style={{ marginBottom: 12 }}>
             <label>Task name *</label>
             <input type="text" value={taskName} onChange={e => setTaskName(e.target.value)} placeholder="e.g. Follow up with contact" autoFocus />
@@ -114,7 +139,7 @@ export default function TaskModal({ isOpen = true, companyId, contactName, onClo
           <div className="act-popup-footer-right">
             <button className="btn-act-cancel" onClick={onClose}>Cancel</button>
             <button className="btn-act-save" onClick={save} disabled={saving}>
-              <CheckSquare size={13} /> {saving ? 'Saving…' : 'Create task'}
+              <CheckSquare size={13} /> {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create task')}
             </button>
           </div>
         </div>

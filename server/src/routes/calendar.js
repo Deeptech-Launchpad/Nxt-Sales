@@ -19,7 +19,7 @@ function getOAuth2Client(account) {
 
 // POST /api/calendar/schedule
 router.post('/schedule', auth, async (req, res) => {
-  const { title, startTime, endTime, description, location, attendees, companyId } = req.body
+  const { title, startTime, endTime, description, location, attendees, companyId, assignedToId } = req.body
 
   if (!title || !startTime) {
     return res.status(400).json({ message: 'Title and start time are required.' })
@@ -43,8 +43,12 @@ router.post('/schedule', auth, async (req, res) => {
         meetingStatus: 'scheduled',
         location:      location  || null,
         participants:  Array.isArray(attendees) ? attendees.join(', ') : (attendees || null),
+        assignedToId:  assignedToId || null,
       },
-      include: { user: { select: { id: true, name: true, email: true } } },
+      include: {
+        user:       { select: { id: true, name: true, email: true } },
+        assignedTo: { select: { id: true, name: true, email: true } },
+      },
     })
     return res.status(201).json({ ...activity, googleMeet: false })
   }
@@ -136,8 +140,12 @@ router.post('/schedule', auth, async (req, res) => {
         location:      location || null,
         participants:  attendeeList.map(a => a.email).join(', ') || null,
         meetLink:      meetLink,
+        assignedToId:  assignedToId || null,
       },
-      include: { user: { select: { id: true, name: true, email: true } } },
+      include: {
+        user:       { select: { id: true, name: true, email: true } },
+        assignedTo: { select: { id: true, name: true, email: true } },
+      },
     })
 
     res.status(201).json({ ...activity, googleMeet: true, meetLink })

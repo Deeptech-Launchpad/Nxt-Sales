@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { X, Calendar, Video, CheckCircle, ExternalLink } from 'lucide-react'
 import api from '../../api/client'
+import { useAuth } from '../../context/AuthContext'
 import { useDraggable } from '../../hooks/useDraggable'
+import CompanyPicker from '../CompanyPicker'
 import '../../styles/activity-modals.css'
 
 function todayStr() {
@@ -14,8 +16,18 @@ function addMinutes(isoStr, minutes) {
   return d.toISOString().slice(0, 16)
 }
 
+const DURATION_OPTIONS = ['15', '30', '45', '60', '90', '120']
+
+// Pass `activity` (an existing meeting Activity record) to edit it —
+// otherwise a new meeting is created. Edit mode always uses the plain/manual
+// save path (PUT /activities/:id), never the Google Meet scheduling path —
+// rescheduling a live Meet/Calendar event is out of scope here. `companyId`
+// pre-links to a company (Company Detail always supplies this); when neither
+// `activity` nor `companyId` carries one (opened from the global Meetings
+// dashboard with nothing pre-selected), a CompanyPicker is shown.
 export default function MeetingModal({
   isOpen = true,
+  activity,
   companyId,
   contactName,
   contactEmail,
@@ -23,44 +35,76 @@ export default function MeetingModal({
   onSaved,
   onActivitySaved,
 }) {
+  const { user } = useAuth()
+  const isEdit = !!activity
   const { dragRef, pos } = useDraggable()
 
   const [gmailConnected, setGmailConnected] = useState(false)
   const [useGoogleMeet,  setUseGoogleMeet]  = useState(false)
+  const [users, setUsers] = useState([])
 
-  const [title,        setTitle]        = useState('')
-  const [start,        setStart]        = useState(todayStr())
-  const [durationM,    setDurationM]    = useState('30')
-  const [location,     setLocation]     = useState('')
-  const [attendees,    setAttendees]    = useState(contactEmail || '')
-  const [status,       setStatus]       = useState('scheduled')
-  const [body,         setBody]         = useState('')
+  const [pickedCompanyId, setPickedCompanyId]     = useState(isEdit ? activity.companyId : (companyId || ''))
+  const [pickedCompanyName, setPickedCompanyName] = useState(isEdit ? (activity.company?.name || '') : '')
+
+  const editDurationM = isEdit && activity.startTime && activity.endTime
+    ? String(Math.max(5, Math.round((new Date(activity.endTime) - new Date(activity.startTime)) / 60000)))
+    : '30'
+
+  const [title,        setTitle]        = useState(isEdit ? (activity.title || '') : '')
+  const [start,        setStart]        = useState(isEdit && activity.startTime ? activity.startTime.slice(0, 16) : todayStr())
+  const [durationM,    setDurationM]    = useState(editDurationM)
+  const [location,     setLocation]     = useState(isEdit ? (activity.location || '') : '')
+  const [attendees,    setAttendees]    = useState(isEdit ? (activity.participants || '') : (contactEmail || ''))
+  const [status,       setStatus]       = useState(isEdit ? (activity.meetingStatus || 'scheduled') : 'scheduled')
+  const [body,         setBody]         = useState(isEdit ? (activity.body || '') : '')
+  const [assignedTo,   setAssignedTo]   = useState(isEdit ? (activity.assignedToId || '') : (user?.id || ''))
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState('')
+
+  const needsCompanyPicker = !companyId && !(isEdit && activity.companyId)
 
   // Result after Google Meet scheduling
   const [savedMeetLink, setSavedMeetLink] = useState(null)
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || isEdit) return // edit mode never offers the Google Meet path
     api.get('/email/status')
       .then(r => {
         setGmailConnected(r.data.connected)
         if (r.data.connected) setUseGoogleMeet(true)
       })
       .catch(() => setGmailConnected(false))
-  }, [isOpen])
+  }, [isOpen, isEdit])
+
+  useEffect(() => {
+    api.get('/users').then(r => setUsers(r.data)).catch(() => {})
+  }, [])
 
   const endTime = addMinutes(start, Number(durationM))
 
   const save = async () => {
     if (!title.trim()) { setError('Title is required.'); return }
+    if (needsCompanyPicker && !pickedCompanyId) { setError('Please select a company.'); return }
     setSaving(true); setError('')
 
     try {
       let data
 
-      if (useGoogleMeet && gmailConnected) {
+      if (isEdit) {
+        const startTime = new Date(start)
+        const endTimeDate = new Date(startTime.getTime() + Number(durationM) * 60000)
+        const res = await api.put(`/activities/${activity.id}`, {
+          title: title.trim(),
+          body: body || null,
+          startTime: startTime.toISOString(),
+          endTime: endTimeDate.toISOString(),
+          meetingStatus: status,
+          location: location || null,
+          participants: attendees || null,
+          assignedToId: assignedTo || null,
+        })
+        data = res.data
+      } else if (useGoogleMeet && gmailConnected) {
         // Schedule via Google Calendar + generate Meet link
         const startDate = new Date(start)
         const endDate   = new Date(startDate.getTime() + Number(durationM) * 60000)
@@ -71,7 +115,8 @@ export default function MeetingModal({
           description: body || null,
           location:    location || null,
           attendees:   attendees,
-          companyId,
+          companyId: pickedCompanyId,
+          assignedToId: assignedTo || null,
         })
         data = res.data
 
@@ -93,7 +138,7 @@ export default function MeetingModal({
         const endTimeDate = new Date(startTime.getTime() + Number(durationM) * 60000)
         const res = await api.post('/activities', {
           type: 'meeting',
-          companyId,
+          companyId: pickedCompanyId,
           title: title.trim(),
           body: body || null,
           startTime: startTime.toISOString(),
@@ -101,6 +146,7 @@ export default function MeetingModal({
           meetingStatus: status,
           location: location || null,
           participants: attendees || null,
+          assignedToId: assignedTo || null,
         })
         data = res.data
       }
@@ -109,7 +155,7 @@ export default function MeetingModal({
       if (onActivitySaved) onActivitySaved(data)
       onClose()
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to save meeting.')
+      setError(err?.response?.data?.message || `Failed to ${isEdit ? 'update' : 'save'} meeting.`)
     } finally {
       setSaving(false)
     }
@@ -162,7 +208,7 @@ export default function MeetingModal({
 
         <div className="act-popup-header">
           <div className="act-popup-title">
-            <Calendar size={15} /> {useGoogleMeet ? 'Schedule meeting' : 'Log a meeting'}
+            <Calendar size={15} /> {isEdit ? 'Edit meeting' : (useGoogleMeet ? 'Schedule meeting' : 'Log a meeting')}
             {contactName ? ` — ${contactName}` : ''}
           </div>
           <div className="act-popup-header-actions">
@@ -188,6 +234,17 @@ export default function MeetingModal({
         )}
 
         <div className="act-popup-body">
+          {needsCompanyPicker && (
+            <div className="act-form-group" style={{ marginBottom: 12 }}>
+              <label>Company *</label>
+              <CompanyPicker
+                value={pickedCompanyId}
+                label={pickedCompanyName}
+                onChange={(id, name) => { setPickedCompanyId(id); setPickedCompanyName(name) }}
+              />
+            </div>
+          )}
+
           <div className="act-form-group" style={{ marginBottom: 12 }}>
             <label>Title *</label>
             <input
@@ -207,7 +264,7 @@ export default function MeetingModal({
             <div className="act-form-group" style={{ maxWidth: 140 }}>
               <label>Duration (min)</label>
               <select value={durationM} onChange={e => setDurationM(e.target.value)}>
-                {['15', '30', '45', '60', '90', '120'].map(v => (
+                {(DURATION_OPTIONS.includes(durationM) ? DURATION_OPTIONS : [durationM, ...DURATION_OPTIONS]).map(v => (
                   <option key={v} value={v}>{v} min</option>
                 ))}
               </select>
@@ -222,6 +279,14 @@ export default function MeetingModal({
                 </select>
               </div>
             )}
+          </div>
+
+          <div className="act-form-group" style={{ marginBottom: 12 }}>
+            <label>Assign to</label>
+            <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
+              <option value="">Unassigned</option>
+              {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+            </select>
           </div>
 
           {useGoogleMeet ? (
@@ -272,7 +337,7 @@ export default function MeetingModal({
 
         <div className="act-popup-footer">
           <div className="act-popup-footer-left">
-            {!gmailConnected && (
+            {!isEdit && !gmailConnected && (
               <span style={{ fontSize: 11, color: '#94a3b8' }}>
                 Connect Gmail to schedule with Google Meet
               </span>
@@ -281,9 +346,11 @@ export default function MeetingModal({
           <div className="act-popup-footer-right">
             <button className="btn-act-cancel" onClick={onClose}>Cancel</button>
             <button className="btn-act-save" onClick={save} disabled={saving}>
-              {useGoogleMeet
-                ? <><Video size={13} /> {saving ? 'Scheduling…' : 'Schedule & Create Meet'}</>
-                : <><Calendar size={13} /> {saving ? 'Saving…' : 'Log meeting'}</>
+              {isEdit
+                ? <><Calendar size={13} /> {saving ? 'Saving…' : 'Save changes'}</>
+                : useGoogleMeet
+                  ? <><Video size={13} /> {saving ? 'Scheduling…' : 'Schedule & Create Meet'}</>
+                  : <><Calendar size={13} /> {saving ? 'Saving…' : 'Log meeting'}</>
               }
             </button>
           </div>

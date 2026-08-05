@@ -9,10 +9,10 @@ const {
 
 const prisma = new PrismaClient()
 
-const STAGES = ['Discussion', 'Pilot', 'Proposal', 'Qualified', 'Negotiation', 'Won', 'Lost']
+const CURRENCIES = ['USD', 'CAD', 'GBP', 'EUR', 'AUD']
 
 // Extended Deal fields (Update 9). Value/stage are the pre-existing columns,
-// reused as "Estimated Deal Value (USD)" / "Deal Stage" rather than adding
+// reused as "Estimated Deal Value" / "Deal Stage" rather than adding
 // duplicate columns.
 const TEXT_FIELDS = [
   'country', 'companyName', 'domainName', 'clientType', 'contactPerson',
@@ -27,10 +27,10 @@ function buildDealData(body) {
   }
   if (body.title !== undefined) data.title = body.title
   if (body.value !== undefined) data.value = Number(body.value) || 0
+  if (body.currency !== undefined) data.currency = CURRENCIES.includes(body.currency) ? body.currency : 'USD'
   if (body.stage !== undefined) data.stage = body.stage || 'Discussion'
   if (body.notes !== undefined) data.notes = body.notes || null
   if (body.companyId !== undefined) data.companyId = body.companyId || null
-  if (body.closeDate !== undefined) data.closeDate = body.closeDate ? new Date(body.closeDate) : null
   return data
 }
 
@@ -61,7 +61,11 @@ router.get('/', auth, async (req, res) => {
     const deals = await prisma.deal.findMany({
       where,
       include: {
-        company: { select: { id: true, name: true } },
+        // ownerId is the linked company's Lead Owner — exposed so the client
+        // can filter "My Deals" (deals on companies I'm the Lead Owner of),
+        // which is a different scope than this route's own ownerId filter
+        // above (deals I personally created/own).
+        company: { select: { id: true, name: true, ownerId: true } },
       },
       orderBy: { createdAt: 'desc' },
     })

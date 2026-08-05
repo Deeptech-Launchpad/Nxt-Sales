@@ -40,6 +40,32 @@
 }
 .detail-back-link:hover { text-decoration: underline; }
 
+/* ── Previous/Next company navigation (mirrors .view-toggle's connected
+   icon-pair pattern from the Companies list, for visual consistency) ── */
+.detail-prevnext {
+  display: flex;
+  gap: 2px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  padding: 2px;
+  flex-shrink: 0;
+}
+.detail-prevnext-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.detail-prevnext-btn:hover:not(:disabled) { background: #fff; color: #e63329; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+.detail-prevnext-btn:disabled { color: #cbd5e1; cursor: not-allowed; }
+
 .detail-actions-btn {
   display: flex;
   align-items: center;
