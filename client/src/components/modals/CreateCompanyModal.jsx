@@ -46,6 +46,34 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
     }
   }, [ownerDropdownOptions, user])
 
+  // Live duplicate pre-check — Company Name and Company URL are checked
+  // independently, as soon as either has a value, instead of only when the
+  // user clicks Create (which used to require Name to be filled in first).
+  // Debounced so it doesn't fire on every keystroke; the token guard drops
+  // a stale response if the fields change again before it comes back. Same
+  // warning banner/state as before — this only changes when it's triggered.
+  const dupCheckToken = useRef(0)
+  useEffect(() => {
+    if (!isOpen) return
+    const name = form.name.trim()
+    const domain = form.domain.trim()
+    if (!name && !domain) { setDuplicate(null); return }
+
+    const token = ++dupCheckToken.current
+    const timer = setTimeout(() => {
+      const params = {}
+      if (name) params.name = name
+      if (domain) params.domain = domain
+      api.get('/companies/check-duplicate', { params })
+        .then(r => {
+          if (token !== dupCheckToken.current) return
+          setDuplicate(r.data.isDuplicate ? r.data.existing : null)
+        })
+        .catch(() => {})
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [form.name, form.domain, isOpen])
+
   const emailByUserId = new Map(users.map(u => [u.id, u.email]))
   const ownerOptions = [
     // ownerDropdownOptions already starts with the permanent "Unassigned"

@@ -43,6 +43,19 @@ function splitCaret(v) {
   return cleanArr(String(v).split('^'))
 }
 
+// Company URL comparison helper for the live duplicate pre-check only (see
+// GET /check-duplicate below) — strips protocol/www/trailing slash so a
+// pasted "https://www.example.com/" is recognized as the same site as a
+// stored "example.com". Not used by the real create/import duplicate
+// checks, which keep comparing the raw stored domain string unchanged.
+function normalizeDomain(v) {
+  if (!v) return ''
+  return String(v).trim().toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/+$/, '')
+}
+
 // In-memory duplicate index for bulk import/preview — replaces a `findFirst`
 // DB round trip per row (the original approach, fine for a handful of rows
 // but a 10,000+ row import made 10,000+ sequential queries, slow enough to
@@ -363,6 +376,59 @@ router.post('/check-duplicates', auth, async (req, res) => {
     })
 
     res.json({ results })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
+// ── GET /api/companies/check-duplicate — live single-record duplicate pre-check ──
+// Read-only. Powers the Create Company form's instant duplicate warning: it
+// used to only fire when the user clicked Create (which requires Company
+// Name to be filled in first, since that's a required field), so pasting a
+// Company URL alone never triggered it. This lets Name and Company URL be
+// checked independently, as soon as either has a value — Company Name stays
+// required to actually CREATE a company, just not to check for one.
+// Name/email/phone matching is the same equality/case-insensitive-name logic
+// as POST / and check-duplicates above. Company URL additionally normalizes
+// both sides (via normalizeDomain) since users paste full URLs in varying
+// formats — a `contains` prefilter keeps this a targeted, bounded query
+// instead of loading the whole company table into memory on every keystroke.
+router.get('/check-duplicate', auth, async (req, res) => {
+  try {
+    const name   = req.query.name  ? String(req.query.name).trim()          : ''
+    const email  = req.query.email ? String(req.query.email).trim().toLowerCase() : ''
+    const phone  = req.query.phone ? String(req.query.phone).trim()         : ''
+    const normalizedDomain = normalizeDomain(req.query.domain)
+
+    const conditions = []
+    if (name)  conditions.push({ name: { equals: name, mode: 'insensitive' } })
+    if (email) conditions.push({ email })
+    if (phone) conditions.push({ phone })
+
+    if (!conditions.length && !normalizedDomain) {
+      return res.json({ isDuplicate: false, existing: null })
+    }
+
+    let existing = null
+    if (conditions.length) {
+      existing = await prisma.company.findFirst({
+        where: { deletedAt: null, OR: conditions },
+        select: { id: true, name: true },
+      })
+    }
+
+    if (!existing && normalizedDomain) {
+      const candidates = await prisma.company.findMany({
+        where: { deletedAt: null, domain: { contains: normalizedDomain, mode: 'insensitive' } },
+        select: { id: true, name: true, domain: true },
+        take: 25,
+      })
+      const hit = candidates.find(c => normalizeDomain(c.domain) === normalizedDomain)
+      if (hit) existing = { id: hit.id, name: hit.name }
+    }
+
+    res.json({ isDuplicate: !!existing, existing })
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: 'Server error.' })
