@@ -433,9 +433,31 @@
   font-size: 11px;
   font-weight: 600;
 }
-.af-badge.overdue  { background: #fef3c7; color: #d97706; }
+.af-badge.overdue  { background: #fef2f2; color: #dc2626; }
 .af-badge.done     { background: #dcfce7; color: #16a34a; }
 .af-badge.sent     { background: #dbeafe; color: #3b82f6; }
+
+/* Note row edit/delete — hidden until the row is hovered, matching the
+   subtle reveal-on-hover pattern already used elsewhere in the app. */
+.af-note-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity .1s;
+}
+.af-item:hover .af-note-actions { opacity: 1; }
+.af-note-action-btn {
+  border: none;
+  background: transparent;
+  padding: 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+}
+.af-note-action-btn:hover { background: #f1f5f9; color: #334155; }
+.af-note-action-btn.danger:hover { background: #fef2f2; color: #ef4444; }
 
 .af-empty {
   display: flex;

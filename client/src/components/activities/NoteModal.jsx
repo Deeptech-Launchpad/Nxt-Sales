@@ -4,10 +4,13 @@ import api from '../../api/client'
 import { useDraggable } from '../../hooks/useDraggable'
 import '../../styles/activity-modals.css'
 
-export default function NoteModal({ isOpen = true, companyId, onClose, onSaved, onActivitySaved }) {
+// Pass `activity` (an existing note Activity record) to edit it — otherwise
+// a new note is created, exactly the same isEdit pattern TaskModal uses.
+export default function NoteModal({ isOpen = true, activity, companyId, onClose, onSaved, onActivitySaved }) {
   const { dragRef, pos } = useDraggable()
-  const [subject, setSubject] = useState('')
-  const [body,    setBody]    = useState('')
+  const isEdit = !!activity
+  const [subject, setSubject] = useState(isEdit ? (activity.title || '') : '')
+  const [body,    setBody]    = useState(isEdit ? (activity.body || '') : '')
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
 
@@ -15,17 +18,15 @@ export default function NoteModal({ isOpen = true, companyId, onClose, onSaved, 
     if (!body.trim()) { setError('Note body is required.'); return }
     setSaving(true); setError('')
     try {
-      const { data } = await api.post('/activities', {
-        type: 'note',
-        companyId,
-        title: subject.trim() || 'Note',
-        body: body.trim(),
-      })
+      const payload = { title: subject.trim() || 'Note', body: body.trim() }
+      const { data } = isEdit
+        ? await api.put(`/activities/${activity.id}`, payload)
+        : await api.post('/activities', { type: 'note', companyId, ...payload })
       if (onSaved) onSaved(data)
       if (onActivitySaved) onActivitySaved(data)
       onClose()
     } catch (e) {
-      setError(e?.response?.data?.message || 'Failed to save note.')
+      setError(e?.response?.data?.message || `Failed to ${isEdit ? 'update' : 'save'} note.`)
     } finally {
       setSaving(false)
     }
@@ -37,7 +38,7 @@ export default function NoteModal({ isOpen = true, companyId, onClose, onSaved, 
     <div className="act-popup-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="act-popup" ref={dragRef} style={{ width: 640, transform: `translate(${pos.x}px, ${pos.y}px)` }}>
         <div className="act-popup-header">
-          <div className="act-popup-title"><FileText size={15} /> Note</div>
+          <div className="act-popup-title"><FileText size={15} /> {isEdit ? 'Edit note' : 'Note'}</div>
           <div className="act-popup-header-actions">
             <button className="act-popup-icon-btn" onClick={onClose}><X size={15} /></button>
           </div>
@@ -90,7 +91,7 @@ export default function NoteModal({ isOpen = true, companyId, onClose, onSaved, 
           <div className="act-popup-footer-right">
             <button className="btn-act-cancel" onClick={onClose}>Cancel</button>
             <button className="btn-act-save" onClick={save} disabled={saving}>
-              {saving ? 'Saving…' : 'Save note'}
+              {saving ? 'Saving…' : (isEdit ? 'Update note' : 'Save note')}
             </button>
           </div>
         </div>

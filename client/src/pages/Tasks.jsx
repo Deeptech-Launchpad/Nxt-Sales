@@ -1,27 +1,49 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Pencil, Trash2, Search } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, AlertTriangle, Clock, CalendarClock, CheckCircle2 } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import TaskModal from '../components/activities/TaskModal'
+import EditColumnsMenu from '../components/EditColumnsMenu'
+import { renderCustomCell } from '../utils/customFieldRender'
 import '../styles/contacts.css'
 
 const PAGE_SIZE = 50
+const COLUMNS_STORAGE_KEY = 'mwz_tasks_visible_columns'
+const DEFAULT_COLUMNS = []
 
-const STATUS_LABELS   = { not_started: 'Pending', in_progress: 'In Progress', completed: 'Completed' }
-const PRIORITY_LABELS = { none: 'None', low: 'Low', medium: 'Medium', high: 'High' }
-// Soft pastel badge palette — background + matching darker text + a faint
-// border in the same hue for definition, instead of a flat alpha overlay.
-const PRIORITY_COLORS = {
-  none:   { bg: '#f1f5f9', text: '#64748b', border: '#e2e8f0' },
-  low:    { bg: '#ecfdf5', text: '#059669', border: '#a7f3d0' },
-  medium: { bg: '#fffbeb', text: '#d97706', border: '#fde68a' },
-  high:   { bg: '#fef2f2', text: '#dc2626', border: '#fecaca' },
+// Today / Overdue / Upcoming replaces the old Pending / In Progress /
+// Completed status model — bucket is derived from dueDate, not a stored
+// field. "Completed" is a 4th, visually-distinct state layered on top of
+// whichever bucket a task's dueDate would otherwise put it in.
+const BUCKETS = [
+  { key: 'today',    label: 'Today',    Icon: Clock },
+  { key: 'overdue',  label: 'Overdue',  Icon: AlertTriangle },
+  { key: 'upcoming', label: 'Upcoming', Icon: CalendarClock },
+  { key: '',         label: 'All',      Icon: null },
+]
+
+// Soft pastel badge palette, same visual language the old status pills used.
+const STATUS_PILL = {
+  completed: { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0', label: 'Completed' },
+  overdue:   { bg: '#fef2f2', text: '#dc2626', border: '#fecaca', label: 'Overdue' },
+  today:     { bg: '#fffbeb', text: '#d97706', border: '#fde68a', label: 'Today' },
+  upcoming:  { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe', label: 'Upcoming' },
 }
-const STATUS_COLORS = {
-  not_started: { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0' },
-  in_progress: { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe' },
-  completed:   { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0' },
+
+// A row's visual status is derived client-side from taskStatus + dueDate —
+// same signal the server buckets on, just recomputed for display so a task
+// fetched under "All" (no server-side bucket) still shows the right pill.
+function deriveStatus(t) {
+  if (t.taskStatus === 'completed') return 'completed'
+  if (!t.dueDate) return 'upcoming'
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startOfTomorrow = new Date(startOfToday.getTime() + 86400000)
+  const due = new Date(t.dueDate)
+  if (due < startOfToday) return 'overdue'
+  if (due < startOfTomorrow) return 'today'
+  return 'upcoming'
 }
 
 // Compact page-number window, same approach Companies.jsx uses — showing
@@ -31,8 +53,9 @@ function pageWindow(current, total) {
   return [...pages].filter(p => p >= 1 && p <= total).sort((a, b) => a - b)
 }
 
-function fmtDate(d) {
-  return d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '--'
+function fmtDateTime(d) {
+  if (!d) return '--'
+  return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
 export default function Tasks() {
@@ -45,19 +68,40 @@ export default function Tasks() {
   const [users, setUsers]     = useState([])
 
   const [taskTab, setTaskTab] = useState('all') // 'all' | 'mine'
-  const [search, setSearch]       = useState('')
-  const [statusFilter, setStatusFilter]     = useState('')
-  const [priorityFilter, setPriorityFilter] = useState('')
+  const [search, setSearch]             = useState('')
+  const [bucket, setBucket]             = useState('today') // '' | 'today' | 'overdue' | 'upcoming'
+  const [showCompleted, setShowCompleted] = useState(false)
   const [assigneeFilter, setAssigneeFilter] = useState('')
 
   const [showCreate, setShowCreate] = useState(false)
   const [editTask, setEditTask]     = useState(null)
 
+  // Toggleable columns (Description, Auto-complete, + every active Task
+  // custom field) — Task/Company/Assigned to/Due date/Status stay fixed,
+  // same reasoning Companies.jsx keeps its own name column non-toggleable.
+  const [taskFields, setTaskFields] = useState([])
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY)) || DEFAULT_COLUMNS } catch { return DEFAULT_COLUMNS }
+  })
+  const saveVisibleColumns = (cols) => {
+    setVisibleColumns(cols)
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(cols))
+  }
+
   const switchTab = (tab) => { setTaskTab(tab); setPage(1) }
 
   useEffect(() => {
     api.get('/users').then(r => setUsers(r.data)).catch(() => {})
+    api.get('/activities/import-fields', { params: { type: 'task' } }).then(r => setTaskFields(r.data.fields || [])).catch(() => {})
   }, [])
+
+  const orderedVisibleFields = taskFields.filter(f => visibleColumns.includes(f.key))
+  const renderTaskCell = (f, t) => {
+    if (f.key.startsWith('custom.')) return renderCustomCell(f.type, t[f.key])
+    if (f.key === 'autoCompleteOverdue') return t.autoCompleteOverdue ? 'On' : 'Off'
+    if (f.key === 'body') return t.body || '--'
+    return t[f.key] ?? '--'
+  }
 
   // "My Tasks" forces assignedToId to the current user, taking priority over
   // the Assigned To filter (which is hidden while that tab is active — see
@@ -72,21 +116,17 @@ export default function Tasks() {
         page,
         limit: PAGE_SIZE,
         ...(search.trim() && { search: search.trim() }),
-        ...(statusFilter && { status: statusFilter }),
+        ...(bucket && { bucket }),
+        ...(showCompleted && { showCompleted: 'true' }),
         ...(effectiveAssigneeId && { assignedToId: effectiveAssigneeId }),
       },
     })
       .then(r => { setTasks(r.data.items || []); setTotal(r.data.total || 0) })
       .catch(() => { setTasks([]); setTotal(0) })
       .finally(() => setLoading(false))
-  }, [page, search, statusFilter, effectiveAssigneeId])
+  }, [page, search, bucket, showCompleted, effectiveAssigneeId])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
-
-  // Priority isn't a server filter (kept client-side over the current page —
-  // status/assignee/search are the high-cardinality filters worth pushing to
-  // the DB; priority only has 4 values and this page is already paginated).
-  const visibleTasks = priorityFilter ? tasks.filter(t => (t.priority || 'none') === priorityFilter) : tasks
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -105,7 +145,9 @@ export default function Tasks() {
     else setEditTask(t)
   }
 
-  const clearFilters = () => { setSearch(''); setStatusFilter(''); setPriorityFilter(''); setAssigneeFilter(''); setPage(1) }
+  const switchBucket = (b) => { setBucket(b); setPage(1) }
+  const clearFilters = () => { setSearch(''); setBucket('today'); setShowCompleted(false); setAssigneeFilter(''); setPage(1) }
+  const filtersActive = search || bucket !== 'today' || showCompleted || assigneeFilter
 
   const cellTh = { padding: '13px 18px', textAlign: 'left', fontWeight: 700, color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.5px', whiteSpace: 'nowrap' }
   const cellTd = { padding: '14px 18px', color: '#334155', whiteSpace: 'nowrap', fontSize: 14 }
@@ -147,6 +189,30 @@ export default function Tasks() {
         </button>
       </div>
 
+      {/* Today / Overdue / Upcoming / All — replaces the old status filter */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {BUCKETS.map(({ key, label, Icon }) => {
+          const active = bucket === key
+          const c = key ? STATUS_PILL[key] : { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0' }
+          return (
+            <button
+              key={key || 'all'}
+              onClick={() => switchBucket(key)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                fontFamily: 'inherit', transition: 'all .12s',
+                border: `1.5px solid ${active ? c.border : '#e2e8f0'}`,
+                background: active ? c.bg : '#fff',
+                color: active ? c.text : '#64748b',
+              }}
+            >
+              {Icon && <Icon size={13} />} {label}
+            </button>
+          )
+        })}
+      </div>
+
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ position: 'relative' }}>
           <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
@@ -161,16 +227,6 @@ export default function Tasks() {
           />
         </div>
 
-        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} style={filterSelect}>
-          <option value="">All statuses</option>
-          {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-
-        <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} style={filterSelect}>
-          <option value="">All priorities</option>
-          {Object.entries(PRIORITY_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-
         {taskTab === 'all' && (
           <select value={assigneeFilter} onChange={e => { setAssigneeFilter(e.target.value); setPage(1) }} style={filterSelect}>
             <option value="">All assignees</option>
@@ -178,11 +234,20 @@ export default function Tasks() {
           </select>
         )}
 
-        {(search || statusFilter || priorityFilter || assigneeFilter) && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#334155', cursor: 'pointer', userSelect: 'none' }}>
+          <input type="checkbox" checked={showCompleted} onChange={e => { setShowCompleted(e.target.checked); setPage(1) }} style={{ width: 14, height: 14, accentColor: '#0d9488' }} />
+          Show completed
+        </label>
+
+        {filtersActive && (
           <button onClick={clearFilters} style={{ border: 'none', background: 'transparent', color: '#e63329', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Clear filters
           </button>
         )}
+
+        <div style={{ marginLeft: 'auto' }}>
+          <EditColumnsMenu fields={taskFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} alwaysShownKey="title" />
+        </div>
       </div>
 
       <div style={{ overflowX: 'auto', border: '1px solid #eef1f5', borderRadius: 10 }}>
@@ -191,40 +256,48 @@ export default function Tasks() {
             <tr>
               <th style={cellTh}>Task</th>
               <th style={cellTh}>Company</th>
-              <th style={cellTh}>Due date</th>
+              <th style={cellTh}>Due date & time</th>
               <th style={cellTh}>Assigned to</th>
-              <th style={cellTh}>Priority</th>
               <th style={cellTh}>Status</th>
+              {orderedVisibleFields.map(f => <th key={f.key} style={cellTh}>{f.label}</th>)}
               <th style={cellTh}></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Loading tasks…</td></tr>
-            ) : visibleTasks.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+              <tr><td colSpan={6 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Loading tasks…</td></tr>
+            ) : tasks.length === 0 ? (
+              <tr><td colSpan={6 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
                 {total === 0 ? 'No tasks yet.' : 'No tasks match your filters.'}
               </td></tr>
-            ) : visibleTasks.map((t, i) => (
-              <tr key={t.id} style={{ borderBottom: i < visibleTasks.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenTask(t)}>{t.title || '(untitled)'}</td>
-                <td style={cellTd}>{t.company?.name || '--'}</td>
-                <td style={cellTd}>{fmtDate(t.dueDate)}</td>
-                <td style={cellTd}>{t.assignedTo?.name || 'Unassigned'}</td>
-                <td style={cellTd}><span style={pillStyle(PRIORITY_COLORS[t.priority || 'none'])}>{PRIORITY_LABELS[t.priority || 'none']}</span></td>
-                <td style={cellTd}><span style={pillStyle(STATUS_COLORS[t.taskStatus || 'not_started'])}>{STATUS_LABELS[t.taskStatus || 'not_started']}</span></td>
-                <td style={{ ...cellTd, display: 'flex', gap: 4 }}>
-                  <button
-                    onClick={() => setEditTask(t)} title="Edit task" style={{ ...iconBtn, color: '#64748b' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  ><Pencil size={14} /></button>
-                  <button
-                    onClick={() => handleDelete(t.id)} title="Delete task" style={{ ...iconBtn, color: '#ef4444' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#fef2f2'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  ><Trash2 size={14} /></button>
-                </td>
-              </tr>
-            ))}
+            ) : tasks.map((t, i) => {
+              const status = deriveStatus(t)
+              return (
+                <tr key={t.id} style={{ borderBottom: i < tasks.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                  <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenTask(t)}>{t.title || '(untitled)'}</td>
+                  <td style={cellTd}>{t.company?.name || '--'}</td>
+                  <td style={cellTd}>{fmtDateTime(t.dueDate)}</td>
+                  <td style={cellTd}>{t.assignedTo?.name || 'Unassigned'}</td>
+                  <td style={cellTd}>
+                    <span style={pillStyle(STATUS_PILL[status])}>
+                      {status === 'completed' && <CheckCircle2 size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}
+                      {STATUS_PILL[status].label}
+                    </span>
+                  </td>
+                  {orderedVisibleFields.map(f => <td key={f.key} style={cellTd}>{renderTaskCell(f, t)}</td>)}
+                  <td style={{ ...cellTd, display: 'flex', gap: 4 }}>
+                    <button
+                      onClick={() => setEditTask(t)} title="Edit task" style={{ ...iconBtn, color: '#64748b' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    ><Pencil size={14} /></button>
+                    <button
+                      onClick={() => handleDelete(t.id)} title="Delete task" style={{ ...iconBtn, color: '#ef4444' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#fef2f2'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    ><Trash2 size={14} /></button>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

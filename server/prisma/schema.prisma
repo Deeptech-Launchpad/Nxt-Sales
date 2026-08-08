@@ -95,6 +95,11 @@ model Deal {
   opportunityType     String?
   strategicImportance String?
   expectedOutcome     String?
+  // Independent of stage — a deal can be flagged POC and/or Proposal Shared
+  // regardless of which pipeline stage it's currently in. Non-nullable with
+  // a false default, same convention as Company.isPinned.
+  poc            Boolean @default(false)
+  proposalShared Boolean @default(false)
   company   Company?  @relation(fields: [companyId], references: [id])
   owner     User      @relation(fields: [ownerId], references: [id])
 
@@ -123,6 +128,10 @@ model Activity {
   dueDate       DateTime?
   priority      String?
   taskStatus    String?
+  // Opt-in per-task: when true, a background sweep marks this task
+  // completed once its dueDate has passed. Off by default — a task is
+  // never auto-completed unless this was explicitly turned on for it.
+  autoCompleteOverdue Boolean @default(false)
   assignedToId  String?
   meetLink      String?
   messageId     String?
@@ -154,6 +163,7 @@ model Activity {
   @@index([threadId])
   @@index([matchedCompanyEmail])
   @@index([assignedToId])
+  @@index([dueDate])
 }
 
 model CallLog {

@@ -5,14 +5,20 @@ const { VALID_TYPES } = require('../utils/customFieldValues')
 
 const prisma = new PrismaClient()
 
-const VALID_ENTITIES = ['Company', 'Deal']
+const VALID_ENTITIES = ['Company', 'Deal', 'Task', 'Meeting']
+const ENTITY_LIST_LABEL = VALID_ENTITIES.join(', ')
 
 // Real scalar columns on the target Prisma model — a custom field's `key`
 // can never collide with one of these (Built-in fields are structurally
 // protected: they're never CustomFieldDefinition rows, and a custom field
-// can never impersonate/shadow one).
+// can never impersonate/shadow one). Task and Meeting aren't real Prisma
+// models — they're Activity rows discriminated by `type` — so both map to
+// the actual Activity model here while every other lookup in this file
+// keeps using the literal 'Task'/'Meeting' string for the
+// CustomFieldDefinition.entity column and the custom.<key> convention.
 function builtInColumnNames(entity) {
-  const model = Prisma.dmmf.datamodel.models.find(m => m.name === entity)
+  const modelName = (entity === 'Task' || entity === 'Meeting') ? 'Activity' : entity
+  const model = Prisma.dmmf.datamodel.models.find(m => m.name === modelName)
   return new Set(model ? model.fields.filter(f => f.kind === 'scalar').map(f => f.name) : [])
 }
 
@@ -33,7 +39,7 @@ function slugifyToCamelCase(label) {
 router.get('/:entity', auth, async (req, res) => {
   try {
     const { entity } = req.params
-    if (!VALID_ENTITIES.includes(entity)) return res.status(400).json({ message: 'entity must be Company or Deal.' })
+    if (!VALID_ENTITIES.includes(entity)) return res.status(400).json({ message: `entity must be one of: ${ENTITY_LIST_LABEL}.` })
     const fields = await prisma.customFieldDefinition.findMany({ where: { entity, enabled: true }, orderBy: { order: 'asc' } })
     res.json(fields)
   } catch (err) {
@@ -47,7 +53,7 @@ router.get('/:entity', auth, async (req, res) => {
 router.get('/:entity/all', auth, async (req, res) => {
   try {
     const { entity } = req.params
-    if (!VALID_ENTITIES.includes(entity)) return res.status(400).json({ message: 'entity must be Company or Deal.' })
+    if (!VALID_ENTITIES.includes(entity)) return res.status(400).json({ message: `entity must be one of: ${ENTITY_LIST_LABEL}.` })
     const fields = await prisma.customFieldDefinition.findMany({ where: { entity }, orderBy: { order: 'asc' } })
     res.json(fields)
   } catch (err) {
@@ -62,7 +68,7 @@ router.post('/', auth, async (req, res) => {
     const { entity, label, type, required, helpText } = req.body
     let { key } = req.body
 
-    if (!VALID_ENTITIES.includes(entity)) return res.status(400).json({ message: 'entity must be Company or Deal.' })
+    if (!VALID_ENTITIES.includes(entity)) return res.status(400).json({ message: `entity must be one of: ${ENTITY_LIST_LABEL}.` })
     if (!label?.trim()) return res.status(400).json({ message: 'label is required.' })
     if (!VALID_TYPES.includes(type)) return res.status(400).json({ message: `type must be one of: ${VALID_TYPES.join(', ')}.` })
 

@@ -35,11 +35,59 @@ const CONFIG = {
       serviceRequirement: 'Service Requirements', clientWebsiteUrl: 'Client Website URL',
       opportunityType: 'Opportunity Type', strategicImportance: 'Strategic Importance',
       expectedOutcome: 'Expected Outcome', notes: 'Notes',
+      poc: 'POC', proposalShared: 'Proposal Shared',
     },
     order: ['title', 'country', 'companyName', 'domainName', 'clientType',
       'contactPerson', 'contactPhone', 'contactEmail', 'serviceRequirement',
       'clientWebsiteUrl', 'opportunityType', 'value', 'currency', 'strategicImportance',
-      'expectedOutcome', 'stage', 'notes'],
+      'expectedOutcome', 'stage', 'poc', 'proposalShared', 'notes'],
+  },
+  // Task and Meeting are both Activity rows (type-discriminated), not real
+  // Prisma models — see the dmmfModelName mapping in getImportFields below.
+  // `exclude` here is deliberately an allow-list-by-omission: Activity has
+  // ~30 scalar columns shared across every activity type (email/call fields
+  // etc.) that make no sense as a Task/Meeting column, so everything not
+  // explicitly relevant is excluded rather than surfaced by default.
+  Task: {
+    requiredKey: 'title',
+    exclude: [
+      'id', 'type', 'userId', 'companyId', 'assignedToId', 'createdAt', 'updatedAt',
+      // Not task-relevant (email/call/meeting-only fields on the shared Activity row):
+      'toEmail', 'fromEmail', 'subject', 'emailStatus', 'direction', 'duration', 'outcome',
+      'startTime', 'endTime', 'meetingStatus', 'location', 'participants', 'meetLink',
+      'messageId', 'threadId', 'trackingId', 'openCount', 'firstOpenedAt', 'lastOpenedAt',
+      'openHistory', 'recordingUrl', 'callLogId', 'matchedCompanyEmail', 'ccEmail', 'attachments',
+      // Removed from the Tasks UI (Today/Overdue/Upcoming redesign) — excluded
+      // here too so Edit Columns can't resurface what was deliberately dropped.
+      'priority',
+      // Already always-shown as their own dedicated, non-toggleable table
+      // columns (Company via relation, Assigned To via relation, Due Date &
+      // Time, Status as a derived bucket from taskStatus+dueDate) — same
+      // reasoning Company excludes ownerId in favor of the synthetic Lead
+      // Owner column.
+      'taskStatus', 'dueDate',
+    ],
+    labels: { title: 'Task', body: 'Description', autoCompleteOverdue: 'Auto-complete when overdue' },
+    order: ['title', 'body', 'autoCompleteOverdue'],
+  },
+  Meeting: {
+    requiredKey: 'title',
+    exclude: [
+      'id', 'type', 'userId', 'companyId', 'assignedToId', 'createdAt', 'updatedAt',
+      // Not meeting-relevant (email/task-only fields on the shared Activity row):
+      'toEmail', 'fromEmail', 'subject', 'emailStatus', 'direction', 'duration', 'outcome',
+      'dueDate', 'priority', 'taskStatus', 'autoCompleteOverdue',
+      'messageId', 'threadId', 'trackingId', 'openCount', 'firstOpenedAt', 'lastOpenedAt',
+      'openHistory', 'recordingUrl', 'callLogId', 'matchedCompanyEmail', 'ccEmail', 'attachments',
+      // Already always-shown as dedicated, non-toggleable table columns
+      // (Date & time uses startTime; Status is meetingStatus).
+      'meetingStatus', 'startTime',
+    ],
+    labels: {
+      title: 'Meeting', body: 'Description', endTime: 'End Time',
+      location: 'Location', participants: 'Participants', meetLink: 'Meet Link',
+    },
+    order: ['title', 'body', 'endTime', 'location', 'participants', 'meetLink'],
   },
 }
 
@@ -50,7 +98,13 @@ function titleCase(s) {
 
 async function getImportFields(modelName) {
   const cfg = CONFIG[modelName] || { requiredKey: null, exclude: ['id', 'createdAt', 'updatedAt'], labels: {}, order: [] }
-  const model = Prisma.dmmf.datamodel.models.find(m => m.name === modelName)
+  // Task/Meeting aren't real Prisma models — both are Activity rows
+  // (type-discriminated) — so the DMMF scalar-field introspection below
+  // reads the actual Activity model, while every other lookup in this
+  // function (CONFIG, CustomFieldDefinition.entity) keeps using the literal
+  // 'Task'/'Meeting' string, matching the same split used in customFields.js.
+  const dmmfModelName = (modelName === 'Task' || modelName === 'Meeting') ? 'Activity' : modelName
+  const model = Prisma.dmmf.datamodel.models.find(m => m.name === dmmfModelName)
   if (!model) return { requiredKey: cfg.requiredKey, fields: [] }
 
   // Tags the 3 built-in fields whose values come from DropdownOption (Import's

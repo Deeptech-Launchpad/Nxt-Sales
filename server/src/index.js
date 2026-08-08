@@ -19,6 +19,7 @@ const dropdownRoutes  = require('./routes/dropdowns')
 const customFieldRoutes = require('./routes/customFields')
 const dashboardRoutes = require('./routes/dashboard')
 const { startRecycleBinPurgeSweep } = require('./jobs/purgeRecycleBin')
+const { startAutoCompleteOverdueTasksSweep } = require('./jobs/autoCompleteOverdueTasks')
 const { initSocket } = require('./realtime/socket')
 
 require('./config/passport')
@@ -58,6 +59,7 @@ app.get('/health', (_, res) => res.json({ status: 'ok', app: 'NXT Sales' }))
 const server = app.listen(PORT, () => {
   console.log(`✓ Server running on http://localhost:${PORT}`)
   startRecycleBinPurgeSweep()
+  startAutoCompleteOverdueTasksSweep()
 })
 
 initSocket(server)

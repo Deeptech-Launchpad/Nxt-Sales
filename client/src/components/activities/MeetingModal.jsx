@@ -4,6 +4,7 @@ import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 import { useDraggable } from '../../hooks/useDraggable'
 import CompanyPicker from '../CompanyPicker'
+import CustomFieldsSection, { extractCustomFieldValues } from '../CustomFieldsSection'
 import '../../styles/activity-modals.css'
 
 function todayStr() {
@@ -58,6 +59,7 @@ export default function MeetingModal({
   const [status,       setStatus]       = useState(isEdit ? (activity.meetingStatus || 'scheduled') : 'scheduled')
   const [body,         setBody]         = useState(isEdit ? (activity.body || '') : '')
   const [assignedTo,   setAssignedTo]   = useState(isEdit ? (activity.assignedToId || '') : (user?.id || ''))
+  const [customFields, setCustomFields] = useState(isEdit ? extractCustomFieldValues(activity) : {})
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState('')
 
@@ -102,6 +104,7 @@ export default function MeetingModal({
           location: location || null,
           participants: attendees || null,
           assignedToId: assignedTo || null,
+          customFields,
         })
         data = res.data
       } else if (useGoogleMeet && gmailConnected) {
@@ -117,6 +120,7 @@ export default function MeetingModal({
           attendees:   attendees,
           companyId: pickedCompanyId,
           assignedToId: assignedTo || null,
+          customFields,
         })
         data = res.data
 
@@ -147,6 +151,7 @@ export default function MeetingModal({
           location: location || null,
           participants: attendees || null,
           assignedToId: assignedTo || null,
+          customFields,
         })
         data = res.data
       }
@@ -331,6 +336,12 @@ export default function MeetingModal({
               placeholder="What will be discussed?"
             />
           </div>
+
+          <CustomFieldsSection
+            entity="Meeting"
+            values={customFields}
+            onChange={(key, value) => setCustomFields(p => ({ ...p, [key]: value }))}
+          />
 
           {error && <p style={{ color: '#ef4444', fontSize: 12, marginTop: 6, fontWeight: 500 }}>{error}</p>}
         </div>

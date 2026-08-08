@@ -3,9 +3,11 @@ import {
   FileText, Mail, Phone, Calendar, CheckSquare,
   Search, SlidersHorizontal, AlertTriangle, ChevronDown, ChevronRight,
   Video, ArrowUpRight, ArrowDownLeft, ExternalLink, RefreshCw, Eye, Play,
+  Pencil, Trash2,
 } from 'lucide-react'
 import api from '../../api/client'
 import EmailConversations from './EmailConversations'
+import NoteModal from './NoteModal'
 import '../../styles/activity-modals.css'
 
 const SUBTABS = ['All activities', 'Notes', 'Emails', 'Calls', 'Tasks', 'Meetings']
@@ -341,8 +343,11 @@ function EmailThreadCard({ thread }) {
   )
 }
 
-// Regular card for non-email activities (unchanged behaviour)
-function ActivityCard({ act }) {
+// Regular card for non-email activities (unchanged behaviour). onEditNote/
+// onDeleteNote are only ever invoked for act.type === 'note' — every other
+// activity type (call/meeting/task) renders exactly as before, with no
+// action icons, so this can't affect Calls/Emails/Meetings/Tasks.
+function ActivityCard({ act, onEditNote, onDeleteNote }) {
   const [expanded, setExpanded] = useState(false)
   const { Icon, cls } = ICON_MAP[act.type] || ICON_MAP.note
 
@@ -433,6 +438,24 @@ function ActivityCard({ act }) {
             {isDone    && <span className="af-badge done"    style={{ marginLeft: 6 }}>✓ Done</span>}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+            {act.type === 'note' && (
+              <div className="af-note-actions">
+                <button
+                  className="af-note-action-btn"
+                  title="Edit note"
+                  onClick={e => { e.stopPropagation(); onEditNote && onEditNote(act) }}
+                >
+                  <Pencil size={12} />
+                </button>
+                <button
+                  className="af-note-action-btn danger"
+                  title="Delete note"
+                  onClick={e => { e.stopPropagation(); onDeleteNote && onDeleteNote(act.id) }}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            )}
             <span className="af-time">{formatDate(act.createdAt)} at {formatTime(act.createdAt)}</span>
             {act.user?.name && <span style={{ fontSize: 11, color: '#94a3b8' }}>{act.user.name}</span>}
           </div>
@@ -476,6 +499,7 @@ export default function ActivityFeed({ companyId, companyName, contactEmail, onA
   const [query,       setQuery]       = useState('')
   const [acts,        setActs]        = useState([])
   const [loading,     setLoading]     = useState(true)
+  const [editingNote, setEditingNote] = useState(null) // the note Activity being edited, or null
 
   // Guards against out-of-order responses overwriting newer data.
   const reqSeq = useRef(0)
@@ -492,6 +516,21 @@ export default function ActivityFeed({ companyId, companyName, contactEmail, onA
   }, [companyId, subTab, refreshKey])
 
   useEffect(() => { fetchActs() }, [fetchActs])
+
+  // Only ever called with a note's id (see ActivityCard) — deletes exactly
+  // that one Activity row via the existing generic DELETE /activities/:id
+  // route, same call the Tasks/Meetings dashboards already use for their
+  // own delete icons.
+  const handleDeleteNote = async (noteId) => {
+    if (!window.confirm('Delete this note? This action cannot be undone.')) return
+    try {
+      await api.delete(`/activities/${noteId}`)
+      fetchActs()
+    } catch {
+      // no-op — matches the lightweight error handling style already used
+      // for delete elsewhere in this app (Tasks.jsx/Meetings.jsx)
+    }
+  }
 
   const displayList = buildDisplayList(acts, query)
   const groups      = groupByDate(displayList)
@@ -561,7 +600,8 @@ export default function ActivityFeed({ companyId, companyName, contactEmail, onA
                 {items.map(item =>
                   item._type === 'thread'
                     ? <EmailThreadCard key={item.threadId} thread={item} />
-                    : <ActivityCard    key={item.id}       act={item}    />
+                    : <ActivityCard    key={item.id}       act={item}
+                        onEditNote={setEditingNote} onDeleteNote={handleDeleteNote} />
                 )}
               </div>
             ))}
@@ -569,6 +609,15 @@ export default function ActivityFeed({ companyId, companyName, contactEmail, onA
         )}
       </div>
       </>
+      )}
+
+      {editingNote && (
+        <NoteModal
+          activity={editingNote}
+          companyId={companyId}
+          onClose={() => setEditingNote(null)}
+          onSaved={() => { setEditingNote(null); fetchActs() }}
+        />
       )}
     </div>
   )

@@ -8,6 +8,7 @@ import EditColumnsMenu from '../components/EditColumnsMenu'
 import DealBoard from '../components/DealBoard'
 import { renderCustomCell } from '../utils/customFieldRender'
 import { formatCurrency } from '../utils/formatCurrency'
+import { dealFlagsLabel } from '../utils/dealFlags'
 
 const COLUMNS_STORAGE_KEY = 'mwz_deals_visible_columns'
 const VIEW_STORAGE_KEY = 'mwz_deals_view_mode'
@@ -18,13 +19,18 @@ const VIEW_STORAGE_KEY = 'mwz_deals_view_mode'
 const DEFAULT_COLUMNS = [
   'companyName', 'clientType', 'contactPerson', 'serviceRequirement',
   'opportunityType', 'stage', 'strategicImportance', 'expectedOutcome',
-  'value',
+  'value', '_flags',
 ]
 
 // Deal Owner (ownerId) is intentionally excluded from the server's dynamic
 // Deal field list (same reasoning as Company's ownerId exclusion) — this is
 // a client-side-only column entry so Edit Columns can offer it.
 const DEAL_OWNER_COLUMN = { key: 'ownerId', label: 'Deal Owner' }
+
+// Combined display of the poc/proposalShared booleans (each of which is
+// also independently toggleable as its own Yes/No column via the server's
+// dynamic Deal field list) — client-side-only, same pattern as Deal Owner.
+const DEAL_FLAGS_COLUMN = { key: '_flags', label: 'POC / Proposal Shared' }
 
 export default function Deals() {
   const { user } = useAuth()
@@ -118,7 +124,7 @@ export default function Deals() {
   // Deals are scoped to the logged-in owner, so show the current user's initials.
   const ownerInitials = (user?.name || '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '—'
 
-  const editColumnsFields = [...dealFields, DEAL_OWNER_COLUMN]
+  const editColumnsFields = [...dealFields, DEAL_OWNER_COLUMN, DEAL_FLAGS_COLUMN]
   const orderedVisibleFields = editColumnsFields.filter(f => visibleColumns.includes(f.key))
 
   function renderDealCell(f, d) {
@@ -128,6 +134,8 @@ export default function Deals() {
     }
     if (f.key === 'ownerId') return ownerInitials
     if (f.key === 'value') return formatCurrency(d.value, d.currency)
+    if (f.key === '_flags') return dealFlagsLabel(d) || '--'
+    if (f.key === 'poc' || f.key === 'proposalShared') return d[f.key] ? 'Yes' : 'No'
     if (f.key.startsWith('custom.')) return renderCustomCell(f.type, d[f.key])
     const v = d[f.key]
     if (Array.isArray(v)) return v.length ? v.join(', ') : '--'

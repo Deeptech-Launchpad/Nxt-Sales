@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Pencil } from 'lucide-react'
 import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import { formatCurrency } from '../utils/formatCurrency'
+import { dealFlagsLabel } from '../utils/dealFlags'
 
 // Kanban board for the Deals module. Columns are read live from the
 // 'deal.stage' managed dropdown (Settings → Dropdown Lists → Deal Stage) via
@@ -95,6 +96,15 @@ export default function DealBoard({ deals, onCardClick, onEdit, onStageChange, o
                   )}
                   {d.contactPerson && (
                     <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{d.contactPerson}</div>
+                  )}
+                  {dealFlagsLabel(d) && (
+                    <span style={{
+                      display: 'inline-block', marginTop: 6, fontSize: 10.5, fontWeight: 700,
+                      color: '#0d9488', background: '#f0fdfa', border: '1px solid #99f6e4',
+                      borderRadius: 20, padding: '2px 8px',
+                    }}>
+                      {dealFlagsLabel(d)}
+                    </span>
                   )}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 9, borderTop: '1px solid #f4f6f8' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{formatCurrency(d.value, d.currency)}</span>

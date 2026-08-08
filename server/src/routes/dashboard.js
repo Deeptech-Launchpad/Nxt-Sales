@@ -23,6 +23,7 @@ router.get('/stats', auth, async (req, res) => {
       callsFromCallLog,
       followUpsDueToday,
       tasksOverdue,
+      todayTasks,
     ] = await Promise.all([
       prisma.company.count({ where: { deletedAt: null } }),
       prisma.deal.count({ where: { stage: { notIn: ['Won', 'Lost'] } } }),
@@ -31,6 +32,19 @@ router.get('/stats', auth, async (req, res) => {
       prisma.callLog.count({ where: { callDate: { gte: startOfToday, lt: startOfTomorrow } } }),
       prisma.activity.count({ where: { type: 'task', dueDate: { gte: startOfToday, lt: startOfTomorrow }, taskStatus: { not: 'completed' } } }),
       prisma.activity.count({ where: { type: 'task', dueDate: { lt: startOfToday }, taskStatus: { not: 'completed' } } }),
+      // Small preview list (not just the count above) for the dashboard's
+      // "Today Tasks" panel — soonest-due first, capped so this stays a
+      // lightweight preview rather than a full second Tasks page.
+      prisma.activity.findMany({
+        where: { type: 'task', dueDate: { gte: startOfToday, lt: startOfTomorrow }, taskStatus: { not: 'completed' } },
+        orderBy: { dueDate: 'asc' },
+        take: 6,
+        select: {
+          id: true, title: true, dueDate: true,
+          company: { select: { id: true, name: true } },
+          assignedTo: { select: { id: true, name: true } },
+        },
+      }),
     ])
 
     res.json({
@@ -40,6 +54,7 @@ router.get('/stats', auth, async (req, res) => {
       callsToday: callsFromActivities + callsFromCallLog,
       followUpsDueToday,
       tasksOverdue,
+      todayTasks,
     })
   } catch (err) {
     console.error('[Dashboard] stats error:', err.message)

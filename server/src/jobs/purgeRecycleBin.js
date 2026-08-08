@@ -35,8 +35,9 @@ async function purgeExpiredCompanies() {
 }
 
 // Defense-in-depth safety net, run on the same sweep: deletes any
-// CustomFieldValue row whose recordId no longer exists in EITHER Company or
-// Deal — catches anything the explicit cleanup above (or deals.js's
+// CustomFieldValue row whose recordId no longer exists in Company, Deal, OR
+// Activity (task/meeting custom fields — see activities.js) — catches
+// anything the explicit cleanup above (or deals.js's/activities.js's
 // DELETE /:id) missed, e.g. a future deletion path that forgets this step.
 // Cheap given CustomFieldValue's recordId index; only ever matches rows
 // that are already orphaned by definition, so it's safe to run
@@ -48,6 +49,7 @@ async function sweepOrphanedCustomFieldValues() {
       DELETE FROM "CustomFieldValue"
       WHERE "recordId" NOT IN (SELECT id FROM "Company")
         AND "recordId" NOT IN (SELECT id FROM "Deal")
+        AND "recordId" NOT IN (SELECT id FROM "Activity")
     `
     if (count > 0) console.log(`[Custom Fields] Swept ${count} orphaned CustomFieldValue row(s).`)
   } catch (err) {

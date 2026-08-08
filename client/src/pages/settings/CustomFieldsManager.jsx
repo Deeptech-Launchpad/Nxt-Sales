@@ -4,7 +4,7 @@ import { ArrowLeft, Plus, Trash2, ChevronUp, ChevronDown, Pencil, Check, X, List
 import api from '../../api/client'
 import { invalidateCustomFieldDefinitions } from '../../hooks/useCustomFieldDefinitions'
 
-const ENTITIES = ['Company', 'Deal']
+const ENTITIES = ['Company', 'Deal', 'Task', 'Meeting']
 
 const TYPE_OPTIONS = [
   { value: 'text',        label: 'Text' },
@@ -106,7 +106,7 @@ export default function CustomFieldsManager() {
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>Custom Fields</h1>
       </div>
       <p style={{ fontSize: 13, color: '#94a3b8', margin: '4px 0 20px 28px' }}>
-        Add business-specific fields to Company and Deal records — they appear automatically in Create/Edit forms, Edit Columns, Import/Export, and filters.
+        Add business-specific fields to Company, Deal, Task, and Meeting records — they appear automatically in Create/Edit forms, Edit Columns, Import/Export, and filters.
       </p>
 
       <div style={{ display: 'flex', gap: 20 }}>

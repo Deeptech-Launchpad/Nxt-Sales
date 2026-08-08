@@ -12,6 +12,7 @@ const LS_LIST   = 'mwz_notifications'          // the notification list (with re
 const LS_EMAILS = 'mwz_notif_known_emails'     // inbound email ids already accounted for
 const LS_MTGS   = 'mwz_notif_fired_meetings'   // meeting ids already reminded
 const LS_OPENS  = 'mwz_notif_known_opens'      // sent-email open events already alerted
+const LS_TASKS  = 'mwz_notif_fired_tasks'      // "due_<id>"/"overdue_<id>" reminders already fired
 const POLL_MS   = 60_000
 const HOUR_MS   = 60 * 60 * 1000
 
@@ -31,6 +32,7 @@ export function NotificationProvider({ children }) {
   const knownEmails    = useRef(new Set(load(LS_EMAILS, null) || []))
   const firedMeetings  = useRef(new Set(load(LS_MTGS, null) || []))
   const knownOpens     = useRef(new Set(load(LS_OPENS, null) || []))
+  const firedTasks     = useRef(new Set(load(LS_TASKS, null) || []))
   const emailBaselined = useRef(load(LS_EMAILS, null) !== null) // first-ever run seeds silently
   const opensBaselined = useRef(load(LS_OPENS, null) !== null)  // first-ever run seeds silently
 
@@ -60,6 +62,7 @@ export function NotificationProvider({ children }) {
     const meetings = data?.meetings || []
     const emails   = data?.emails   || []
     const opens    = data?.opens    || []
+    const tasks    = data?.tasks    || []
     const now = Date.now()
     const fresh = []
 
@@ -83,6 +86,48 @@ export function NotificationProvider({ children }) {
       }
     }
     save(LS_MTGS, [...firedMeetings.current])
+
+    // Task reminders — assigned-to-you tasks only. Two independent one-time
+    // fires per task, mirroring the meeting reminder's once-only pattern:
+    // "due soon" within the hour before dueDate, and "overdue" once it's
+    // passed and still not completed. GET /notifications already scopes the
+    // window to +/-24h, so this never has to scan far-future/ancient tasks.
+    for (const t of tasks) {
+      if (!t.dueDate) continue
+      const due = new Date(t.dueDate).getTime()
+      const who = t.company?.name
+      if (now < due) {
+        const remindAt = due - HOUR_MS
+        const key = 'due_' + t.id
+        if (now >= remindAt && !firedTasks.current.has(key)) {
+          firedTasks.current.add(key)
+          fresh.push({
+            id: 'task_' + key,
+            type: 'task',
+            title: 'Task due soon',
+            description: `${t.title || 'Task'}${who ? ' — ' + who : ''} due at ${new Date(t.dueDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+            datetime: new Date().toISOString(),
+            read: false,
+            link: linkFor(t),
+          })
+        }
+      } else {
+        const key = 'overdue_' + t.id
+        if (!firedTasks.current.has(key)) {
+          firedTasks.current.add(key)
+          fresh.push({
+            id: 'task_' + key,
+            type: 'task',
+            title: 'Task overdue',
+            description: `${t.title || 'Task'}${who ? ' — ' + who : ''} was due ${new Date(t.dueDate).toLocaleDateString()}`,
+            datetime: new Date().toISOString(),
+            read: false,
+            link: linkFor(t),
+          })
+        }
+      }
+    }
+    save(LS_TASKS, [...firedTasks.current])
 
     // New inbound emails — baseline silently on first run so old mail doesn't spam.
     if (!emailBaselined.current) {

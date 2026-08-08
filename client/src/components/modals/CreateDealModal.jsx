@@ -10,7 +10,7 @@ const emptyForm = {
   title: '', country: '', companyName: '', domainName: '', clientType: '',
   contactPerson: '', contactPhone: '', contactEmail: '', serviceRequirement: '',
   clientWebsiteUrl: '', opportunityType: '', value: '', currency: 'USD', strategicImportance: '',
-  expectedOutcome: '', stage: 'Discussion', notes: '',
+  expectedOutcome: '', stage: 'Discussion', notes: '', poc: false, proposalShared: false,
 }
 
 // Create or edit a deal. Pass `deal` (an existing deal record) to edit it —
@@ -46,6 +46,8 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
     expectedOutcome:     deal.expectedOutcome || '',
     stage:               deal.stage || 'Discussion',
     notes:               deal.notes || '',
+    poc:                 !!deal.poc,
+    proposalShared:      !!deal.proposalShared,
     customFields:        extractCustomFieldValues(deal),
   } : { ...emptyForm, customFields: {} })
   const [saving, setSaving] = useState(false)
@@ -87,6 +89,8 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
       expectedOutcome:     form.expectedOutcome || null,
       stage:               form.stage,
       notes:               form.notes || null,
+      poc:                 form.poc,
+      proposalShared:      form.proposalShared,
       customFields:        form.customFields,
     }
     try {
@@ -114,6 +118,19 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
           <div className="form-group required">
             <label>Deal name</label>
             <input type="text" value={form.title} onChange={e => { set('title', e.target.value); setError('') }} autoFocus />
+          </div>
+
+          {/* Independent of Deal Stage — either, both, or neither can be
+              checked; never affects which stage the deal is in. */}
+          <div className="form-group" style={{ display: 'flex', gap: 20, flexDirection: 'row', alignItems: 'center' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 400, cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.poc} onChange={e => set('poc', e.target.checked)} style={{ width: 15, height: 15 }} />
+              POC
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 400, cursor: 'pointer' }}>
+              <input type="checkbox" checked={form.proposalShared} onChange={e => set('proposalShared', e.target.checked)} style={{ width: 15, height: 15 }} />
+              Proposal Shared
+            </label>
           </div>
 
           <div className="form-group">

@@ -1,6 +1,10 @@
 const router = require('express').Router()
 const auth = require('../middleware/authMiddleware')
 const { PrismaClient } = require('@prisma/client')
+const {
+  validateAndShapeCustomFieldInput, writeCustomFieldValues, attachCustomFieldValues,
+  CustomFieldValidationError,
+} = require('../utils/customFieldValues')
 const prisma = new PrismaClient()
 
 function getOAuth2Client(account) {
@@ -19,10 +23,23 @@ function getOAuth2Client(account) {
 
 // POST /api/calendar/schedule
 router.post('/schedule', auth, async (req, res) => {
-  const { title, startTime, endTime, description, location, attendees, companyId, assignedToId } = req.body
+  const { title, startTime, endTime, description, location, attendees, companyId, assignedToId, customFields } = req.body
 
   if (!title || !startTime) {
     return res.status(400).json({ message: 'Title and start time are required.' })
+  }
+
+  // Validate BEFORE either branch — including before the Google Calendar API
+  // call below, so a bad custom field value never creates a real calendar
+  // event/Meet link that a failed activity write would then leave orphaned.
+  let shapedCustomFields = []
+  if (customFields) {
+    try {
+      shapedCustomFields = await validateAndShapeCustomFieldInput('Meeting', customFields)
+    } catch (e) {
+      if (e instanceof CustomFieldValidationError) return res.status(400).json({ message: 'Invalid custom field value(s).', errors: e.errors })
+      throw e
+    }
   }
 
   const account = await prisma.emailAccount.findFirst({
@@ -50,6 +67,10 @@ router.post('/schedule', auth, async (req, res) => {
         assignedTo: { select: { id: true, name: true, email: true } },
       },
     })
+    if (shapedCustomFields.length) {
+      await writeCustomFieldValues(activity.id, shapedCustomFields)
+      await attachCustomFieldValues('Meeting', [activity])
+    }
     return res.status(201).json({ ...activity, googleMeet: false })
   }
 
@@ -147,6 +168,10 @@ router.post('/schedule', auth, async (req, res) => {
         assignedTo: { select: { id: true, name: true, email: true } },
       },
     })
+    if (shapedCustomFields.length) {
+      await writeCustomFieldValues(activity.id, shapedCustomFields)
+      await attachCustomFieldValues('Meeting', [activity])
+    }
 
     res.status(201).json({ ...activity, googleMeet: true, meetLink })
 

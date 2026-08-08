@@ -31,6 +31,11 @@ function buildDealData(body) {
   if (body.stage !== undefined) data.stage = body.stage || 'Discussion'
   if (body.notes !== undefined) data.notes = body.notes || null
   if (body.companyId !== undefined) data.companyId = body.companyId || null
+  // Independent of stage — explicit boolean coercion, not the TEXT_FIELDS
+  // loop above (which does `body[f] || null` and would turn `false` into
+  // `null`, silently breaking an unchecked checkbox).
+  if (body.poc !== undefined) data.poc = !!body.poc
+  if (body.proposalShared !== undefined) data.proposalShared = !!body.proposalShared
   return data
 }
 

@@ -5,7 +5,7 @@ import { useNotifications } from '../../context/NotificationContext'
 import api from '../../api/client'
 import {
   Search, Bell, User, Settings, LogOut,
-  Calendar, Mail, Building2, TrendingUp, X,
+  Calendar, Mail, Building2, TrendingUp, X, CheckSquare,
 } from 'lucide-react'
 import '../../styles/topbar.css'
 
@@ -98,7 +98,7 @@ export default function TopBar() {
   const handleLogout = () => { logout(); navigate('/login'); setProfileOpen(false) }
   const goTo = (path) => { navigate(path); setProfileOpen(false) }
 
-  const NOTIF_ICON = { meeting: Calendar, email: Mail }
+  const NOTIF_ICON = { meeting: Calendar, email: Mail, task: CheckSquare }
 
   return (
     <header className="topbar">

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { TrendingUp, Briefcase, CheckCircle, Mail, Plus, Building2, PhoneCall, CalendarClock, AlertTriangle } from 'lucide-react'
+import { TrendingUp, Briefcase, CheckCircle, Mail, Plus, Building2, PhoneCall, CalendarClock, AlertTriangle, CheckSquare } from 'lucide-react'
 import api from '../api/client'
 import '../styles/dashboard.css'
 
@@ -48,6 +48,8 @@ export default function Dashboard() {
     { label: 'Tasks Overdue',         value: kpis?.tasksOverdue,         Icon: AlertTriangle, color: '#fef2f2', iconColor: '#ef4444' },
   ]
 
+  const todayTasks = kpis?.todayTasks || []
+
   const activeDeals = deals.filter(d => !/won|lost/i.test(d.stage || ''))
   const wonDeals    = deals.filter(d => /won/i.test(d.stage || ''))
   const recentDeals = deals.slice(0, 5)
@@ -87,6 +89,38 @@ export default function Dashboard() {
             <div className="stat-label">{label}</div>
           </div>
         ))}
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <span className="panel-title">Today's Tasks {!kpisLoading && `(${todayTasks.length})`}</span>
+          <button className="panel-link" onClick={() => navigate('/tasks')}>View all</button>
+        </div>
+        <div className="activity-list">
+          {kpisLoading ? (
+            <p className="activity-time" style={{ padding: '8px 0' }}>Loading…</p>
+          ) : todayTasks.length === 0 ? (
+            <p className="activity-time" style={{ padding: '8px 0' }}>No tasks due today.</p>
+          ) : todayTasks.map(t => (
+            <div
+              key={t.id}
+              className="activity-item"
+              style={{ cursor: t.company?.id ? 'pointer' : 'default' }}
+              onClick={() => t.company?.id && navigate(`/companies/${t.company.id}`)}
+            >
+              <div className="activity-dot" style={{ background: '#fffbeb' }}>
+                <CheckSquare size={15} color="#d97706" />
+              </div>
+              <div className="activity-body">
+                <p className="activity-text"><strong>{t.title || '(untitled)'}</strong>{t.company?.name ? ` — ${t.company.name}` : ''}</p>
+                <p className="activity-time">
+                  Due {new Date(t.dueDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                  {t.assignedTo?.name ? ` · ${t.assignedTo.name}` : ''}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="dash-row">

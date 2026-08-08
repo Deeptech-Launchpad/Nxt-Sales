@@ -4,9 +4,13 @@ import { Plus, Pencil, Trash2, Search } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import MeetingModal from '../components/activities/MeetingModal'
+import EditColumnsMenu from '../components/EditColumnsMenu'
+import { renderCustomCell } from '../utils/customFieldRender'
 import '../styles/contacts.css'
 
 const PAGE_SIZE = 50
+const COLUMNS_STORAGE_KEY = 'mwz_meetings_visible_columns'
+const DEFAULT_COLUMNS = []
 
 // meetingStatus is stored as scheduled/completed/cancelled — the user-facing
 // Upcoming/Completed/Cancelled labels are a display-only mapping, same
@@ -45,11 +49,33 @@ export default function Meetings() {
   const [showCreate, setShowCreate] = useState(false)
   const [editMeeting, setEditMeeting] = useState(null)
 
+  // Toggleable columns (Description, End Time, Location, Participants, Meet
+  // Link, + every active Meeting custom field) — Meeting/Company/Assigned
+  // to/Date & time/Status stay fixed, same reasoning Companies.jsx keeps its
+  // own name column non-toggleable.
+  const [meetingFields, setMeetingFields] = useState([])
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY)) || DEFAULT_COLUMNS } catch { return DEFAULT_COLUMNS }
+  })
+  const saveVisibleColumns = (cols) => {
+    setVisibleColumns(cols)
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(cols))
+  }
+
   const switchTab = (tab) => { setMeetingTab(tab); setPage(1) }
 
   useEffect(() => {
     api.get('/users').then(r => setUsers(r.data)).catch(() => {})
+    api.get('/activities/import-fields', { params: { type: 'meeting' } }).then(r => setMeetingFields(r.data.fields || [])).catch(() => {})
   }, [])
+
+  const orderedVisibleFields = meetingFields.filter(f => visibleColumns.includes(f.key))
+  const renderMeetingCell = (f, m) => {
+    if (f.key.startsWith('custom.')) return renderCustomCell(f.type, m[f.key])
+    if (f.key === 'endTime') return fmtDateTime(m.endTime)
+    if (f.key === 'meetLink' && m.meetLink) return <a href={m.meetLink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: '#1a73e8' }}>Join</a>
+    return m[f.key] ?? '--'
+  }
 
   // "My Meetings" forces assignedToId to the current user, taking priority
   // over the Assigned To filter (hidden while that tab is active), matching
@@ -165,6 +191,10 @@ export default function Meetings() {
             Clear filters
           </button>
         )}
+
+        <div style={{ marginLeft: 'auto' }}>
+          <EditColumnsMenu fields={meetingFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} alwaysShownKey="title" />
+        </div>
       </div>
 
       <div style={{ overflowX: 'auto', border: '1px solid #eef1f5', borderRadius: 10 }}>
@@ -176,14 +206,15 @@ export default function Meetings() {
               <th style={cellTh}>Date &amp; time</th>
               <th style={cellTh}>Assigned to</th>
               <th style={cellTh}>Status</th>
+              {orderedVisibleFields.map(f => <th key={f.key} style={cellTh}>{f.label}</th>)}
               <th style={cellTh}></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Loading meetings…</td></tr>
+              <tr><td colSpan={6 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Loading meetings…</td></tr>
             ) : meetings.length === 0 ? (
-              <tr><td colSpan={6} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+              <tr><td colSpan={6 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
                 {total === 0 ? 'No meetings yet.' : 'No meetings match your filters.'}
               </td></tr>
             ) : meetings.map((m, i) => (
@@ -193,6 +224,7 @@ export default function Meetings() {
                 <td style={cellTd}>{fmtDateTime(m.startTime)}</td>
                 <td style={cellTd}>{m.assignedTo?.name || 'Unassigned'}</td>
                 <td style={cellTd}><span style={pillStyle(STATUS_COLORS[m.meetingStatus || 'scheduled'])}>{STATUS_LABELS[m.meetingStatus || 'scheduled']}</span></td>
+                {orderedVisibleFields.map(f => <td key={f.key} style={cellTd}>{renderMeetingCell(f, m)}</td>)}
                 <td style={{ ...cellTd, display: 'flex', gap: 4 }}>
                   <button
                     onClick={() => setEditMeeting(m)} title="Edit meeting" style={{ ...iconBtn, color: '#64748b' }}

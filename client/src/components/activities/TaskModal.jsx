@@ -4,11 +4,24 @@ import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 import { useDraggable } from '../../hooks/useDraggable'
 import CompanyPicker from '../CompanyPicker'
+import CustomFieldsSection, { extractCustomFieldValues } from '../CustomFieldsSection'
 import '../../styles/activity-modals.css'
 
-function tomorrowStr() {
-  const d = new Date(); d.setDate(d.getDate() + 1)
-  return d.toISOString().slice(0, 10)
+// Default due date/time for a new task: tomorrow at 9am local time.
+function tomorrowDateTimeStr() {
+  const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0)
+  return toDateTimeLocal(d.toISOString())
+}
+
+// Converts a stored UTC ISO string to the local "YYYY-MM-DDTHH:mm" value
+// <input type="datetime-local"> expects. A naive .slice(0,16) on the raw
+// ISO string would show the UTC wall-clock time mislabeled as local — this
+// corrects for the browser's timezone offset first.
+function toDateTimeLocal(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const offsetMs = d.getTimezoneOffset() * 60000
+  return new Date(d.getTime() - offsetMs).toISOString().slice(0, 16)
 }
 
 // Pass `activity` (an existing task Activity record) to edit it — otherwise
@@ -27,10 +40,11 @@ export default function TaskModal({ isOpen = true, activity, companyId, contactN
   const [pickedCompanyName, setPickedCompanyName] = useState(isEdit ? (activity.company?.name || '') : '')
   const [taskName,  setTaskName]  = useState(isEdit ? (activity.title || '') : '')
   const [body,      setBody]      = useState(isEdit ? (activity.body || '') : '')
-  const [dueDate,   setDueDate]   = useState(isEdit ? (activity.dueDate ? activity.dueDate.slice(0, 10) : '') : tomorrowStr())
-  const [priority,  setPriority]  = useState(isEdit ? (activity.priority || 'none') : 'none')
-  const [taskStatus, setTaskStatus] = useState(isEdit ? (activity.taskStatus || 'not_started') : 'not_started')
+  const [dueDate,   setDueDate]   = useState(isEdit ? toDateTimeLocal(activity.dueDate) : tomorrowDateTimeStr())
+  const [completed, setCompleted] = useState(isEdit ? activity.taskStatus === 'completed' : false)
+  const [autoCompleteOverdue, setAutoCompleteOverdue] = useState(isEdit ? !!activity.autoCompleteOverdue : false)
   const [assignedTo, setAssignedTo] = useState(isEdit ? (activity.assignedToId || '') : (user?.id || ''))
+  const [customFields, setCustomFields] = useState(isEdit ? extractCustomFieldValues(activity) : {})
   const [saving,    setSaving]    = useState(false)
   const [error,     setError]     = useState('')
 
@@ -49,9 +63,10 @@ export default function TaskModal({ isOpen = true, activity, companyId, contactN
         title:      taskName.trim(),
         body:       body || null,
         dueDate:    dueDate ? new Date(dueDate).toISOString() : null,
-        priority,
-        taskStatus,
+        taskStatus: completed ? 'completed' : 'not_started',
+        autoCompleteOverdue,
         assignedToId: assignedTo || null,
+        customFields,
       }
       const { data } = isEdit
         ? await api.put(`/activities/${activity.id}`, payload)
@@ -97,40 +112,45 @@ export default function TaskModal({ isOpen = true, activity, companyId, contactN
 
           <div className="act-form-row" style={{ marginBottom: 12 }}>
             <div className="act-form-group">
-              <label>Due date</label>
-              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              <label>Due date & time</label>
+              <input type="datetime-local" value={dueDate} onChange={e => setDueDate(e.target.value)} />
             </div>
             <div className="act-form-group">
-              <label>Priority</label>
-              <select value={priority} onChange={e => setPriority(e.target.value)}>
-                <option value="none">None</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-            <div className="act-form-group">
-              <label>Status</label>
-              <select value={taskStatus} onChange={e => setTaskStatus(e.target.value)}>
-                <option value="not_started">Not started</option>
-                <option value="in_progress">In progress</option>
-                <option value="completed">Completed</option>
+              <label>Assign to</label>
+              <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
+                <option value="">Unassigned</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
               </select>
             </div>
           </div>
 
-          <div className="act-form-group" style={{ marginBottom: 12 }}>
-            <label>Assign to</label>
-            <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
-              <option value="">Unassigned</option>
-              {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
-            </select>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+              <input type="checkbox" checked={completed} onChange={e => setCompleted(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#0d9488' }} />
+              Mark as completed
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+              <input type="checkbox" checked={autoCompleteOverdue} onChange={e => setAutoCompleteOverdue(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#0d9488' }} />
+              Auto-complete once overdue
+            </label>
+            {autoCompleteOverdue && (
+              <p style={{ fontSize: 11, color: '#94a3b8', margin: '-4px 0 0 22px' }}>
+                This task will be marked completed automatically after its due date/time passes. Off by default — only applies because you turned it on for this task.
+              </p>
+            )}
           </div>
 
           <div className="act-form-group">
             <label>Description / Notes</label>
             <textarea rows={3} value={body} onChange={e => setBody(e.target.value)} placeholder="Add task details…" />
           </div>
+
+          <CustomFieldsSection
+            entity="Task"
+            values={customFields}
+            onChange={(key, value) => setCustomFields(p => ({ ...p, [key]: value }))}
+          />
+
           {error && <p style={{ color: '#ef4444', fontSize: 12, marginTop: 6, fontWeight: 500 }}>{error}</p>}
         </div>
 
