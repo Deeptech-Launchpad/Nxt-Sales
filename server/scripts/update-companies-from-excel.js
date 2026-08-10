@@ -109,6 +109,17 @@ if (!userId) {
 function normalizeHeader(h) {
   return String(h || '').replace(/\([^)]*\)/g, '').replace(/[^a-z0-9]+/gi, '').toLowerCase()
 }
+// One-time exclusion, confirmed with the user after reviewing the dry run
+// against the real 262-row file (2026-08-10): these 2 companies' Excel
+// Company Name cell holds a mangled-domain artifact, not a real name
+// ("Securetoolsforworkingatheight", "Business"), which would replace a
+// better existing name with a worse one. Every OTHER field for these two
+// companies still updates normally — only the `name` change is suppressed.
+const SKIP_NAME_UPDATE_FOR = new Set([
+  'cmsk2ayu501d6lnv26pz68k7y', // Secure Tools for Working at Height
+  'cmsk2aywf01f2lnv26lcteds7', // methven.business.site
+])
+
 const HEADER_ALIASES = {
   sno:            'sNo',
   companyname:    'name',
@@ -272,7 +283,7 @@ async function main() {
       const current = company[field] || ''
       if (String(current).trim() !== excelVal) changes[field] = { from: current || null, to: excelVal }
     }
-    setScalarIfChanged('name', nameVal)
+    if (!SKIP_NAME_UPDATE_FOR.has(company.id)) setScalarIfChanged('name', nameVal)
     setScalarIfChanged('industry', industryVal)
     setScalarIfChanged('country', countryVal)
     setScalarIfChanged('remarks', remarksVal)
