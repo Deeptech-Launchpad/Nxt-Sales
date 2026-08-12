@@ -36,11 +36,13 @@ const CONFIG = {
       opportunityType: 'Opportunity Type', strategicImportance: 'Strategic Importance',
       expectedOutcome: 'Expected Outcome', notes: 'Notes',
       poc: 'POC', proposalShared: 'Proposal Shared',
+      pocReceivedDate: 'POC Received Date', pocDeliveredDate: 'POC Delivered Date',
     },
     order: ['title', 'country', 'companyName', 'domainName', 'clientType',
       'contactPerson', 'contactPhone', 'contactEmail', 'serviceRequirement',
       'clientWebsiteUrl', 'opportunityType', 'value', 'currency', 'strategicImportance',
-      'expectedOutcome', 'stage', 'poc', 'proposalShared', 'notes'],
+      'expectedOutcome', 'stage', 'poc', 'proposalShared', 'pocReceivedDate',
+      'pocDeliveredDate', 'notes'],
   },
   // Task and Meeting are both Activity rows (type-discriminated), not real
   // Prisma models — see the dmmfModelName mapping in getImportFields below.

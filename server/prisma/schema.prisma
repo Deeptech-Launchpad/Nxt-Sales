@@ -100,6 +100,9 @@ model Deal {
   // a false default, same convention as Company.isPinned.
   poc            Boolean @default(false)
   proposalShared Boolean @default(false)
+  // Nullable, no default — existing deals simply have both empty until set.
+  pocReceivedDate  DateTime?
+  pocDeliveredDate DateTime?
   company   Company?  @relation(fields: [companyId], references: [id])
   owner     User      @relation(fields: [ownerId], references: [id])
 

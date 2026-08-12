@@ -164,7 +164,7 @@ async function companyIdsWithCustomFieldMatch(customFiltersJson) {
 // Shared filter builder — used by both the paginated list and the export
 // endpoint so "export with applied filters" always matches the on-screen list.
 async function buildCompanyWhere(query, userId) {
-  const { search, view, owners, leadStatuses, createDate, customFilters } = query
+  const { search, view, owners, leadStatuses, createDate, customFilters, industries, countries } = query
   // Companies in the Recycle Bin are archived — excluded from every normal
   // list/search/export view. Only the dedicated Recycle Bin routes look past this.
   const where = { deletedAt: null }
@@ -188,6 +188,11 @@ async function buildCompanyWhere(query, userId) {
   }
 
   if (leadStatuses) where.leadStatus = { in: leadStatuses.split(',') }
+  if (industries)   where.industry   = { in: industries.split(',') }
+  // Country filter values come from the admin-managed dropdown (often
+  // ALL CAPS, e.g. "IRELAND") but imported Company.country data is
+  // Title Case (e.g. "Ireland") — case-insensitive match so they still line up.
+  if (countries)    where.country    = { in: countries.split(','), mode: 'insensitive' }
 
   if (createDate) {
     const range = dateRangeFor(createDate)
@@ -231,7 +236,10 @@ router.get('/', auth, async (req, res) => {
         orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
         skip: (Number(page) - 1) * Number(limit),
         take: Number(limit),
-        include: { owner: { select: { id: true, name: true, email: true } } },
+        include: {
+          owner: { select: { id: true, name: true, email: true } },
+          _count: { select: { deals: true } },
+        },
       }),
       prisma.company.count({ where }),
     ])

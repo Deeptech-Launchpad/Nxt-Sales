@@ -6,7 +6,8 @@ import '../../styles/sidebar.css'
 import {
   LayoutDashboard, Users, Building2, TrendingUp, Mail,
   Settings, ChevronDown, Search, FileCode,
-  Inbox, Phone, Calendar, CheckSquare, MessageSquare
+  Inbox, Phone, Calendar, CheckSquare, MessageSquare,
+  PanelLeftClose, PanelLeftOpen
 } from 'lucide-react'
 
 const menuStructure = [
@@ -31,7 +32,7 @@ const menuStructure = [
   },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ collapsed, onToggleCollapsed }) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [expanded,   setExpanded]   = useState({})
@@ -63,17 +64,25 @@ export default function Sidebar() {
     : menuStructure
 
   return (
-    <aside className="sidebar-modern">
+    <aside className={`sidebar-modern${collapsed ? ' collapsed' : ''}`}>
       {/* Header — logo always returns to the Dashboard, from any page */}
       <div className="sidebar-header-modern">
         <button
           type="button"
           className="logo-section-modern"
           onClick={() => navigate('/dashboard')}
-          style={{ background: 'none', border: 'none', padding: 0, width: '100%', cursor: 'pointer' }}
+          style={{ background: 'none', border: 'none', padding: 0, flex: 1, minWidth: 0, cursor: 'pointer' }}
         >
           <img src="/AltiusNXT_Logo-01.png" alt="AltiusNxt" className="logo-img-modern" />
-          <span className="app-name-modern">NXT Sales</span>
+          <span className="app-name-modern nav-label">NXT Sales</span>
+        </button>
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className="sidebar-collapse-btn"
+        >
+          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>
       </div>
 
@@ -97,9 +106,10 @@ export default function Sidebar() {
           to="/dashboard"
           className={({ isActive }) => `item-link-modern${isActive ? ' active' : ''}`}
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', margin: '4px 8px', borderRadius: 6 }}
+          title={collapsed ? 'Dashboard' : undefined}
         >
           <LayoutDashboard size={16} />
-          <span style={{ flex: 1 }}>Dashboard</span>
+          <span className="nav-label" style={{ flex: 1 }}>Dashboard</span>
         </NavLink>
 
         {/* Team Chat — always-visible direct link */}
@@ -107,9 +117,10 @@ export default function Sidebar() {
           to="/chat"
           className={({ isActive }) => `item-link-modern${isActive ? ' active' : ''}`}
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', margin: '4px 8px', borderRadius: 6 }}
+          title={collapsed ? 'Team Chat' : undefined}
         >
           <MessageSquare size={16} />
-          <span style={{ flex: 1 }}>Team Chat</span>
+          <span className="nav-label" style={{ flex: 1 }}>Team Chat</span>
           {unreadChat > 0 && (
             <span style={{
               background: '#e11d48', color: '#fff', fontSize: 10, fontWeight: 700,
@@ -129,13 +140,15 @@ export default function Sidebar() {
               <button
                 className={`section-button-modern ${isExpanded ? 'active' : ''}`}
                 onClick={() => toggleSection(section)}
+                title={collapsed ? section : undefined}
               >
                 <div className="section-icon-wrapper">
                   <SectionIcon size={18} />
                 </div>
-                <span className="section-label-modern">{section}</span>
+                <span className="section-label-modern nav-label">{section}</span>
                 <ChevronDown
                   size={16}
+                  className="nav-label"
                   style={{
                     transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
                     transition: 'transform 0.2s',
@@ -151,9 +164,10 @@ export default function Sidebar() {
                       key={to}
                       to={to}
                       className={({ isActive }) => `item-link-modern ${isActive ? 'active' : ''}`}
+                      title={collapsed ? label : undefined}
                     >
                       <ItemIcon size={16} />
-                      <span>{label}</span>
+                      <span className="nav-label">{label}</span>
                     </NavLink>
                   ))}
                 </div>
@@ -172,16 +186,18 @@ export default function Sidebar() {
         <NavLink
           to="/users"
           className={({ isActive }) => `settings-link-modern ${isActive ? 'active' : ''}`}
+          title={collapsed ? 'Users' : undefined}
         >
           <Users size={18} />
-          <span>Users</span>
+          <span className="nav-label">Users</span>
         </NavLink>
         <NavLink
           to="/settings"
           className={({ isActive }) => `settings-link-modern ${isActive ? 'active' : ''}`}
+          title={collapsed ? 'Settings' : undefined}
         >
           <Settings size={18} />
-          <span>Settings</span>
+          <span className="nav-label">Settings</span>
         </NavLink>
       </div>
     </aside>

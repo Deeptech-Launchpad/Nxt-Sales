@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ChevronDown, ChevronLeft, ChevronRight, FileText, Mail, Phone,
@@ -40,6 +40,53 @@ const LEFT_FIELDS = [
 ]
 
 const CENTER_TABS = ['Overview', 'Activities', 'Intelligence']
+
+// Resizable side panels (drag the handle between panels). Persisted per
+// browser, same localStorage-preference pattern used elsewhere in the app
+// (Companies' visible columns, Deals' view mode).
+const PANEL_WIDTHS_KEY = 'mwz_company_detail_panel_widths'
+const DEFAULT_LEFT_WIDTH  = 280 // matches .detail-left's original fixed width
+const DEFAULT_RIGHT_WIDTH = 300 // matches .detail-right's original fixed width
+const LEFT_MIN   = 220
+const LEFT_MAX   = 450
+const RIGHT_MIN  = 220
+const RIGHT_MAX  = 450
+const CENTER_MIN = 320 // Activities/Overview/Intelligence must always keep at least this much room
+
+function loadPanelWidths() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PANEL_WIDTHS_KEY))
+    return {
+      left:  typeof saved?.left === 'number' ? saved.left : DEFAULT_LEFT_WIDTH,
+      right: typeof saved?.right === 'number' ? saved.right : DEFAULT_RIGHT_WIDTH,
+    }
+  } catch {
+    return { left: DEFAULT_LEFT_WIDTH, right: DEFAULT_RIGHT_WIDTH }
+  }
+}
+
+// Keeps both side panels within their own min/max AND guarantees the center
+// panel never gets squeezed below CENTER_MIN — shrinks both side panels
+// proportionally (never below their own MIN) if the container is too
+// narrow to fit the current widths, so this also serves as the
+// on-window-resize safety net for small screens.
+function clampPanelWidths(containerWidth, left, right) {
+  let l = Math.min(LEFT_MAX, Math.max(LEFT_MIN, left))
+  let r = Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, right))
+  if (!containerWidth) return { left: l, right: r }
+  const overflow = (l + r + CENTER_MIN) - containerWidth
+  if (overflow > 0) {
+    const lRoom = l - LEFT_MIN
+    const rRoom = r - RIGHT_MIN
+    const totalRoom = lRoom + rRoom
+    if (totalRoom > 0) {
+      const shrink = Math.min(totalRoom, overflow)
+      l -= shrink * (lRoom / totalRoom)
+      r -= shrink * (rRoom / totalRoom)
+    }
+  }
+  return { left: Math.round(l), right: Math.round(r) }
+}
 
 function OverviewTab({ company, recentActs }) {
   const createdAt = company.createdAt
@@ -133,6 +180,68 @@ export default function CompanyDetail() {
   const [deals,           setDeals]           = useState([])
   const [showDealModal,   setShowDealModal]   = useState(false)
   const [editDeal,        setEditDeal]        = useState(null)
+
+  // Resizable side panels — see loadPanelWidths/clampPanelWidths above.
+  const layoutRef = useRef(null)
+  const dragRef   = useRef(null) // { side, startX, startWidth } while a drag is in progress
+  const [panelWidths, setPanelWidths] = useState(loadPanelWidths)
+  const [draggingSide, setDraggingSide] = useState(null) // null | 'left' | 'right'
+
+  const handleDragMove = useCallback((e) => {
+    const drag = dragRef.current
+    if (!drag) return
+    const containerWidth = layoutRef.current?.offsetWidth || 0
+    const delta = e.clientX - drag.startX
+    setPanelWidths(prev => {
+      const next = drag.side === 'left'
+        ? { left: drag.startWidth + delta, right: prev.right }
+        : { left: prev.left, right: drag.startWidth - delta }
+      return clampPanelWidths(containerWidth, next.left, next.right)
+    })
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    dragRef.current = null
+    setDraggingSide(null)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    window.removeEventListener('mousemove', handleDragMove)
+    window.removeEventListener('mouseup', handleDragEnd)
+    setPanelWidths(prev => {
+      localStorage.setItem(PANEL_WIDTHS_KEY, JSON.stringify(prev))
+      return prev
+    })
+  }, [handleDragMove])
+
+  const startDrag = (side) => (e) => {
+    e.preventDefault()
+    dragRef.current = { side, startX: e.clientX, startWidth: side === 'left' ? panelWidths.left : panelWidths.right }
+    setDraggingSide(side)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', handleDragMove)
+    window.addEventListener('mouseup', handleDragEnd)
+  }
+
+  // Re-clamp on viewport resize so a narrow window never squeezes the
+  // center panel below CENTER_MIN — panels never grow back on their own,
+  // only shrink toward their own MIN if the window got smaller.
+  useEffect(() => {
+    const onResize = () => {
+      const containerWidth = layoutRef.current?.offsetWidth || 0
+      setPanelWidths(prev => clampPanelWidths(containerWidth, prev.left, prev.right))
+    }
+    window.addEventListener('resize', onResize)
+    onResize()
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // Listeners are only ever attached during an active drag (added/removed
+  // in startDrag/handleDragEnd), but clean up defensively on unmount too.
+  useEffect(() => () => {
+    window.removeEventListener('mousemove', handleDragMove)
+    window.removeEventListener('mouseup', handleDragEnd)
+  }, [handleDragMove, handleDragEnd])
 
   useEffect(() => {
     setLoading(true); setNotFound(false)
@@ -232,10 +341,10 @@ export default function CompanyDetail() {
     <>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      <div className="detail-layout">
+      <div className="detail-layout" ref={layoutRef}>
 
         {/* ── LEFT ── */}
-        <div className="detail-left">
+        <div className="detail-left" style={{ width: panelWidths.left }}>
           <div className="detail-left-nav">
             <span className="detail-back-link" onClick={() => navigate('/companies')}>
               <ChevronLeft size={14} /> Companies
@@ -404,6 +513,13 @@ export default function CompanyDetail() {
           </div>
         </div>
 
+        {/* Drag the left panel's right edge to resize it */}
+        <div
+          className={`detail-panel-resize-handle${draggingSide === 'left' ? ' dragging' : ''}`}
+          onMouseDown={startDrag('left')}
+          title="Drag to resize"
+        />
+
         {/* ── CENTER ── */}
         <div className="detail-center">
           <div className="detail-center-tabs">
@@ -431,8 +547,15 @@ export default function CompanyDetail() {
           )}
         </div>
 
+        {/* Drag the right panel's left edge to resize it */}
+        <div
+          className={`detail-panel-resize-handle${draggingSide === 'right' ? ' dragging' : ''}`}
+          onMouseDown={startDrag('right')}
+          title="Drag to resize"
+        />
+
         {/* ── RIGHT ── */}
-        <div className="detail-right">
+        <div className="detail-right" style={{ width: panelWidths.right }}>
           <div className="right-panel-section">
             <div className="right-panel-header">
               <div className="right-panel-header-left"><ChevronDown size={14} /> Deals ({deals.length})</div>

@@ -9,7 +9,17 @@ import { dealFlagsLabel } from '../utils/dealFlags'
 // the same useDropdownOptions hook every other dropdown-backed field uses —
 // so adding/renaming/reordering/enabling/disabling a stage there updates
 // this board automatically, with zero board-specific code needed for that.
-export default function DealBoard({ deals, onCardClick, onEdit, onStageChange, ownerInitials }) {
+// Company/contact/flags/value/owner keep their existing dedicated spots on
+// the card (matching the layout before Board Edit Columns existed) — any
+// OTHER field a user adds via Edit Columns (Update 9) renders as a plain
+// label/value line instead, so the default card looks byte-for-byte the
+// same as before and only grows when someone actually opts into more.
+const CARD_CHROME_KEYS = new Set(['companyName', 'contactPerson', '_flags', 'value', 'ownerId'])
+
+export default function DealBoard({ deals, onCardClick, onEdit, onStageChange, getOwnerInitials, visibleFields = [], renderField }) {
+  const visibleKeys = new Set(visibleFields.map(f => f.key))
+  const isVisible = (key) => visibleKeys.has(key)
+  const extraFields = visibleFields.filter(f => !CARD_CHROME_KEYS.has(f.key))
   const { options: stages } = useDropdownOptions('deal.stage')
   const [dragDealId, setDragDealId] = useState(null)
   const [dragOverStage, setDragOverStage] = useState(null)
@@ -91,13 +101,13 @@ export default function DealBoard({ deals, onCardClick, onEdit, onStageChange, o
                       <Pencil size={12} />
                     </button>
                   </div>
-                  {(d.companyName || d.company?.name) && (
+                  {isVisible('companyName') && (d.companyName || d.company?.name) && (
                     <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 5, fontWeight: 500 }}>{d.companyName || d.company?.name}</div>
                   )}
-                  {d.contactPerson && (
+                  {isVisible('contactPerson') && d.contactPerson && (
                     <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>{d.contactPerson}</div>
                   )}
-                  {dealFlagsLabel(d) && (
+                  {isVisible('_flags') && dealFlagsLabel(d) && (
                     <span style={{
                       display: 'inline-block', marginTop: 6, fontSize: 10.5, fontWeight: 700,
                       color: '#0d9488', background: '#f0fdfa', border: '1px solid #99f6e4',
@@ -106,12 +116,28 @@ export default function DealBoard({ deals, onCardClick, onEdit, onStageChange, o
                       {dealFlagsLabel(d)}
                     </span>
                   )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 9, borderTop: '1px solid #f4f6f8' }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{formatCurrency(d.value, d.currency)}</span>
-                    <span title="Deal owner" style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', background: '#e63329', borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      {ownerInitials}
-                    </span>
-                  </div>
+                  {extraFields.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6 }}>
+                      {extraFields.map(f => (
+                        <div key={f.key} style={{ fontSize: 11.5, color: '#64748b', wordBreak: 'break-word' }}>
+                          <span style={{ fontWeight: 600, color: '#94a3b8' }}>{f.label}: </span>
+                          {renderField ? renderField(f, d) : (d[f.key] ?? '--')}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {(isVisible('value') || isVisible('ownerId')) && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 9, borderTop: '1px solid #f4f6f8' }}>
+                      {isVisible('value') ? (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{formatCurrency(d.value, d.currency)}</span>
+                      ) : <span />}
+                      {isVisible('ownerId') && (
+                        <span title="Deal owner" style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', background: '#e63329', borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          {getOwnerInitials(d)}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

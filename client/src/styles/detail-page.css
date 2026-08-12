@@ -19,6 +19,33 @@
   overflow-y: auto;
 }
 
+/* ── Resizable panel drag handle ── */
+.detail-panel-resize-handle {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 5;
+}
+
+.detail-panel-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1px;
+  width: 3px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.detail-panel-resize-handle:hover::after,
+.detail-panel-resize-handle.dragging::after {
+  background: #e63329;
+}
+
 .detail-left-nav {
   display: flex;
   align-items: center;

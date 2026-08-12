@@ -52,6 +52,14 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
   // Debounced so it doesn't fire on every keystroke; the token guard drops
   // a stale response if the fields change again before it comes back. Same
   // warning banner/state as before — this only changes when it's triggered.
+  // Tracks whether the CURRENT click's mousedown also started directly on
+  // the overlay (not on a descendant) — the overlay must only close when
+  // BOTH mousedown and the resulting click land on it. Without this, a
+  // mouse-drag text selection that starts inside the drawer (e.g. copying a
+  // long field value) and releases past the drawer's edge produces a
+  // synthetic click whose target is the overlay, which used to close the
+  // modal mid-copy and appear to wipe the form.
+  const mouseDownOnOverlay = useRef(false)
   const dupCheckToken = useRef(0)
   useEffect(() => {
     if (!isOpen) return
@@ -145,7 +153,14 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
   if (!isOpen) return null
 
   return (
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) { reset(); onClose() } }}>
+    <div
+      className="modal-overlay"
+      onMouseDown={e => { mouseDownOnOverlay.current = e.target === e.currentTarget }}
+      onClick={e => {
+        if (mouseDownOnOverlay.current && e.target === e.currentTarget) { reset(); onClose() }
+        mouseDownOnOverlay.current = false
+      }}
+    >
       <div className="modal-drawer">
 
         <div className="modal-header">

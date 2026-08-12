@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { TrendingUp, Briefcase, CheckCircle, Mail, Plus, Building2, PhoneCall, CalendarClock, AlertTriangle, CheckSquare } from 'lucide-react'
+import { TrendingUp, Briefcase, CheckCircle, Mail, Plus, Building2, PhoneCall, CalendarClock, AlertTriangle, CheckSquare, Target, FileCheck } from 'lucide-react'
 import api from '../api/client'
 import '../styles/dashboard.css'
 
@@ -54,10 +54,15 @@ export default function Dashboard() {
   const wonDeals    = deals.filter(d => /won/i.test(d.stage || ''))
   const recentDeals = deals.slice(0, 5)
 
+  const pocDeals             = deals.filter(d => d.poc)
+  const proposalSharedDeals  = deals.filter(d => d.proposalShared)
+
   const stats = [
-    { label: 'Total Deals',    value: deals.length,       Icon: TrendingUp,  color: '#fef9ee', iconColor: '#f59e0b' },
-    { label: 'Active Deals',   value: activeDeals.length, Icon: Briefcase,   color: '#f0fdf4', iconColor: '#22c55e' },
-    { label: 'Won Deals',      value: wonDeals.length,    Icon: CheckCircle, color: '#fff1f2', iconColor: '#e63329' },
+    { label: 'Total Deals',       value: deals.length,              Icon: TrendingUp,  color: '#fef9ee', iconColor: '#f59e0b' },
+    { label: 'Active Deals',      value: activeDeals.length,        Icon: Briefcase,   color: '#f0fdf4', iconColor: '#22c55e' },
+    { label: 'Won Deals',         value: wonDeals.length,           Icon: CheckCircle, color: '#fff1f2', iconColor: '#e63329' },
+    { label: 'POC',                value: pocDeals.length,           Icon: Target,      color: '#eff6ff', iconColor: '#3b82f6' },
+    { label: 'Proposal Shared',   value: proposalSharedDeals.length, Icon: FileCheck,   color: '#f5f3ff', iconColor: '#8b5cf6' },
   ]
 
   return (

@@ -19,6 +19,30 @@
   padding: 20px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.sidebar-collapse-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sidebar-collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
 }
 
 .logo-section-modern {
@@ -309,6 +333,67 @@
 
 .sidebar-modern::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* Collapsed state (desktop sidebar toggle) — width shrinks to icon-only;
+   all nav logic (accordion sections, active-link highlighting, search
+   filtering) stays exactly as-is underneath, this only hides text labels
+   and re-centers icons via CSS. Higher specificity than the width rules in
+   the responsive breakpoints below, so collapse wins at any viewport width. */
+.sidebar-modern.collapsed {
+  width: 68px;
+}
+
+.sidebar-modern.collapsed .nav-label {
+  display: none;
+}
+
+.sidebar-modern.collapsed .search-section-modern {
+  display: none;
+}
+
+/* The logo image itself doesn't shrink below its intrinsic size just
+   because its flex parent has minWidth:0, so at 68px wide the header row
+   (padding + logo + toggle button) doesn't fit and pushes the toggle button
+   out of view/unclickable — hiding the logo when collapsed is what actually
+   fixes that, not just centering it. */
+.sidebar-modern.collapsed .sidebar-header-modern {
+  justify-content: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.sidebar-modern.collapsed .logo-section-modern {
+  display: none;
+}
+
+.sidebar-modern.collapsed .item-link-modern,
+.sidebar-modern.collapsed .settings-link-modern {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: 4px;
+  margin-right: 4px;
+}
+
+.sidebar-modern.collapsed .section-button-modern {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.sidebar-modern.collapsed .section-icon-wrapper {
+  flex-shrink: 0;
+}
+
+.sidebar-modern.collapsed .items-list-modern {
+  border-left: none;
+  padding-left: 0;
+  align-items: center;
+}
+
+.sidebar-modern.collapsed .items-list-modern .item-link-modern {
+  width: 40px;
 }
 
 /* Responsive */

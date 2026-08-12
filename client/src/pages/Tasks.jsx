@@ -150,7 +150,7 @@ export default function Tasks() {
   const filtersActive = search || bucket !== 'today' || showCompleted || assigneeFilter
 
   const cellTh = { padding: '13px 18px', textAlign: 'left', fontWeight: 700, color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.5px', whiteSpace: 'nowrap' }
-  const cellTd = { padding: '14px 18px', color: '#334155', whiteSpace: 'nowrap', fontSize: 14 }
+  const cellTd = { padding: '14px 18px', color: '#334155', whiteSpace: 'normal', overflowWrap: 'anywhere', maxWidth: 260, fontSize: 14 }
   const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 7, borderRadius: 7, display: 'flex', transition: 'background .12s' }
   const filterSelect = { padding: '8px 11px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', color: '#334155', background: '#fff', cursor: 'pointer', transition: 'border-color .12s' }
   const pillStyle = (c) => ({ fontSize: 12, fontWeight: 700, color: c.text, background: c.bg, border: `1px solid ${c.border}`, borderRadius: 20, padding: '4px 11px', display: 'inline-block' })
@@ -256,6 +256,7 @@ export default function Tasks() {
             <tr>
               <th style={cellTh}>Task</th>
               <th style={cellTh}>Company</th>
+              <th style={cellTh}>Country</th>
               <th style={cellTh}>Due date & time</th>
               <th style={cellTh}>Assigned to</th>
               <th style={cellTh}>Status</th>
@@ -265,9 +266,9 @@ export default function Tasks() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Loading tasks…</td></tr>
+              <tr><td colSpan={7 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Loading tasks…</td></tr>
             ) : tasks.length === 0 ? (
-              <tr><td colSpan={6 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+              <tr><td colSpan={7 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
                 {total === 0 ? 'No tasks yet.' : 'No tasks match your filters.'}
               </td></tr>
             ) : tasks.map((t, i) => {
@@ -276,6 +277,7 @@ export default function Tasks() {
                 <tr key={t.id} style={{ borderBottom: i < tasks.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenTask(t)}>{t.title || '(untitled)'}</td>
                   <td style={cellTd}>{t.company?.name || '--'}</td>
+                  <td style={cellTd}>{t.company?.country || '--'}</td>
                   <td style={cellTd}>{fmtDateTime(t.dueDate)}</td>
                   <td style={cellTd}>{t.assignedTo?.name || 'Unassigned'}</td>
                   <td style={cellTd}>

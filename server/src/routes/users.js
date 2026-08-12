@@ -1,7 +1,7 @@
 const router = require('express').Router()
 const crypto = require('crypto')
 const auth   = require('../middleware/authMiddleware')
-const { PrismaClient } = require('@prisma/client')
+const { PrismaClient, Prisma } = require('@prisma/client')
 const prisma = new PrismaClient()
 
 // Lead Owner management (Settings → Dropdown Lists) always reflects the
@@ -221,6 +221,20 @@ router.delete('/:id', auth, async (req, res) => {
     await prisma.user.delete({ where: { id: req.params.id } })
     res.json({ success: true })
   } catch (err) {
+    // A user who has ever created an Activity (note/call/email/meeting/task)
+    // or owns a Deal can't be hard-deleted — those are required (non-null)
+    // relations, so Postgres blocks the delete with a foreign key
+    // constraint instead of silently orphaning that history. That's the
+    // database correctly protecting real data, not a bug — the fix is
+    // surfacing WHY instead of a bare "Server error", and pointing at
+    // Deactivate (PATCH /:id/status, already used by the Deactivated Users
+    // tab), which removes the user's access without touching any of their
+    // historical data.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') {
+      return res.status(400).json({
+        message: "This user can't be deleted — they have existing activity records (emails, notes, calls, tasks, or meetings) and/or own deals. Deactivate the user instead to remove their access while keeping their history intact.",
+      })
+    }
     console.error(err)
     res.status(500).json({ message: 'Server error.' })
   }

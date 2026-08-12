@@ -154,21 +154,23 @@ router.patch('/:id', auth, async (req, res) => {
   }
 })
 
-// DELETE /api/custom-fields/:id — hard-delete only if no record currently
-// stores a value for this field; otherwise disable instead so existing
-// records never end up with a silently-orphaned reference.
+// DELETE /api/custom-fields/:id — always a hard delete, required or not,
+// with or without existing stored values. Any CustomFieldValue rows for
+// this field are removed explicitly in the same transaction as the field
+// itself (belt-and-suspenders alongside the schema's own `onDelete: Cascade`
+// on CustomFieldValue.field) so no value row is ever left pointing at a
+// field definition that no longer exists.
 router.delete('/:id', auth, async (req, res) => {
   try {
     const field = await prisma.customFieldDefinition.findUnique({ where: { id: req.params.id } })
     if (!field) return res.status(404).json({ message: 'Not found.' })
 
     const valueCount = await prisma.customFieldValue.count({ where: { fieldId: field.id } })
-    if (valueCount > 0) {
-      return res.status(409).json({ message: 'This field has stored values on existing records. Disable it instead of deleting.' })
-    }
-
-    await prisma.customFieldDefinition.delete({ where: { id: req.params.id } })
-    res.json({ ok: true })
+    await prisma.$transaction([
+      prisma.customFieldValue.deleteMany({ where: { fieldId: field.id } }),
+      prisma.customFieldDefinition.delete({ where: { id: req.params.id } }),
+    ])
+    res.json({ ok: true, valuesDeleted: valueCount })
   } catch (err) {
     console.error('[CustomFields] delete error:', err.message)
     res.status(500).json({ message: 'Server error.' })

@@ -437,7 +437,7 @@ export default function Calls() {
   return <CallsErrorBoundary><CallsInner /></CallsErrorBoundary>
 }
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 100
 
 function CallsInner() {
   const navigate = useNavigate()
@@ -550,7 +550,7 @@ function CallsInner() {
         @keyframes spin { to { transform: rotate(360deg); } }
         .ch-table { width: 100%; border-collapse: collapse; }
         .ch-table th { background: #f8fafc; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; padding: 10px 14px; text-align: left; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
-        .ch-table td { padding: 12px 14px; font-size: 13px; color: #374151; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+        .ch-table td { padding: 12px 14px; font-size: 13px; color: #374151; border-bottom: 1px solid #f1f5f9; vertical-align: middle; max-width: 260px; overflow-wrap: anywhere; }
         .ch-table tr:hover td { background: #fafbff; }
         .ch-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; }
         .ch-btn-primary { background: #e63329; color: #fff; }
@@ -633,17 +633,17 @@ function CallsInner() {
                         style={{ cursor: 'pointer', width: 14, height: 14 }}
                       />
                     </th>
-                    <th>#</th>
-                    <th>Date & Time</th>
-                    <th>Direction</th>
-                    <th>From</th>
-                    <th>To</th>
+                    <th style={{ width: 44 }}>#</th>
+                    <th style={{ width: 150 }}>Date & Time</th>
+                    <th style={{ width: 100 }}>Direction</th>
+                    <th style={{ width: 130 }}>From</th>
+                    <th style={{ width: 130 }}>To</th>
                     <th>Company Name</th>
-                    <th>Status</th>
-                    <th>Duration</th>
-                    <th>Recording</th>
-                    <th>Analysis</th>
-                    <th>Actions</th>
+                    <th style={{ width: 100 }}>Status</th>
+                    <th style={{ width: 90 }}>Duration</th>
+                    <th style={{ width: 110 }}>Recording</th>
+                    <th style={{ width: 110 }}>Analysis</th>
+                    <th style={{ width: 210 }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>

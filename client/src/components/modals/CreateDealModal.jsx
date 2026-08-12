@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import api from '../../api/client'
 import { useDropdownOptions } from '../../hooks/useDropdownOptions'
@@ -11,6 +11,7 @@ const emptyForm = {
   contactPerson: '', contactPhone: '', contactEmail: '', serviceRequirement: '',
   clientWebsiteUrl: '', opportunityType: '', value: '', currency: 'USD', strategicImportance: '',
   expectedOutcome: '', stage: 'Discussion', notes: '', poc: false, proposalShared: false,
+  pocReceivedDate: '', pocDeliveredDate: '',
 }
 
 // Create or edit a deal. Pass `deal` (an existing deal record) to edit it —
@@ -48,10 +49,18 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
     notes:               deal.notes || '',
     poc:                 !!deal.poc,
     proposalShared:      !!deal.proposalShared,
+    pocReceivedDate:     deal.pocReceivedDate ? String(deal.pocReceivedDate).slice(0, 10) : '',
+    pocDeliveredDate:    deal.pocDeliveredDate ? String(deal.pocDeliveredDate).slice(0, 10) : '',
     customFields:        extractCustomFieldValues(deal),
   } : { ...emptyForm, customFields: {} })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
+
+  // See CreateCompanyModal.jsx for why this exists — the overlay must only
+  // close when BOTH mousedown and the resulting click land directly on it,
+  // otherwise a mouse-drag text selection that starts inside the drawer and
+  // releases past its edge closes the modal mid-copy.
+  const mouseDownOnOverlay = useRef(false)
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
 
@@ -91,6 +100,8 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
       notes:               form.notes || null,
       poc:                 form.poc,
       proposalShared:      form.proposalShared,
+      pocReceivedDate:     form.pocReceivedDate || null,
+      pocDeliveredDate:    form.pocDeliveredDate || null,
       customFields:        form.customFields,
     }
     try {
@@ -107,7 +118,14 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div
+      className="modal-overlay"
+      onMouseDown={e => { mouseDownOnOverlay.current = e.target === e.currentTarget }}
+      onClick={e => {
+        if (mouseDownOnOverlay.current && e.target === e.currentTarget) onClose()
+        mouseDownOnOverlay.current = false
+      }}
+    >
       <div className="modal-drawer">
         <div className="modal-header">
           <h2>{isEdit ? 'Edit Deal' : 'Create Deal'}</h2>
@@ -131,6 +149,17 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
               <input type="checkbox" checked={form.proposalShared} onChange={e => set('proposalShared', e.target.checked)} style={{ width: 15, height: 15 }} />
               Proposal Shared
             </label>
+          </div>
+
+          <div className="form-group" style={{ display: 'flex', gap: 20, flexDirection: 'row' }}>
+            <div style={{ flex: 1 }}>
+              <label>POC Received Date</label>
+              <input type="date" value={form.pocReceivedDate} onChange={e => set('pocReceivedDate', e.target.value)} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label>POC Delivered Date</label>
+              <input type="date" value={form.pocDeliveredDate} onChange={e => set('pocDeliveredDate', e.target.value)} />
+            </div>
           </div>
 
           <div className="form-group">

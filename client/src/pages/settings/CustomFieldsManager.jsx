@@ -34,8 +34,8 @@ export default function CustomFieldsManager() {
   const [newType, setNewType]   = useState('text')
   const [newRequired, setNewRequired] = useState(false)
 
-  const [editingId, setEditingId]     = useState(null)
-  const [editingLabel, setEditingLabel] = useState('')
+  const [editingId, setEditingId]   = useState(null)
+  const [editDraft, setEditDraft]   = useState({ label: '', type: 'text', required: false })
 
   const load = () => {
     setLoading(true)
@@ -66,14 +66,32 @@ export default function CustomFieldsManager() {
     refreshAfterWrite()
   }
 
-  const saveLabel = async (field) => {
-    const label = editingLabel.trim()
-    if (label) await api.patch(`/custom-fields/${field.id}`, { label })
-    setEditingId(null)
-    refreshAfterWrite()
+  const saveEdit = async (field) => {
+    const label = editDraft.label.trim()
+    if (!label) return
+    setError('')
+    // type is only sent when it actually changed — the backend rejects a
+    // type change once the field has stored values (to protect existing
+    // data), and since that rejection short-circuits the whole PATCH, an
+    // unrelated label/required edit made at the same time would be lost too
+    // if type were always included. Omitting it when unchanged means a
+    // label/required-only edit always succeeds regardless of stored values.
+    const payload = { label, required: editDraft.required }
+    if (editDraft.type !== field.type) payload.type = editDraft.type
+    try {
+      await api.patch(`/custom-fields/${field.id}`, payload)
+      setEditingId(null)
+      refreshAfterWrite()
+    } catch (e) {
+      setError(e?.response?.data?.message || 'Failed to save field.')
+    }
   }
 
   const removeField = async (field) => {
+    const warning = field.required
+      ? `Delete "${field.label}"? It's marked Required and may have stored values on existing ${entity} records — deleting it permanently removes those values too. This cannot be undone.`
+      : `Delete "${field.label}"? Any stored values for it on existing ${entity} records will be permanently removed too. This cannot be undone.`
+    if (!window.confirm(warning)) return
     setError('')
     try {
       await api.delete(`/custom-fields/${field.id}`)
@@ -159,13 +177,25 @@ export default function CustomFieldsManager() {
                       <>
                         <input
                           autoFocus
-                          value={editingLabel}
-                          onChange={e => setEditingLabel(e.target.value)}
-                          onKeyDown={e => e.key === 'Enter' && saveLabel(field)}
+                          value={editDraft.label}
+                          onChange={e => setEditDraft(d => ({ ...d, label: e.target.value }))}
+                          onKeyDown={e => e.key === 'Enter' && saveEdit(field)}
                           style={{ flex: 1, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 13 }}
                         />
-                        <button onClick={() => saveLabel(field)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a' }}><Check size={16} /></button>
-                        <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={16} /></button>
+                        <select
+                          value={editDraft.type}
+                          onChange={e => setEditDraft(d => ({ ...d, type: e.target.value }))}
+                          title="Field type (only changeable while no values are stored for this field)"
+                          style={{ padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 12.5 }}
+                        >
+                          {TYPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                        </select>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: '#64748b', whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" checked={editDraft.required} onChange={e => setEditDraft(d => ({ ...d, required: e.target.checked }))} />
+                          Required
+                        </label>
+                        <button onClick={() => saveEdit(field)} title="Save" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a' }}><Check size={16} /></button>
+                        <button onClick={() => setEditingId(null)} title="Cancel" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={16} /></button>
                       </>
                     ) : (
                       <>
@@ -186,7 +216,10 @@ export default function CustomFieldsManager() {
                             Manage values
                           </button>
                         )}
-                        <button onClick={() => { setEditingId(field.id); setEditingLabel(field.label) }} title="Rename" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+                        <button
+                          onClick={() => { setEditingId(field.id); setEditDraft({ label: field.label, type: field.type, required: field.required }) }}
+                          title="Edit field" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+                        >
                           <Pencil size={14} />
                         </button>
                         <button onClick={() => toggleEnabled(field)} title={field.enabled ? 'Disable' : 'Enable'}

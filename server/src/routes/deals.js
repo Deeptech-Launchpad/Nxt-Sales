@@ -36,6 +36,9 @@ function buildDealData(body) {
   // `null`, silently breaking an unchecked checkbox).
   if (body.poc !== undefined) data.poc = !!body.poc
   if (body.proposalShared !== undefined) data.proposalShared = !!body.proposalShared
+  // Nullable dates — empty string/null clears it, otherwise parse to a Date.
+  if (body.pocReceivedDate !== undefined) data.pocReceivedDate = body.pocReceivedDate ? new Date(body.pocReceivedDate) : null
+  if (body.pocDeliveredDate !== undefined) data.pocDeliveredDate = body.pocDeliveredDate ? new Date(body.pocDeliveredDate) : null
   return data
 }
 
@@ -52,25 +55,35 @@ router.get('/import-fields', auth, async (req, res) => {
 })
 
 // GET /api/deals
-// No params → the logged-in user's deals (global Deals dashboard, unchanged).
+// No params → EVERY deal visible to the current user (global "All Deals"
+// dashboard) — matches Companies' own default-unfiltered list. ?view=mine
+// → only deals the current user owns (Deal.ownerId), same opt-in-scoping
+// pattern as company.js's buildCompanyWhere (view === 'mine'), instead of
+// this route unconditionally restricting to the current user by default.
 // ?companyId=… → all deals for that company (Company details page).
 router.get('/', auth, async (req, res) => {
   try {
-    const { companyId } = req.query
+    const { companyId, view } = req.query
     // Dashboard listing (no explicit companyId) hides deals whose linked
     // company is in the Recycle Bin — it should behave as if that company no
     // longer exists. Deals with no company at all (companyId: null) are unaffected.
     const where = companyId
       ? { companyId }
-      : { ownerId: req.user.id, OR: [{ companyId: null }, { company: { deletedAt: null } }] }
+      : {
+          ...(view === 'mine' && { ownerId: req.user.id }),
+          OR: [{ companyId: null }, { company: { deletedAt: null } }],
+        }
     const deals = await prisma.deal.findMany({
       where,
       include: {
-        // ownerId is the linked company's Lead Owner — exposed so the client
-        // can filter "My Deals" (deals on companies I'm the Lead Owner of),
-        // which is a different scope than this route's own ownerId filter
-        // above (deals I personally created/own).
+        // company.ownerId is the linked company's Lead Owner — exposed for
+        // display (and any other page still keying off it), separate from
+        // this route's own Deal.ownerId-based ?view=mine filter above.
+        // owner (the Deal's own owner) is now included so the client can
+        // show the correct owner initials per row — All Deals can show
+        // deals belonging to any user, not just the one viewing the page.
         company: { select: { id: true, name: true, ownerId: true } },
+        owner:   { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
     })

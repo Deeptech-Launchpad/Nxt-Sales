@@ -8,6 +8,7 @@ import {
 import api from '../../api/client'
 import EmailConversations from './EmailConversations'
 import NoteModal from './NoteModal'
+import TaskModal from './TaskModal'
 import '../../styles/activity-modals.css'
 
 const SUBTABS = ['All activities', 'Notes', 'Emails', 'Calls', 'Tasks', 'Meetings']
@@ -344,10 +345,10 @@ function EmailThreadCard({ thread }) {
 }
 
 // Regular card for non-email activities (unchanged behaviour). onEditNote/
-// onDeleteNote are only ever invoked for act.type === 'note' — every other
-// activity type (call/meeting/task) renders exactly as before, with no
-// action icons, so this can't affect Calls/Emails/Meetings/Tasks.
-function ActivityCard({ act, onEditNote, onDeleteNote }) {
+// onDeleteNote only ever fire for act.type === 'note', onEditTask only for
+// act.type === 'task' — Calls/Emails/Meetings render exactly as before,
+// with no action icons, so this can't affect them.
+function ActivityCard({ act, onEditNote, onDeleteNote, onEditTask }) {
   const [expanded, setExpanded] = useState(false)
   const { Icon, cls } = ICON_MAP[act.type] || ICON_MAP.note
 
@@ -456,6 +457,17 @@ function ActivityCard({ act, onEditNote, onDeleteNote }) {
                 </button>
               </div>
             )}
+            {act.type === 'task' && (
+              <div className="af-note-actions">
+                <button
+                  className="af-note-action-btn"
+                  title="Edit task"
+                  onClick={e => { e.stopPropagation(); onEditTask && onEditTask(act) }}
+                >
+                  <Pencil size={12} />
+                </button>
+              </div>
+            )}
             <span className="af-time">{formatDate(act.createdAt)} at {formatTime(act.createdAt)}</span>
             {act.user?.name && <span style={{ fontSize: 11, color: '#94a3b8' }}>{act.user.name}</span>}
           </div>
@@ -500,6 +512,7 @@ export default function ActivityFeed({ companyId, companyName, contactEmail, onA
   const [acts,        setActs]        = useState([])
   const [loading,     setLoading]     = useState(true)
   const [editingNote, setEditingNote] = useState(null) // the note Activity being edited, or null
+  const [editingTask, setEditingTask] = useState(null) // the task Activity being edited, or null
 
   // Guards against out-of-order responses overwriting newer data.
   const reqSeq = useRef(0)
@@ -601,7 +614,7 @@ export default function ActivityFeed({ companyId, companyName, contactEmail, onA
                   item._type === 'thread'
                     ? <EmailThreadCard key={item.threadId} thread={item} />
                     : <ActivityCard    key={item.id}       act={item}
-                        onEditNote={setEditingNote} onDeleteNote={handleDeleteNote} />
+                        onEditNote={setEditingNote} onDeleteNote={handleDeleteNote} onEditTask={setEditingTask} />
                 )}
               </div>
             ))}
@@ -617,6 +630,15 @@ export default function ActivityFeed({ companyId, companyName, contactEmail, onA
           companyId={companyId}
           onClose={() => setEditingNote(null)}
           onSaved={() => { setEditingNote(null); fetchActs() }}
+        />
+      )}
+
+      {editingTask && (
+        <TaskModal
+          activity={editingTask}
+          companyId={companyId}
+          onClose={() => setEditingTask(null)}
+          onSaved={() => { setEditingTask(null); fetchActs() }}
         />
       )}
     </div>

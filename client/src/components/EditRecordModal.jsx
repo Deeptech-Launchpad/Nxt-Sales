@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Save, Loader2 } from 'lucide-react'
 import api from '../api/client'
 import { useDropdownOptions } from '../hooks/useDropdownOptions'
@@ -106,6 +106,12 @@ export default function EditRecordModal({ id, record, onClose, onSaved }) {
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState('')
 
+  // See CreateCompanyModal.jsx for why this exists — the overlay must only
+  // close when BOTH mousedown and the resulting click land directly on it,
+  // otherwise a mouse-drag text selection that starts inside the drawer and
+  // releases past its edge closes the modal mid-copy.
+  const mouseDownOnOverlay = useRef(false)
+
   const handleChange = (key, value) => setData(prev => ({ ...prev, [key]: value }))
 
   const handleSave = async () => {
@@ -131,7 +137,11 @@ export default function EditRecordModal({ id, record, onClose, onSaved }) {
 
   return (
     <div
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onMouseDown={e => { mouseDownOnOverlay.current = e.target === e.currentTarget }}
+      onClick={e => {
+        if (mouseDownOnOverlay.current && e.target === e.currentTarget) onClose()
+        mouseDownOnOverlay.current = false
+      }}
       style={{
         position: 'fixed', inset: 0, zIndex: 1000,
         background: 'rgba(15,23,42,0.45)',

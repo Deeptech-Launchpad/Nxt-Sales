@@ -167,33 +167,68 @@ router.get('/logs', auth, async (req, res) => {
   }
 })
 
-// ── POST /api/callhippo/sync — fetch from CallHippo API (READ-ONLY) ──────────
-router.post('/sync', auth, async (req, res) => {
+// Core sync logic, shared by the manual POST /sync route below and the
+// periodic background sync job (server/src/jobs/callHippoAutoSync.js) — the
+// job has no req/res to pull an acting user from, so it's a plain userId
+// param instead (used only to attribute the mirrored Activity rows).
+// Throws on failure; callers decide how to surface that (HTTP response vs.
+// a log line), matching the original route's behavior via a thrown error
+// carrying an optional `.status` (502 for a bad upstream shape, otherwise
+// treated as a generic failure).
+async function runCallHippoSync(userId, options = {}) {
   if (!CALLHIPPO_KEY) {
-    return res.status(400).json({ message: 'CallHippo API key not configured.' })
+    const err = new Error('CallHippo API key not configured.')
+    err.status = 400
+    throw err
   }
 
-  try {
-    // Fetch last 100 calls — read-only, no writes to CallHippo
-    // Try both common path patterns for web.callhippo.com
-    // Fetch last 6 months of call logs
-    const endDate   = new Date()
-    const startDate = new Date()
-    startDate.setMonth(startDate.getMonth() - 6)
-    const fmt = d => d.toISOString().slice(0, 10).replace(/-/g, '/')
+  // Read-only, no writes to CallHippo.
+  //
+  // Fetch window: incremental, not always the full 6 months — start from
+  // the most recent callDate already stored (minus a 1-day overlap buffer,
+  // to tolerate clock skew / late-arriving records), so a periodic sync
+  // only requests what's actually new. Falls back to a 6-month lookback
+  // only when CallLog is empty (first sync ever / fresh environment), so a
+  // brand-new install still gets real history instead of nothing.
+  // options.fullResync forces that same 6-month lookback regardless of what's
+  // already stored — a one-time opt-in used to re-fetch and correct existing
+  // rows (e.g. after the callDate-timezone fix below), never used by the
+  // regular manual/auto sync paths.
+  // CallHippo's activityfeed endDate is date-only and, per direct testing
+  // against the live API, excludes same-day calls when endDate = today (it
+  // only returns up to the prior day) — so the upper bound must be tomorrow
+  // to guarantee today's calls (up to right now) are actually included.
+  const endDate = new Date(Date.now() + 24 * 60 * 60 * 1000)
+  const mostRecent = options.fullResync ? null : await prisma.callLog.findFirst({ orderBy: { callDate: 'desc' }, select: { callDate: true } })
+  const startDate = mostRecent
+    ? new Date(mostRecent.callDate.getTime() - 24 * 60 * 60 * 1000)
+    : (() => { const d = new Date(); d.setMonth(d.getMonth() - 6); return d })()
+  const fmt = d => d.toISOString().slice(0, 10).replace(/-/g, '/')
 
+  // Paginated (not a single fixed skip=0/limit=100 request) — a sync window
+  // with more than 100 calls used to permanently strand anything past the
+  // 100th call, since every sync re-requested the SAME top-100 slice and
+  // never advanced. PAGE_SIZE matches CallHippo's own page size; MAX_PAGES
+  // is a generous safety cap against a runaway loop if the API's "end of
+  // data" signal ever misbehaves — normal incremental syncs stop naturally
+  // on the first short page long before this, and even a fresh 6-month
+  // backfill (observed: ~2000 calls) has comfortable headroom under it.
+  const PAGE_SIZE = 100
+  const MAX_PAGES = 200
+  const callsArray = []
+  for (let page = 0; page < MAX_PAGES; page++) {
     const response = await callhippoPost('/activityfeed', {
-      skip:      "0",
-      limit:     "100",
+      skip:      String(page * PAGE_SIZE),
+      limit:     String(PAGE_SIZE),
       startDate: fmt(startDate),
       endDate:   fmt(endDate),
     })
 
     const raw = response.data
-    console.log('[CallHippo] Raw response keys:', Object.keys(raw || {}))
+    if (page === 0) console.log('[CallHippo] Raw response keys:', Object.keys(raw || {}))
 
     // CallHippo returns data under different keys depending on version
-    const callsArray =
+    const pageCalls =
       raw?.data?.data ||
       raw?.data?.callLogs ||
       raw?.data?.logs ||
@@ -201,16 +236,27 @@ router.post('/sync', auth, async (req, res) => {
       (Array.isArray(raw?.data) ? raw.data : null) ||
       []
 
-    if (!Array.isArray(callsArray)) {
+    if (!Array.isArray(pageCalls)) {
       console.error('[CallHippo] Unexpected response shape:', JSON.stringify(raw).slice(0, 500))
-      return res.status(502).json({ message: 'Unexpected response from CallHippo API.', raw: raw })
+      if (page === 0) {
+        const err = new Error('Unexpected response from CallHippo API.')
+        err.status = 502
+        throw err
+      }
+      break // a later page failing shape-checking just ends pagination early, doesn't fail the whole sync
     }
 
-    // Log first record to reveal actual field names
-    if (callsArray.length > 0) {
-      console.log('[CallHippo] First record keys:', Object.keys(callsArray[0]))
-      console.log('[CallHippo] First record sample:', JSON.stringify(callsArray[0]).slice(0, 600))
+    // Log first record of the first page only, to reveal actual field
+    // names without spamming logs across every page of a large sync.
+    if (page === 0 && pageCalls.length > 0) {
+      console.log('[CallHippo] First record keys:', Object.keys(pageCalls[0]))
+      console.log('[CallHippo] First record sample:', JSON.stringify(pageCalls[0]).slice(0, 600))
     }
+
+    callsArray.push(...pageCalls)
+    if (pageCalls.length < PAGE_SIZE) break // short page = no more data
+  }
+  console.log(`[CallHippo] Fetched ${callsArray.length} call(s) since ${fmt(startDate)} across up to ${MAX_PAGES} page(s).`)
 
     let synced = 0
     let skipped = 0
@@ -223,12 +269,26 @@ router.post('/sync', auth, async (req, res) => {
       const callhippoId  = String(call._id || call.id || call.callId || call.callSid || '')
       if (!callhippoId) { skipped++; continue }
 
-      // Date + Time — CallHippo returns 'date' ("Jun 28, 2026") and 'time' ("11:54:49 PM") separately
+      // callAnswerTime/callHangupTime come with an explicit "GMT+0000" suffix,
+      // so `new Date(...)` parses them correctly regardless of the server's
+      // OS timezone. 'date'/'time' ("Aug 11, 2026", "7:50:58 AM") carry NO
+      // timezone info and are rendered in the CallHippo account's own
+      // configured timezone (confirmed by cross-checking against
+      // callAnswerTime: not the server's local zone) — parsing them directly
+      // silently assumes the server's OS timezone and can shift every call's
+      // stored time by several hours (verified: several hours off on this
+      // dev box, and would differ again on a production server with yet
+      // another OS timezone). callHangupTime is present on every call,
+      // including unanswered ones, so it's the reliable fallback; the
+      // ambiguous date/time string parse is now a last resort only, for the
+      // (unseen so far) case where CallHippo omits both.
       const dateStr  = call.date || call.dateToShow || ''
       const timeStr  = call.time || ''
-      const callDate = dateStr
-        ? new Date(`${dateStr} ${timeStr}`.trim())
-        : (call.callAnswerTime ? new Date(call.callAnswerTime) : new Date())
+      const callDate = call.callAnswerTime
+        ? new Date(call.callAnswerTime)
+        : call.callHangupTime
+          ? new Date(call.callHangupTime)
+          : (dateStr ? new Date(`${dateStr} ${timeStr}`.trim()) : new Date())
 
       // From/To numbers
       const fromNumber = call.from || call.callerNumber || call.fromNumber || ''
@@ -297,7 +357,7 @@ router.post('/sync', auth, async (req, res) => {
           create: {
             type:      'call',
             companyId: matchedCompany.id,
-            userId:    req.user.id,
+            userId:    userId,
             title:     `${direction === 'outbound' ? 'Outbound' : 'Inbound'} call – ${matchedCompany.name}`,
             direction,
             duration,
@@ -314,16 +374,6 @@ router.post('/sync', auth, async (req, res) => {
         }).catch(e => console.error(`[CallHippo] Activity link failed for call ${callhippoId}:`, e.message))
       }
 
-      // Auto-analyze recordings longer than 90 seconds
-      if (recordingUrl && duration > 90) {
-        const existing = await prisma.callLog.findUnique({ where: { callhippoId } })
-        if (!existing?.analysisStatus) {
-          await prisma.callLog.update({
-            where: { callhippoId },
-            data:  { analysisStatus: 'pending' },
-          })
-        }
-      }
     }
 
     // Backfill: each sync only re-fetches CallHippo's most recent 100 calls, so
@@ -346,7 +396,7 @@ router.post('/sync', auth, async (req, res) => {
         create: {
           type:      'call',
           companyId: matchedCompany.id,
-          userId:    req.user.id,
+          userId:    userId,
           title:     `${log.direction === 'outbound' ? 'Outbound' : 'Inbound'} call – ${matchedCompany.name}`,
           direction: log.direction,
           duration:  log.duration,
@@ -364,16 +414,22 @@ router.post('/sync', auth, async (req, res) => {
       backfilled++
     }
 
-    // Recover any analyses orphaned by a restart, then run the pending queue
-    triggerPendingAnalysis().catch(e => console.error('[CallHippo] auto-analysis error:', e.message))
+  // Recover any analyses orphaned by a restart, then run the pending queue
+  triggerPendingAnalysis().catch(e => console.error('[CallHippo] auto-analysis error:', e.message))
 
-    console.log(`[CallHippo] Sync complete: ${synced} upserted, ${skipped} skipped, ${backfilled} backfilled`)
-    res.json({ synced, skipped, backfilled, total: callsArray.length })
+  console.log(`[CallHippo] Sync complete: ${synced} upserted, ${skipped} skipped, ${backfilled} backfilled`)
+  return { synced, skipped, backfilled, total: callsArray.length }
+}
 
+// ── POST /api/callhippo/sync — fetch from CallHippo API (READ-ONLY) ──────────
+router.post('/sync', auth, async (req, res) => {
+  try {
+    const result = await runCallHippoSync(req.user.id)
+    res.json(result)
   } catch (err) {
     console.error('[CallHippo] sync error:', err.message)
     const msg = err?.response?.data?.message || err.message || 'Sync failed.'
-    res.status(500).json({ message: msg })
+    res.status(err.status || 500).json({ message: msg })
   }
 })
 
@@ -506,3 +562,4 @@ async function triggerPendingAnalysis() {
 }
 
 module.exports = router
+module.exports.runCallHippoSync = runCallHippoSync

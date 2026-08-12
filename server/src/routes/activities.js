@@ -143,7 +143,7 @@ router.get('/', auth, async (req, res) => {
         skip: (page - 1) * limit,
         take: limit,
         include: {
-          company:    { select: { id: true, name: true } },
+          company:    { select: { id: true, name: true, country: true } },
           user:       { select: { id: true, name: true, email: true } },
           assignedTo: { select: { id: true, name: true, email: true } },
         },

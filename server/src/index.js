@@ -20,6 +20,7 @@ const customFieldRoutes = require('./routes/customFields')
 const dashboardRoutes = require('./routes/dashboard')
 const { startRecycleBinPurgeSweep } = require('./jobs/purgeRecycleBin')
 const { startAutoCompleteOverdueTasksSweep } = require('./jobs/autoCompleteOverdueTasks')
+const { startCallHippoAutoSync } = require('./jobs/callHippoAutoSync')
 const { initSocket } = require('./realtime/socket')
 
 require('./config/passport')
@@ -60,6 +61,7 @@ const server = app.listen(PORT, () => {
   console.log(`✓ Server running on http://localhost:${PORT}`)
   startRecycleBinPurgeSweep()
   startAutoCompleteOverdueTasksSweep()
+  startCallHippoAutoSync()
 })
 
 initSocket(server)

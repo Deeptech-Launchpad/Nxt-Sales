@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
 import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import FilterDropdown from '../components/filters/FilterDropdown'
+import AddFilterMenu from '../components/filters/AddFilterMenu'
 import CreateCompanyModal from '../components/modals/CreateCompanyModal'
 import ImportModal from '../components/modals/ImportModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
@@ -24,6 +25,16 @@ const MoreBadge = ({ n }) => n > 0
 
 const COLUMNS_STORAGE_KEY = 'mwz_companies_visible_columns'
 const DEFAULT_COLUMNS = ['country', 'industry', 'email', 'phone', 'domain', 'cms', 'remarks']
+
+// Optional filters offered behind the "+" button — not shown by default,
+// added/removed by the user via AddFilterMenu. Extend this list to offer
+// more optional filters later without touching the always-on ones
+// (Lead Owner / Create date / Lead status) at all.
+const OPTIONAL_FILTERS_STORAGE_KEY = 'mwz_companies_optional_filters'
+const OPTIONAL_FILTER_DEFS = [
+  { key: 'industry', label: 'Industry' },
+  { key: 'country',  label: 'Country' },
+]
 
 // Lead Owner (ownerId) is intentionally excluded from the server's dynamic
 // Company field list — that list is shared with the Import Template, and
@@ -149,7 +160,35 @@ export default function Companies() {
   const [ownerFilter,      setOwnerFilter]      = useState([])
   const [createDateFilter, setCreateDateFilter] = useState([])
   const [leadStatusFilter, setLeadStatusFilter] = useState([])
+  const [industryFilter,   setIndustryFilter]   = useState([])
+  const [countryFilter,    setCountryFilter]    = useState([])
   const { options: ownerDropdownOptions } = useDropdownOptions('company.ownerId')
+  const { options: industryValues } = useDropdownOptions('company.industry')
+  const { options: countryValues }  = useDropdownOptions('company.country')
+  const industryOptions = industryValues.map(o => ({ value: o.value, label: o.label }))
+  const countryOptions  = countryValues.map(o => ({ value: o.value, label: o.label }))
+
+  // Which OPTIONAL filters (Industry/Country) are currently shown in the
+  // toolbar, chosen via the "+" button — persisted so the choice sticks
+  // across reloads, same pattern as visibleColumns below.
+  const [activeOptionalFilters, setActiveOptionalFilters] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(OPTIONAL_FILTERS_STORAGE_KEY))
+      return Array.isArray(saved) ? saved : []
+    } catch {
+      return []
+    }
+  })
+  const saveActiveOptionalFilters = (keys) => {
+    // Removing a filter also clears its current selection immediately, so
+    // "removing a selected filter removes its filtering effect" — not just
+    // hides the chip while still filtering underneath.
+    if (!keys.includes('industry')) setIndustryFilter([])
+    if (!keys.includes('country'))  setCountryFilter([])
+    setActiveOptionalFilters(keys)
+    localStorage.setItem(OPTIONAL_FILTERS_STORAGE_KEY, JSON.stringify(keys))
+    setPage(1)
+  }
 
   // Dynamic field list (all Create-Company fields) + user's chosen visible columns
   const [companyFields, setCompanyFields]     = useState([])
@@ -202,6 +241,8 @@ export default function Companies() {
         ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
         ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
         ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
+        ...(industryFilter.length   > 0 && { industries:   industryFilter.join(',') }),
+        ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
       }
       const { data } = await api.get('/companies', { params })
       setCompanies(data.companies || [])
@@ -211,7 +252,7 @@ export default function Companies() {
     } finally {
       setLoading(false)
     }
-  }, [page, activeTab, search, ownerFilter, leadStatusFilter, createDateFilter])
+  }, [page, activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter])
 
   useEffect(() => { fetchCompanies() }, [fetchCompanies])
 
@@ -225,6 +266,8 @@ export default function Companies() {
     ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
     ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
     ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
+    ...(industryFilter.length   > 0 && { industries:   industryFilter.join(',') }),
+    ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
   }
   const openCompany = (id) => navigate(`/companies/${id}`, { state: { listContext } })
 
@@ -238,10 +281,12 @@ export default function Companies() {
       ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
       ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
       ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
+      ...(industryFilter.length   > 0 && { industries:   industryFilter.join(',') }),
+      ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
     }
     const { data } = await api.get('/companies/export', { params })
     return data.companies || []
-  }, [activeTab, search, ownerFilter, leadStatusFilter, createDateFilter])
+  }, [activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter])
 
   // Tab change resets page
   const switchTab = (key) => { setActiveTab(key); setPage(1); setSelected([]) }
@@ -275,6 +320,7 @@ export default function Companies() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const hasFilters = ownerFilter.length > 0 || createDateFilter.length > 0 || leadStatusFilter.length > 0
+    || industryFilter.length > 0 || countryFilter.length > 0
 
   // Export always includes every Company field (a superset of the visible
   // table columns) — except 'phone', the legacy primary-scalar mirror of the
@@ -378,12 +424,28 @@ export default function Companies() {
             selected={leadStatusFilter}
             onChange={v => { setLeadStatusFilter(v); setPage(1) }}
           />
-          <button className="filter-chip chip-icon" title="Add filter"><Plus size={13} /></button>
+          {activeOptionalFilters.includes('industry') && (
+            <FilterDropdown
+              label="Industry"
+              options={industryOptions}
+              selected={industryFilter}
+              onChange={v => { setIndustryFilter(v); setPage(1) }}
+            />
+          )}
+          {activeOptionalFilters.includes('country') && (
+            <FilterDropdown
+              label="Country"
+              options={countryOptions}
+              selected={countryFilter}
+              onChange={v => { setCountryFilter(v); setPage(1) }}
+            />
+          )}
+          <AddFilterMenu fields={OPTIONAL_FILTER_DEFS} activeKeys={activeOptionalFilters} onSave={saveActiveOptionalFilters} />
           <button className="filter-chip chip-icon" title="Edit filters"><Pencil size={13} /></button>
           <button className="filter-chip advanced-filter"><SlidersHorizontal size={13} /> Advanced filters</button>
           {hasFilters && (
             <button className="filter-chip" style={{ color: '#ef4444', borderColor: '#fecaca' }}
-              onClick={() => { setOwnerFilter([]); setCreateDateFilter([]); setLeadStatusFilter([]); setPage(1) }}>
+              onClick={() => { setOwnerFilter([]); setCreateDateFilter([]); setLeadStatusFilter([]); setIndustryFilter([]); setCountryFilter([]); setPage(1) }}>
               Clear all
             </button>
           )}
@@ -441,6 +503,18 @@ export default function Companies() {
                     {(c.name || '??').slice(0, 2).toUpperCase()}
                   </span>
                   <span className="link-style" onClick={() => openCompany(c.id)}>{c.name}</span>
+                  {c._count?.deals > 0 && (
+                    <span
+                      title={`${c._count.deals} deal${c._count.deals > 1 ? 's' : ''} for this company`}
+                      style={{
+                        flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: '#0d9488',
+                        background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: 99,
+                        padding: '2px 8px', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Deal Created
+                    </span>
+                  )}
                 </td>
                 {orderedVisibleFields.map(f => <td key={f.key}>{renderCompanyCell(f, c)}</td>)}
               </tr>

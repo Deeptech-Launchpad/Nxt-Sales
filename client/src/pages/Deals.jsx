@@ -22,6 +22,14 @@ const DEFAULT_COLUMNS = [
   'value', '_flags',
 ]
 
+// Board view's Edit Columns is a SEPARATE selection from List's (Update 9) —
+// a card has far less room than a table row, so defaulting board to every
+// field List happens to show would clutter it. Default matches exactly what
+// the card already rendered before this became configurable, so existing
+// Board layout is unchanged until a user opts into more fields.
+const BOARD_COLUMNS_STORAGE_KEY = 'mwz_deals_board_visible_columns'
+const DEFAULT_BOARD_COLUMNS = ['companyName', 'contactPerson', '_flags', 'value', 'ownerId']
+
 // Deal Owner (ownerId) is intentionally excluded from the server's dynamic
 // Deal field list (same reasoning as Company's ownerId exclusion) — this is
 // a client-side-only column entry so Edit Columns can offer it.
@@ -59,17 +67,30 @@ export default function Deals() {
     localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(cols))
   }
 
+  const [boardVisibleColumns, setBoardVisibleColumns] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(BOARD_COLUMNS_STORAGE_KEY))
+      return Array.isArray(saved) && saved.length ? saved : DEFAULT_BOARD_COLUMNS
+    } catch {
+      return DEFAULT_BOARD_COLUMNS
+    }
+  })
+  const saveBoardVisibleColumns = (cols) => {
+    setBoardVisibleColumns(cols)
+    localStorage.setItem(BOARD_COLUMNS_STORAGE_KEY, JSON.stringify(cols))
+  }
+
   useEffect(() => {
     api.get('/deals/import-fields').then(r => setDealFields(r.data.fields || [])).catch(() => {})
   }, [])
 
   const fetchDeals = useCallback(() => {
     setLoading(true)
-    api.get('/deals')
+    api.get('/deals', { params: { view: dealsTab === 'mine' ? 'mine' : undefined } })
       .then(r => setDeals(Array.isArray(r.data) ? r.data : []))
       .catch(() => setDeals([]))
       .finally(() => setLoading(false))
-  }, [])
+  }, [dealsTab])
 
   useEffect(() => { fetchDeals() }, [fetchDeals])
 
@@ -103,39 +124,39 @@ export default function Deals() {
     }
   }
 
-  // "My Deals" — deals whose LINKED COMPANY's Lead Owner is the current user.
-  // Distinct from this page's base fetch (already scoped to deals the
-  // current user personally owns/created, server-side) — a deal you created
-  // can still be linked to a company someone else is the Lead Owner of, and
-  // "My Deals" narrows to just the ones where you're also the company's
-  // Lead Owner. A deal with no linked company can never match.
-  const scopedDeals = dealsTab === 'mine' ? deals.filter(d => d.company?.ownerId === user?.id) : deals
+  // "My Deals" scoping now happens server-side (GET /deals?view=mine, by the
+  // deal's own ownerId) — see fetchDeals above. All Deals returns every
+  // deal visible to the user with no further client-side owner filtering.
 
   // Search covers both views — Deal Name, Company Name, Contact Person,
   // Email, Domain.
   const filteredDeals = (() => {
     const q = search.trim().toLowerCase()
-    if (!q) return scopedDeals
-    return scopedDeals.filter(d => [
+    if (!q) return deals
+    return deals.filter(d => [
       d.title, d.companyName, d.company?.name, d.contactPerson, d.contactEmail, d.domainName,
     ].some(v => v && String(v).toLowerCase().includes(q)))
   })()
 
-  // Deals are scoped to the logged-in owner, so show the current user's initials.
-  const ownerInitials = (user?.name || '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '—'
+  // All Deals can now show deals owned by any user, so initials must be
+  // computed per-deal from its own owner (d.owner.name), not the logged-in
+  // user's name shown on every row.
+  const initialsFor = (name) => (name || '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '—'
 
   const editColumnsFields = [...dealFields, DEAL_OWNER_COLUMN, DEAL_FLAGS_COLUMN]
   const orderedVisibleFields = editColumnsFields.filter(f => visibleColumns.includes(f.key))
+  const orderedBoardFields = editColumnsFields.filter(f => boardVisibleColumns.includes(f.key))
 
   function renderDealCell(f, d) {
     if (f.key === 'companyName') {
       const name = d.companyName || d.company?.name || '--'
       return d.domainName ? `${name} / ${d.domainName}` : name
     }
-    if (f.key === 'ownerId') return ownerInitials
+    if (f.key === 'ownerId') return initialsFor(d.owner?.name)
     if (f.key === 'value') return formatCurrency(d.value, d.currency)
     if (f.key === '_flags') return dealFlagsLabel(d) || '--'
     if (f.key === 'poc' || f.key === 'proposalShared') return d[f.key] ? 'Yes' : 'No'
+    if (f.key === 'pocReceivedDate' || f.key === 'pocDeliveredDate') return renderCustomCell('date', d[f.key])
     if (f.key.startsWith('custom.')) return renderCustomCell(f.type, d[f.key])
     const v = d[f.key]
     if (Array.isArray(v)) return v.length ? v.join(', ') : '--'
@@ -143,7 +164,7 @@ export default function Deals() {
   }
 
   const cellTh = { padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: '#64748b', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.4px', whiteSpace: 'nowrap' }
-  const cellTd = { padding: '13px 16px', color: '#334155', whiteSpace: 'nowrap', fontSize: 13.5 }
+  const cellTd = { padding: '13px 16px', color: '#334155', whiteSpace: 'normal', overflowWrap: 'anywhere', maxWidth: 260, fontSize: 13.5 }
   const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 6, borderRadius: 6, display: 'flex', transition: 'background .12s' }
 
   return (
@@ -151,11 +172,22 @@ export default function Deals() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 18, borderBottom: '1px solid #eef1f5' }}>
         <div>
           <h1 style={{ fontSize: 23, fontWeight: 700, color: '#0f172a', letterSpacing: '-.2px' }}>Deals</h1>
-          <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>{loading ? 'Loading…' : `${filteredDeals.length} record${filteredDeals.length === 1 ? '' : 's'}`}</span>
+          <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>
+            {loading ? 'Loading…' : (
+              <>
+                {filteredDeals.length} record{filteredDeals.length === 1 ? '' : 's'}
+                {' · '}{filteredDeals.filter(d => d.poc).length} POC
+                {' · '}{filteredDeals.filter(d => d.proposalShared).length} Proposal Shared
+              </>
+            )}
+          </span>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {viewMode === 'list' && (
             <EditColumnsMenu fields={editColumnsFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} alwaysShownKey="title" />
+          )}
+          {viewMode === 'board' && (
+            <EditColumnsMenu fields={editColumnsFields} visibleColumns={boardVisibleColumns} onSave={saveBoardVisibleColumns} alwaysShownKey="title" />
           )}
           <button
             onClick={() => setShowCreate(true)}
@@ -231,7 +263,9 @@ export default function Deals() {
             onCardClick={handleOpenDeal}
             onEdit={setEditDeal}
             onStageChange={handleStageChange}
-            ownerInitials={ownerInitials}
+            getOwnerInitials={d => initialsFor(d.owner?.name)}
+            visibleFields={orderedBoardFields}
+            renderField={renderDealCell}
           />
         )
       ) : (
@@ -248,7 +282,7 @@ export default function Deals() {
             {loading ? (
               <tr><td colSpan={2 + orderedVisibleFields.length} style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13.5 }}>Loading deals…</td></tr>
             ) : filteredDeals.length === 0 ? (
-              <tr><td colSpan={2 + orderedVisibleFields.length} style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13.5 }}>{scopedDeals.length === 0 ? (dealsTab === 'mine' ? 'No deals on companies you own yet.' : 'No deals yet.') : 'No deals match your search.'}</td></tr>
+              <tr><td colSpan={2 + orderedVisibleFields.length} style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13.5 }}>{deals.length === 0 ? (dealsTab === 'mine' ? 'No deals on companies you own yet.' : 'No deals yet.') : 'No deals match your search.'}</td></tr>
             ) : filteredDeals.map((d, i) => (
               <tr key={d.id} style={{ borderBottom: i < filteredDeals.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                 <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenDeal(d)}>{d.title}</td>
