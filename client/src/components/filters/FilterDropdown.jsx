@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Search, ChevronDown, X } from 'lucide-react'
 import '../../styles/filter-dropdown.css'
 
-export default function FilterDropdown({ label, options = [], selected = [], onChange, searchable = true }) {
+export default function FilterDropdown({ label, options = [], selected = [], onChange, searchable = true, singleSelect = false }) {
   const [open, setOpen]     = useState(false)
   const [query, setQuery]   = useState('')
   const ref = useRef(null)
@@ -18,6 +18,10 @@ export default function FilterDropdown({ label, options = [], selected = [], onC
   )
 
   const toggle = (value) => {
+    if (singleSelect) {
+      onChange(selected.includes(value) ? [] : [value])
+      return
+    }
     onChange(selected.includes(value)
       ? selected.filter(v => v !== value)
       : [...selected, value]

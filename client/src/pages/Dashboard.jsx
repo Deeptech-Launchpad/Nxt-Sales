@@ -76,7 +76,7 @@ export default function Dashboard() {
         {stats.map(({ label, value, Icon, color, iconColor }) => (
           <div key={label} className="stat-card">
             <div className="stat-icon-wrap" style={{ background: color }}>
-              <Icon size={20} color={iconColor} />
+              <Icon size={17} color={iconColor} />
             </div>
             <div className="stat-value">{loading ? '—' : value}</div>
             <div className="stat-label">{label}</div>
@@ -88,7 +88,7 @@ export default function Dashboard() {
         {kpiCards.map(({ label, value, Icon, color, iconColor }) => (
           <div key={label} className="stat-card">
             <div className="stat-icon-wrap" style={{ background: color }}>
-              <Icon size={20} color={iconColor} />
+              <Icon size={17} color={iconColor} />
             </div>
             <div className="stat-value">{kpisLoading ? '—' : (value ?? 0)}</div>
             <div className="stat-label">{label}</div>

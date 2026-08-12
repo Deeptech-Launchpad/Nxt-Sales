@@ -34,6 +34,14 @@ const OPTIONAL_FILTERS_STORAGE_KEY = 'mwz_companies_optional_filters'
 const OPTIONAL_FILTER_DEFS = [
   { key: 'industry', label: 'Industry' },
   { key: 'country',  label: 'Country' },
+  { key: 'hasDeal',  label: 'Deals Created' },
+]
+
+// Not admin-managed like Industry/Country — a fixed yes/no choice, so no
+// useDropdownOptions call needed for it.
+const HAS_DEAL_OPTIONS = [
+  { value: 'yes', label: 'Has deal' },
+  { value: 'no',  label: 'No deal' },
 ]
 
 // Lead Owner (ownerId) is intentionally excluded from the server's dynamic
@@ -162,6 +170,7 @@ export default function Companies() {
   const [leadStatusFilter, setLeadStatusFilter] = useState([])
   const [industryFilter,   setIndustryFilter]   = useState([])
   const [countryFilter,    setCountryFilter]    = useState([])
+  const [hasDealFilter,    setHasDealFilter]    = useState([])
   const { options: ownerDropdownOptions } = useDropdownOptions('company.ownerId')
   const { options: industryValues } = useDropdownOptions('company.industry')
   const { options: countryValues }  = useDropdownOptions('company.country')
@@ -185,6 +194,7 @@ export default function Companies() {
     // hides the chip while still filtering underneath.
     if (!keys.includes('industry')) setIndustryFilter([])
     if (!keys.includes('country'))  setCountryFilter([])
+    if (!keys.includes('hasDeal'))  setHasDealFilter([])
     setActiveOptionalFilters(keys)
     localStorage.setItem(OPTIONAL_FILTERS_STORAGE_KEY, JSON.stringify(keys))
     setPage(1)
@@ -243,6 +253,7 @@ export default function Companies() {
         ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
         ...(industryFilter.length   > 0 && { industries:   industryFilter.join(',') }),
         ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
+        ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
       }
       const { data } = await api.get('/companies', { params })
       setCompanies(data.companies || [])
@@ -252,7 +263,7 @@ export default function Companies() {
     } finally {
       setLoading(false)
     }
-  }, [page, activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter])
+  }, [page, activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter])
 
   useEffect(() => { fetchCompanies() }, [fetchCompanies])
 
@@ -268,6 +279,7 @@ export default function Companies() {
     ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
     ...(industryFilter.length   > 0 && { industries:   industryFilter.join(',') }),
     ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
+    ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
   }
   const openCompany = (id) => navigate(`/companies/${id}`, { state: { listContext } })
 
@@ -283,10 +295,11 @@ export default function Companies() {
       ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
       ...(industryFilter.length   > 0 && { industries:   industryFilter.join(',') }),
       ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
+      ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
     }
     const { data } = await api.get('/companies/export', { params })
     return data.companies || []
-  }, [activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter])
+  }, [activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter])
 
   // Tab change resets page
   const switchTab = (key) => { setActiveTab(key); setPage(1); setSelected([]) }
@@ -320,7 +333,7 @@ export default function Companies() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const hasFilters = ownerFilter.length > 0 || createDateFilter.length > 0 || leadStatusFilter.length > 0
-    || industryFilter.length > 0 || countryFilter.length > 0
+    || industryFilter.length > 0 || countryFilter.length > 0 || hasDealFilter.length > 0
 
   // Export always includes every Company field (a superset of the visible
   // table columns) — except 'phone', the legacy primary-scalar mirror of the
@@ -440,12 +453,22 @@ export default function Companies() {
               onChange={v => { setCountryFilter(v); setPage(1) }}
             />
           )}
+          {activeOptionalFilters.includes('hasDeal') && (
+            <FilterDropdown
+              label="Deals Created"
+              options={HAS_DEAL_OPTIONS}
+              selected={hasDealFilter}
+              onChange={v => { setHasDealFilter(v); setPage(1) }}
+              searchable={false}
+              singleSelect
+            />
+          )}
           <AddFilterMenu fields={OPTIONAL_FILTER_DEFS} activeKeys={activeOptionalFilters} onSave={saveActiveOptionalFilters} />
           <button className="filter-chip chip-icon" title="Edit filters"><Pencil size={13} /></button>
           <button className="filter-chip advanced-filter"><SlidersHorizontal size={13} /> Advanced filters</button>
           {hasFilters && (
             <button className="filter-chip" style={{ color: '#ef4444', borderColor: '#fecaca' }}
-              onClick={() => { setOwnerFilter([]); setCreateDateFilter([]); setLeadStatusFilter([]); setIndustryFilter([]); setCountryFilter([]); setPage(1) }}>
+              onClick={() => { setOwnerFilter([]); setCreateDateFilter([]); setLeadStatusFilter([]); setIndustryFilter([]); setCountryFilter([]); setHasDealFilter([]); setPage(1) }}>
               Clear all
             </button>
           )}
@@ -516,7 +539,7 @@ export default function Companies() {
                     </span>
                   )}
                 </td>
-                {orderedVisibleFields.map(f => <td key={f.key}>{renderCompanyCell(f, c)}</td>)}
+                {orderedVisibleFields.map(f => <td key={f.key}><div className="cell-clamp">{renderCompanyCell(f, c)}</div></td>)}
               </tr>
             ))}
           </tbody>

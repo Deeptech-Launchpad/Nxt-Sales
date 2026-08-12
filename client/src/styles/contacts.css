@@ -246,6 +246,24 @@
   white-space: normal;
   overflow-wrap: anywhere;
   max-width: 260px;
+  /* NOTE: display must stay the default (table-cell) here — a <td> needs
+     that to participate in the table's column grid at all. line-clamp
+     needs `display: -webkit-box`, which is NOT compatible with table-cell,
+     so it's applied via the inner .cell-clamp wrapper below instead,
+     never directly on a <td>/<tr>. */
+}
+
+/* Wrap a cell's content up to 2 lines; anything past that (e.g. a long URL
+   with no spaces to wrap at) truncates with an ellipsis instead of
+   stretching the row taller — open the company's detail page for the full
+   value. Applied to an inner wrapper div, not the <td> itself. */
+.cell-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .name-cell { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -322,5 +340,11 @@
   text-decoration: none;
   transition: color .15s;
   overflow-wrap: anywhere;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .link-style:hover { color: #1d4ed8; text-decoration: underline; }

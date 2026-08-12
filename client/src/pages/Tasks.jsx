@@ -150,7 +150,12 @@ export default function Tasks() {
   const filtersActive = search || bucket !== 'today' || showCompleted || assigneeFilter
 
   const cellTh = { padding: '13px 18px', textAlign: 'left', fontWeight: 700, color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.5px', whiteSpace: 'nowrap' }
+  // display must stay the default (table-cell) on a <td> — -webkit-box
+  // (needed for line-clamp) isn't compatible with table-cell and breaks the
+  // whole table's column layout. Line-clamp goes on an inner wrapper via
+  // cellClamp instead, never directly on the <td>.
   const cellTd = { padding: '14px 18px', color: '#334155', whiteSpace: 'normal', overflowWrap: 'anywhere', maxWidth: 260, fontSize: 14 }
+  const cellClamp = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', overflowWrap: 'anywhere' }
   const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 7, borderRadius: 7, display: 'flex', transition: 'background .12s' }
   const filterSelect = { padding: '8px 11px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', color: '#334155', background: '#fff', cursor: 'pointer', transition: 'border-color .12s' }
   const pillStyle = (c) => ({ fontSize: 12, fontWeight: 700, color: c.text, background: c.bg, border: `1px solid ${c.border}`, borderRadius: 20, padding: '4px 11px', display: 'inline-block' })
@@ -275,18 +280,18 @@ export default function Tasks() {
               const status = deriveStatus(t)
               return (
                 <tr key={t.id} style={{ borderBottom: i < tasks.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenTask(t)}>{t.title || '(untitled)'}</td>
-                  <td style={cellTd}>{t.company?.name || '--'}</td>
-                  <td style={cellTd}>{t.company?.country || '--'}</td>
-                  <td style={cellTd}>{fmtDateTime(t.dueDate)}</td>
-                  <td style={cellTd}>{t.assignedTo?.name || 'Unassigned'}</td>
+                  <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenTask(t)}><div style={cellClamp}>{t.title || '(untitled)'}</div></td>
+                  <td style={cellTd}><div style={cellClamp}>{t.company?.name || '--'}</div></td>
+                  <td style={cellTd}><div style={cellClamp}>{t.company?.country || '--'}</div></td>
+                  <td style={cellTd}><div style={cellClamp}>{fmtDateTime(t.dueDate)}</div></td>
+                  <td style={cellTd}><div style={cellClamp}>{t.assignedTo?.name || 'Unassigned'}</div></td>
                   <td style={cellTd}>
                     <span style={pillStyle(STATUS_PILL[status])}>
                       {status === 'completed' && <CheckCircle2 size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}
                       {STATUS_PILL[status].label}
                     </span>
                   </td>
-                  {orderedVisibleFields.map(f => <td key={f.key} style={cellTd}>{renderTaskCell(f, t)}</td>)}
+                  {orderedVisibleFields.map(f => <td key={f.key} style={cellTd}><div style={cellClamp}>{renderTaskCell(f, t)}</div></td>)}
                   <td style={{ ...cellTd, display: 'flex', gap: 4 }}>
                     <button
                       onClick={() => setEditTask(t)} title="Edit task" style={{ ...iconBtn, color: '#64748b' }}

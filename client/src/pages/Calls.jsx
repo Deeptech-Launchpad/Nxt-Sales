@@ -683,7 +683,11 @@ function CallsInner() {
                       <td>
                         {log.company ? (
                           <span
-                            style={{ color: '#3b82f6', fontWeight: 600, cursor: 'pointer' }}
+                            style={{
+                              color: '#3b82f6', fontWeight: 600, cursor: 'pointer',
+                              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden', textOverflow: 'ellipsis', overflowWrap: 'anywhere',
+                            }}
                             onClick={() => navigate(`/companies/${log.company.id}`)}
                           >
                             {log.company.name}

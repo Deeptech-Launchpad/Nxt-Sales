@@ -4,6 +4,7 @@ import { Plus, Pencil, Trash2, Search, List, LayoutGrid } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
 import CreateDealModal from '../components/modals/CreateDealModal'
+import ViewDealModal from '../components/modals/ViewDealModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
 import DealBoard from '../components/DealBoard'
 import { renderCustomCell } from '../utils/customFieldRender'
@@ -47,6 +48,7 @@ export default function Deals() {
   const [loading, setLoading]     = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [editDeal, setEditDeal]   = useState(null)
+  const [viewDeal, setViewDeal]   = useState(null)
   const [dealFields, setDealFields] = useState([])
   const [search, setSearch]       = useState('')
   const [dealsTab, setDealsTab]   = useState('all') // 'all' | 'mine'
@@ -104,12 +106,20 @@ export default function Deals() {
     }
   }
 
-  // Clicking a deal opens its linked company (same behavior in both views);
-  // a deal with no linked company has nowhere to navigate to, so it falls
-  // back to the edit modal instead of a dead click.
+  // List view: clicking a deal's title opens its linked company; a deal
+  // with no linked company has nowhere to navigate to, so it falls back to
+  // the edit modal instead of a dead click. (Board view no longer uses
+  // this — its card click opens the read-only ViewDealModal instead, with
+  // company navigation as its own separate icon via goToDealCompany below.)
   const handleOpenDeal = (d) => {
     if (d.companyId) navigate(`/companies/${d.companyId}`)
     else setEditDeal(d)
+  }
+
+  // Board view's dedicated "go to company" icon — pure navigation, no
+  // edit-modal fallback (the pencil icon already covers that separately).
+  const goToDealCompany = (d) => {
+    if (d.companyId) navigate(`/companies/${d.companyId}`)
   }
 
   // Drag-and-drop stage change (Board View) — optimistic update so the board
@@ -164,7 +174,12 @@ export default function Deals() {
   }
 
   const cellTh = { padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: '#64748b', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.4px', whiteSpace: 'nowrap' }
+  // display must stay the default (table-cell) on a <td> — -webkit-box
+  // (needed for line-clamp) isn't compatible with table-cell and breaks the
+  // whole table's column layout. Line-clamp goes on an inner wrapper via
+  // cellClamp instead, never directly on the <td>.
   const cellTd = { padding: '13px 16px', color: '#334155', whiteSpace: 'normal', overflowWrap: 'anywhere', maxWidth: 260, fontSize: 13.5 }
+  const cellClamp = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', overflowWrap: 'anywhere' }
   const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 6, borderRadius: 6, display: 'flex', transition: 'background .12s' }
 
   return (
@@ -260,8 +275,9 @@ export default function Deals() {
         ) : (
           <DealBoard
             deals={filteredDeals}
-            onCardClick={handleOpenDeal}
+            onViewDeal={setViewDeal}
             onEdit={setEditDeal}
+            onGoToCompany={goToDealCompany}
             onStageChange={handleStageChange}
             getOwnerInitials={d => initialsFor(d.owner?.name)}
             visibleFields={orderedBoardFields}
@@ -285,8 +301,8 @@ export default function Deals() {
               <tr><td colSpan={2 + orderedVisibleFields.length} style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13.5 }}>{deals.length === 0 ? (dealsTab === 'mine' ? 'No deals on companies you own yet.' : 'No deals yet.') : 'No deals match your search.'}</td></tr>
             ) : filteredDeals.map((d, i) => (
               <tr key={d.id} style={{ borderBottom: i < filteredDeals.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenDeal(d)}>{d.title}</td>
-                {orderedVisibleFields.map(f => <td key={f.key} style={cellTd}>{renderDealCell(f, d)}</td>)}
+                <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenDeal(d)}><div style={cellClamp}>{d.title}</div></td>
+                {orderedVisibleFields.map(f => <td key={f.key} style={cellTd}><div style={cellClamp}>{renderDealCell(f, d)}</div></td>)}
                 <td style={{ ...cellTd, display: 'flex', gap: 4 }}>
                   <button
                     onClick={() => setEditDeal(d)} title="Edit deal" style={{ ...iconBtn, color: '#64748b' }}
@@ -316,6 +332,13 @@ export default function Deals() {
           deal={editDeal}
           onClose={() => setEditDeal(null)}
           onSaved={() => fetchDeals()}
+        />
+      )}
+
+      {viewDeal && (
+        <ViewDealModal
+          deal={viewDeal}
+          onClose={() => setViewDeal(null)}
         />
       )}
     </div>

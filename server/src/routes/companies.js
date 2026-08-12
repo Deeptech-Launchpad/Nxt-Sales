@@ -164,7 +164,7 @@ async function companyIdsWithCustomFieldMatch(customFiltersJson) {
 // Shared filter builder — used by both the paginated list and the export
 // endpoint so "export with applied filters" always matches the on-screen list.
 async function buildCompanyWhere(query, userId) {
-  const { search, view, owners, leadStatuses, createDate, customFilters, industries, countries } = query
+  const { search, view, owners, leadStatuses, createDate, customFilters, industries, countries, hasDeal } = query
   // Companies in the Recycle Bin are archived — excluded from every normal
   // list/search/export view. Only the dedicated Recycle Bin routes look past this.
   const where = { deletedAt: null }
@@ -193,6 +193,11 @@ async function buildCompanyWhere(query, userId) {
   // ALL CAPS, e.g. "IRELAND") but imported Company.country data is
   // Title Case (e.g. "Ireland") — case-insensitive match so they still line up.
   if (countries)    where.country    = { in: countries.split(','), mode: 'insensitive' }
+
+  // Optional "Deals Created" filter — at least one Deal linked to this
+  // company (or none), independent of every other filter above.
+  if (hasDeal === 'yes') where.deals = { some: {} }
+  if (hasDeal === 'no')  where.deals = { none: {} }
 
   if (createDate) {
     const range = dateRangeFor(createDate)

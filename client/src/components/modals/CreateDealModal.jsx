@@ -77,6 +77,21 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dealStages])
 
+  // A saved deal's clientType can end up pointing at a value that's since
+  // been renamed/removed from the deal.clientType dropdown (Settings →
+  // Dropdown Lists) — the native <select> then silently shows some OTHER
+  // option as "selected" while form.clientType still (correctly) holds the
+  // real saved value underneath. That's actively misleading (the modal
+  // looks like it has a different Client Type than what's really stored)
+  // and risky (saving without ever touching this field would still send
+  // the true stored value, but re-picking the same visually-shown-but-wrong
+  // option would silently overwrite it). Inject the stale value as its own
+  // option so what's shown always matches what's actually saved; it drops
+  // out on its own once a real option is chosen.
+  const clientTypeOptions = (form.clientType && !clientTypes.some(o => o.value === form.clientType))
+    ? [{ id: '_stale_clientType', value: form.clientType, label: `${form.clientType} (no longer in list)` }, ...clientTypes]
+    : clientTypes
+
   const save = async () => {
     if (!form.title.trim()) { setError('Deal name is required.'); return }
     setSaving(true); setError('')
@@ -184,7 +199,7 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
             <label>Client Type</label>
             <select value={form.clientType} onChange={e => set('clientType', e.target.value)}>
               <option value="">Select client type</option>
-              {clientTypes.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
+              {clientTypeOptions.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
             </select>
           </div>
 

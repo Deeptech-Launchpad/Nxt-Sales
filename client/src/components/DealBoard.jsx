@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Pencil } from 'lucide-react'
+import { Pencil, Building2 } from 'lucide-react'
 import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import { formatCurrency } from '../utils/formatCurrency'
 import { dealFlagsLabel } from '../utils/dealFlags'
@@ -16,7 +16,7 @@ import { dealFlagsLabel } from '../utils/dealFlags'
 // same as before and only grows when someone actually opts into more.
 const CARD_CHROME_KEYS = new Set(['companyName', 'contactPerson', '_flags', 'value', 'ownerId'])
 
-export default function DealBoard({ deals, onCardClick, onEdit, onStageChange, getOwnerInitials, visibleFields = [], renderField }) {
+export default function DealBoard({ deals, onViewDeal, onEdit, onGoToCompany, onStageChange, getOwnerInitials, visibleFields = [], renderField }) {
   const visibleKeys = new Set(visibleFields.map(f => f.key))
   const isVisible = (key) => visibleKeys.has(key)
   const extraFields = visibleFields.filter(f => !CARD_CHROME_KEYS.has(f.key))
@@ -80,7 +80,7 @@ export default function DealBoard({ deals, onCardClick, onEdit, onStageChange, g
                   draggable
                   onDragStart={() => setDragDealId(d.id)}
                   onDragEnd={() => { setDragDealId(null); setDragOverStage(null) }}
-                  onClick={() => onCardClick(d)}
+                  onClick={() => onViewDeal(d)}
                   onMouseEnter={e => { if (dragDealId !== d.id) { e.currentTarget.style.boxShadow = '0 4px 12px rgba(15,23,42,0.10)'; e.currentTarget.style.transform = 'translateY(-1px)' } }}
                   onMouseLeave={e => { e.currentTarget.style.boxShadow = '0 1px 2px rgba(15,23,42,0.05)'; e.currentTarget.style.transform = 'translateY(0)' }}
                   style={{
@@ -91,15 +91,27 @@ export default function DealBoard({ deals, onCardClick, onEdit, onStageChange, g
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
                     <span style={{ fontSize: 13.5, fontWeight: 600, color: '#0f172a', wordBreak: 'break-word' }}>{d.title}</span>
-                    <button
-                      onClick={e => { e.stopPropagation(); onEdit(d) }}
-                      title="Edit deal"
-                      style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#94a3b8', flexShrink: 0, padding: 3, borderRadius: 5, transition: 'background .12s' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <Pencil size={12} />
-                    </button>
+                    <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                      <button
+                        onClick={e => { e.stopPropagation(); if (d.companyId) onGoToCompany(d) }}
+                        title={d.companyId ? 'Go to company' : 'No linked company'}
+                        disabled={!d.companyId}
+                        style={{ border: 'none', background: 'transparent', cursor: d.companyId ? 'pointer' : 'not-allowed', color: d.companyId ? '#94a3b8' : '#e2e8f0', padding: 3, borderRadius: 5, transition: 'background .12s' }}
+                        onMouseEnter={e => { if (d.companyId) e.currentTarget.style.background = '#f1f5f9' }}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Building2 size={12} />
+                      </button>
+                      <button
+                        onClick={e => { e.stopPropagation(); onEdit(d) }}
+                        title="Edit deal"
+                        style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#94a3b8', padding: 3, borderRadius: 5, transition: 'background .12s' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <Pencil size={12} />
+                      </button>
+                    </div>
                   </div>
                   {isVisible('companyName') && (d.companyName || d.company?.name) && (
                     <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 5, fontWeight: 500 }}>{d.companyName || d.company?.name}</div>
