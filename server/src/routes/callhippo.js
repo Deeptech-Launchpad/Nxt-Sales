@@ -260,24 +260,10 @@ async function runCallHippoSync(userId, options = {}) {
 
     let synced = 0
     let skipped = 0
-    let duplicatesSkipped = 0
 
     // Company Name column (Update 10): match each call's "To" number against
     // company phone/phones once up front, reused for every call in this sync.
     const companyPhoneIndex = await buildCompanyPhoneIndex()
-
-    // CallHippo occasionally logs the same physical call twice under two
-    // different `_id`s (confirmed against the live API — same From/To/
-    // direction, duration within ~1-2s of each other, callDate seconds
-    // apart). Our own dedup-by-callhippoId can't catch that since the two
-    // records genuinely have different ids. Guard against it with a second
-    // key: fromNumber+toNumber+direction bucketed into 10-second windows.
-    // Seeded from every CallLog already in this sync's own fetch window
-    // (so a cross-run duplicate is caught) and updated as new rows are
-    // created in this loop (so a same-run duplicate is caught too).
-    const DEDUP_WINDOW_SEC = 10
-    const dedupBucket = (d) => Math.floor(d.getTime() / (DEDUP_WINDOW_SEC * 1000))
-    const dedupKey = (from, to, dir, bucket) => `${from}|${to}|${dir}|${bucket}`
 
     // "Already have this exact call" must be checked by id membership, not a
     // callDate range — CallHippo's own date filter (fmt(), above) is
@@ -293,28 +279,23 @@ async function runCallHippoSync(userId, options = {}) {
     })
     const existingIdSet = new Set(existingIdRows.map(r => r.callhippoId))
 
-    // Cross-id duplicate detection (see comment above): fromNumber+toNumber+
-    // direction bucketed into 10-second windows. Widened to whole calendar
-    // days (matching CallHippo's own day-granularity date filter) so a
-    // duplicate whose sibling was synced earlier the same day, before the
-    // exact startDate instant, is still caught.
-    const dedupWindowStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()))
-    const existingForDedup = await prisma.callLog.findMany({
-      where: { callDate: { gte: dedupWindowStart, lte: endDate } },
-      select: { id: true, callDate: true, fromNumber: true, toNumber: true, direction: true, recordingUrl: true },
-    })
-    const dedupIndex = new Map() // dedupKey -> { id, recordingUrl }
-    for (const r of existingForDedup) {
-      dedupIndex.set(dedupKey(r.fromNumber, r.toNumber, r.direction, dedupBucket(r.callDate)), { id: r.id, recordingUrl: r.recordingUrl })
-    }
-    function findDuplicate(fromNumber, toNumber, direction, callDate) {
-      const b = dedupBucket(callDate)
-      for (const offset of [0, -1, 1]) {
-        const hit = dedupIndex.get(dedupKey(fromNumber, toNumber, direction, b + offset))
-        if (hit) return hit
-      }
-      return null
-    }
+    // NOTE: this sync intentionally does NOT attempt to auto-merge CallHippo's
+    // own occasional same-call-under-two-ids double logging (a real thing —
+    // confirmed against the live API). An earlier version of this function
+    // tried a fromNumber+toNumber+direction+time-window heuristic to catch
+    // it live, but measurement against production data showed it couldn't
+    // reliably tell "one call logged twice" apart from "two genuine back-to-
+    // back call attempts to the same number" (this business's outbound
+    // dialing produces plenty of the latter, e.g. missed → immediate manual
+    // redial) — same time gap, no clean signal to separate them. Silently
+    // skipping the wrong half of that distinction means real calls quietly
+    // vanish from the CRM, which is worse than the cosmetic cost of an
+    // occasional true duplicate row. So: sync is now a complete, lossless,
+    // 1:1 mirror of CallHippo by id — nothing fetched is ever silently
+    // dropped. Likely-duplicate rows already in the DB are still findable
+    // and removable via scripts/callhippoDedupeCleanup.js, which is
+    // dry-run-by-default so a human reviews every candidate before anything
+    // is deleted, rather than the sync guessing unsupervised.
 
     for (const call of callsArray) {
       const callhippoId  = String(call._id || call.id || call.callId || call.callSid || '')
@@ -377,20 +358,8 @@ async function runCallHippoSync(userId, options = {}) {
       if (existingIdSet.has(callhippoId)) {
         savedLog = await prisma.callLog.update({ where: { callhippoId }, data: fieldValues })
       } else {
-        const dup = findDuplicate(fromNumber, toNumber, direction, callDate)
-        if (dup) {
-          duplicatesSkipped++
-          // The two CallHippo records for the same call sometimes differ in
-          // which one carries the recording — patch it onto the kept row
-          // instead of silently losing it.
-          if (!dup.recordingUrl && recordingUrl) {
-            await prisma.callLog.update({ where: { id: dup.id }, data: { recordingUrl } }).catch(() => {})
-          }
-          continue // no new CallLog row, no mirrored Activity, for this duplicate
-        }
         savedLog = await prisma.callLog.create({ data: { callhippoId, ...fieldValues } })
         existingIdSet.add(callhippoId)
-        dedupIndex.set(dedupKey(fromNumber, toNumber, direction, dedupBucket(callDate)), { id: savedLog.id, recordingUrl })
       }
       synced++
 
@@ -464,8 +433,8 @@ async function runCallHippoSync(userId, options = {}) {
   // Recover any analyses orphaned by a restart, then run the pending queue
   triggerPendingAnalysis().catch(e => console.error('[CallHippo] auto-analysis error:', e.message))
 
-  console.log(`[CallHippo] Sync complete: ${synced} upserted, ${skipped} skipped, ${duplicatesSkipped} duplicates skipped, ${backfilled} backfilled`)
-  return { synced, skipped, duplicatesSkipped, backfilled, total: callsArray.length }
+  console.log(`[CallHippo] Sync complete: ${synced} upserted, ${skipped} skipped, ${backfilled} backfilled`)
+  return { synced, skipped, backfilled, total: callsArray.length }
 }
 
 // ── POST /api/callhippo/sync — fetch from CallHippo API (READ-ONLY) ──────────
