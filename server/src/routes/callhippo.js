@@ -194,15 +194,26 @@ async function runCallHippoSync(userId, options = {}) {
   // already stored — a one-time opt-in used to re-fetch and correct existing
   // rows (e.g. after the callDate-timezone fix below), never used by the
   // regular manual/auto sync paths.
-  // CallHippo's activityfeed endDate is date-only and, per direct testing
-  // against the live API, excludes same-day calls when endDate = today (it
-  // only returns up to the prior day) — so the upper bound must be tomorrow
-  // to guarantee today's calls (up to right now) are actually included.
+  // CallHippo's activityfeed startDate/endDate are date-only strings, and —
+  // per direct testing against the live API — CallHippo interprets them as
+  // midnight in the ACCOUNT'S OWN configured display timezone (this account:
+  // US Eastern, so EST/UTC-5 in Feb, EDT/UTC-4 in Aug — it follows US DST),
+  // not UTC. Confirmed directly: startDate=2026/02/13 excluded every call
+  // before 2026-02-13T05:00:00Z (= Feb 13 00:00 EST) even though those calls
+  // are still "Feb 13" by UTC's own calendar — costing up to ~5 hours of
+  // calls right at whichever boundary a naive UTC-date computation lands on.
+  // So every boundary here needs slack, not just endDate: endDate needs a
+  // day of headroom to guarantee "up to right now" is actually included, and
+  // startDate needs the same day of headroom on the other side so the
+  // intended lookback isn't silently short-changed by up to 5 hours. The
+  // extra day of overlap this creates on either end is harmless — every call
+  // in it is upserted by callhippoId, so a call fetched twice just updates
+  // the same row instead of duplicating it.
   const endDate = new Date(Date.now() + 24 * 60 * 60 * 1000)
   const mostRecent = options.fullResync ? null : await prisma.callLog.findFirst({ orderBy: { callDate: 'desc' }, select: { callDate: true } })
   const startDate = mostRecent
     ? new Date(mostRecent.callDate.getTime() - 24 * 60 * 60 * 1000)
-    : (() => { const d = new Date(); d.setMonth(d.getMonth() - 6); return d })()
+    : (() => { const d = new Date(); d.setMonth(d.getMonth() - 6); d.setDate(d.getDate() - 1); return d })()
   const fmt = d => d.toISOString().slice(0, 10).replace(/-/g, '/')
 
   // Paginated (not a single fixed skip=0/limit=100 request) — a sync window
