@@ -260,10 +260,61 @@ async function runCallHippoSync(userId, options = {}) {
 
     let synced = 0
     let skipped = 0
+    let duplicatesSkipped = 0
 
     // Company Name column (Update 10): match each call's "To" number against
     // company phone/phones once up front, reused for every call in this sync.
     const companyPhoneIndex = await buildCompanyPhoneIndex()
+
+    // CallHippo occasionally logs the same physical call twice under two
+    // different `_id`s (confirmed against the live API — same From/To/
+    // direction, duration within ~1-2s of each other, callDate seconds
+    // apart). Our own dedup-by-callhippoId can't catch that since the two
+    // records genuinely have different ids. Guard against it with a second
+    // key: fromNumber+toNumber+direction bucketed into 10-second windows.
+    // Seeded from every CallLog already in this sync's own fetch window
+    // (so a cross-run duplicate is caught) and updated as new rows are
+    // created in this loop (so a same-run duplicate is caught too).
+    const DEDUP_WINDOW_SEC = 10
+    const dedupBucket = (d) => Math.floor(d.getTime() / (DEDUP_WINDOW_SEC * 1000))
+    const dedupKey = (from, to, dir, bucket) => `${from}|${to}|${dir}|${bucket}`
+
+    // "Already have this exact call" must be checked by id membership, not a
+    // callDate range — CallHippo's own date filter (fmt(), above) is
+    // day-granularity, so a fetch window starting mid-day can return calls
+    // from earlier the same calendar day that were already synced in a prior
+    // run; a callDate >= startDate range query would miss those (they sort
+    // before the exact startDate instant) and wrongly attempt to re-create
+    // them. Querying by the exact ids in this fetch sidesteps that entirely.
+    const fetchedIds = callsArray.map(c => String(c._id || c.id || c.callId || c.callSid || '')).filter(Boolean)
+    const existingIdRows = await prisma.callLog.findMany({
+      where: { callhippoId: { in: fetchedIds } },
+      select: { callhippoId: true },
+    })
+    const existingIdSet = new Set(existingIdRows.map(r => r.callhippoId))
+
+    // Cross-id duplicate detection (see comment above): fromNumber+toNumber+
+    // direction bucketed into 10-second windows. Widened to whole calendar
+    // days (matching CallHippo's own day-granularity date filter) so a
+    // duplicate whose sibling was synced earlier the same day, before the
+    // exact startDate instant, is still caught.
+    const dedupWindowStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate()))
+    const existingForDedup = await prisma.callLog.findMany({
+      where: { callDate: { gte: dedupWindowStart, lte: endDate } },
+      select: { id: true, callDate: true, fromNumber: true, toNumber: true, direction: true, recordingUrl: true },
+    })
+    const dedupIndex = new Map() // dedupKey -> { id, recordingUrl }
+    for (const r of existingForDedup) {
+      dedupIndex.set(dedupKey(r.fromNumber, r.toNumber, r.direction, dedupBucket(r.callDate)), { id: r.id, recordingUrl: r.recordingUrl })
+    }
+    function findDuplicate(fromNumber, toNumber, direction, callDate) {
+      const b = dedupBucket(callDate)
+      for (const offset of [0, -1, 1]) {
+        const hit = dedupIndex.get(dedupKey(fromNumber, toNumber, direction, b + offset))
+        if (hit) return hit
+      }
+      return null
+    }
 
     for (const call of callsArray) {
       const callhippoId  = String(call._id || call.id || call.callId || call.callSid || '')
@@ -317,34 +368,30 @@ async function runCallHippoSync(userId, options = {}) {
       // call gets linked to that company and mirrored as a Company Activity.
       const matchedCompany = companyPhoneIndex.get(normalizePhone(toNumber)) || null
 
-      const savedLog = await prisma.callLog.upsert({
-        where:  { callhippoId },
-        create: {
-          callhippoId,
-          callDate,
-          fromNumber,
-          toNumber,
-          direction,
-          status,
-          duration,
-          recordingUrl,
-          agentName,
-          agentId,
-          companyId: matchedCompany?.id || null,
-        },
-        update: {
-          callDate,
-          fromNumber,
-          toNumber,
-          direction,
-          status,
-          duration,
-          recordingUrl,
-          agentName,
-          agentId,
-          companyId: matchedCompany?.id || null,
-        },
-      })
+      const fieldValues = {
+        callDate, fromNumber, toNumber, direction, status, duration,
+        recordingUrl, agentName, agentId, companyId: matchedCompany?.id || null,
+      }
+
+      let savedLog
+      if (existingIdSet.has(callhippoId)) {
+        savedLog = await prisma.callLog.update({ where: { callhippoId }, data: fieldValues })
+      } else {
+        const dup = findDuplicate(fromNumber, toNumber, direction, callDate)
+        if (dup) {
+          duplicatesSkipped++
+          // The two CallHippo records for the same call sometimes differ in
+          // which one carries the recording — patch it onto the kept row
+          // instead of silently losing it.
+          if (!dup.recordingUrl && recordingUrl) {
+            await prisma.callLog.update({ where: { id: dup.id }, data: { recordingUrl } }).catch(() => {})
+          }
+          continue // no new CallLog row, no mirrored Activity, for this duplicate
+        }
+        savedLog = await prisma.callLog.create({ data: { callhippoId, ...fieldValues } })
+        existingIdSet.add(callhippoId)
+        dedupIndex.set(dedupKey(fromNumber, toNumber, direction, dedupBucket(callDate)), { id: savedLog.id, recordingUrl })
+      }
       synced++
 
       // Mirror the call onto the matched company's Activity feed (Company →
@@ -417,14 +464,19 @@ async function runCallHippoSync(userId, options = {}) {
   // Recover any analyses orphaned by a restart, then run the pending queue
   triggerPendingAnalysis().catch(e => console.error('[CallHippo] auto-analysis error:', e.message))
 
-  console.log(`[CallHippo] Sync complete: ${synced} upserted, ${skipped} skipped, ${backfilled} backfilled`)
-  return { synced, skipped, backfilled, total: callsArray.length }
+  console.log(`[CallHippo] Sync complete: ${synced} upserted, ${skipped} skipped, ${duplicatesSkipped} duplicates skipped, ${backfilled} backfilled`)
+  return { synced, skipped, duplicatesSkipped, backfilled, total: callsArray.length }
 }
 
 // ── POST /api/callhippo/sync — fetch from CallHippo API (READ-ONLY) ──────────
+// ?fullResync=true re-fetches the full 6-month lookback (instead of just the
+// incremental window) to reconcile existing rows — same read-only, idempotent
+// upsert path as a normal sync, just a wider fetch window. Not exposed in the
+// UI; intended for a one-off corrective run, same as the manual button but
+// via a direct API call.
 router.post('/sync', auth, async (req, res) => {
   try {
-    const result = await runCallHippoSync(req.user.id)
+    const result = await runCallHippoSync(req.user.id, { fullResync: req.query.fullResync === 'true' })
     res.json(result)
   } catch (err) {
     console.error('[CallHippo] sync error:', err.message)

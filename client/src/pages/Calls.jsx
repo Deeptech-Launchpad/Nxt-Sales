@@ -20,11 +20,21 @@ function fmtDuration(sec) {
   return `${m}m ${s}s`
 }
 
+// Stored callDate is a correct absolute UTC instant (see server/src/routes/
+// callhippo.js). Without an explicit timeZone, toLocaleString renders in
+// whatever timezone the VIEWER'S browser/OS happens to be set to — so two
+// people looking at the same call could see two different times. Pinning to
+// Asia/Kolkata makes the displayed time deterministic for every viewer,
+// matching the 'en-IN' formatting already used here. Note this will not
+// match CallHippo's own dashboard, which renders in that account's own
+// separately-configured display timezone — a CallHippo-side setting outside
+// this app's control, not a data or display bug on our side.
 function fmtDate(iso) {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('en-IN', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit', hour12: true,
+    timeZone: 'Asia/Kolkata',
   })
 }
 
