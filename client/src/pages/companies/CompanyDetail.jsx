@@ -14,6 +14,7 @@ import ActivityFeed      from '../../components/activities/ActivityFeed'
 import EditRecordModal   from '../../components/EditRecordModal'
 import CreateDealModal   from '../../components/modals/CreateDealModal'
 import { valueList } from '../../utils/multiValue'
+import { normalizeUrl } from '../../utils/url'
 import { invalidateCompanyEmail } from '../../utils/emailCache'
 import { formatCurrency } from '../../utils/formatCurrency'
 import '../../styles/detail-page.css'
@@ -384,8 +385,8 @@ export default function CompanyDetail() {
             >
               <Star size={16} color={company.isPinned ? '#f59e0b' : '#cbd5e1'} fill={company.isPinned ? '#f59e0b' : 'none'} />
             </button>
-            {company.domain && (
-              <a href={/^https?:\/\//i.test(company.domain) ? company.domain : `https://${company.domain}`} target="_blank" rel="noreferrer" className="detail-entity-domain">
+            {company.domain && normalizeUrl(company.domain) && (
+              <a href={normalizeUrl(company.domain)} target="_blank" rel="noopener noreferrer" className="detail-entity-domain">
                 {company.domain} <ExternalLink size={11} />
               </a>
             )}
@@ -491,22 +492,32 @@ export default function CompanyDetail() {
                     <span className="detail-field-label">{f.label}</span>
                     <span className="detail-field-value" style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
                       {list.length
-                        ? list.map((v, i) => (
-                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
-                              {v}
-                              {i === 0 && list.length > 1 && <span style={PRIMARY_TAG}>Primary</span>}
-                            </span>
-                          ))
+                        ? list.map((v, i) => {
+                            const asUrl = f.key === 'linkedProfiles' ? normalizeUrl(v) : null
+                            return (
+                              <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                                {asUrl
+                                  ? <a href={asUrl} target="_blank" rel="noopener noreferrer">{v}</a>
+                                  : v}
+                                {i === 0 && list.length > 1 && <span style={PRIMARY_TAG}>Primary</span>}
+                              </span>
+                            )
+                          })
                         : '--'}
                     </span>
                   </div>
                 )
               }
               const val = enriched[f.key]
+              const asUrl = (f.key === 'domain' || f.key === 'endPdpUrl') ? normalizeUrl(val) : null
               return (
                 <div key={f.key} className="detail-field-row">
                   <span className="detail-field-label">{f.label}</span>
-                  <span className="detail-field-value">{val || '--'}</span>
+                  <span className="detail-field-value">
+                    {asUrl
+                      ? <a href={asUrl} target="_blank" rel="noopener noreferrer">{val}</a>
+                      : (val || '--')}
+                  </span>
                 </div>
               )
             })}
