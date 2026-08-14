@@ -6,6 +6,7 @@ import {
 import { useCustomFieldDefinitions } from '../../hooks/useCustomFieldDefinitions'
 import { renderCustomCell } from '../../utils/customFieldRender'
 import { formatCurrency } from '../../utils/formatCurrency'
+import { normalizeUrl } from '../../utils/url'
 import '../../styles/modal.css'
 import '../../styles/dealView.css'
 
@@ -41,9 +42,7 @@ export default function ViewDealModal({ deal, onClose }) {
 
   const dateStr = (v) => v ? renderCustomCell('date', v) : null
 
-  const websiteHref = deal.clientWebsiteUrl
-    ? (/^https?:\/\//i.test(deal.clientWebsiteUrl) ? deal.clientWebsiteUrl : `https://${deal.clientWebsiteUrl}`)
-    : null
+  const websiteHref = normalizeUrl(deal.clientWebsiteUrl)
 
   return (
     <div
@@ -92,7 +91,7 @@ export default function ViewDealModal({ deal, onClose }) {
             <Field
               icon={Link2}
               label="Client Website URL"
-              value={websiteHref ? <a href={websiteHref} target="_blank" rel="noreferrer">{deal.clientWebsiteUrl}</a> : null}
+              value={websiteHref ? <a href={websiteHref} target="_blank" rel="noopener noreferrer">{deal.clientWebsiteUrl}</a> : null}
             />
           </Section>
 
