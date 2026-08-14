@@ -6,8 +6,57 @@ import {
   CheckCircle, XCircle, Loader2, AlertCircle, BarChart2, X, Search
 } from 'lucide-react'
 import api from '../api/client'
+import EditColumnsMenu from '../components/EditColumnsMenu'
+import '../styles/contacts.css'
 
 const CALLHIPPO_URL = 'https://web.callhippo.com/dashboard?key=2'
+
+// Toggleable/reorderable-by-visibility columns (Edit Columns). Checkbox, #,
+// and Actions stay fixed outside this list, same as every other module's
+// non-toggleable structural columns (Companies' checkbox/star/name,
+// Tasks'/Deals' Actions). Table renders columns in this canonical order
+// filtered by what's visible — same "not toggle order" behavior the other
+// Edit Columns tables already use, since the underlying <table> here isn't
+// drag-reorderable either.
+const CALLS_FIELDS = [
+  { key: 'callDate',           label: 'Date & Time',     width: 160 },
+  { key: 'direction',          label: 'Direction',       width: 110 },
+  { key: 'fromNumber',         label: 'From',            width: 140 },
+  { key: 'toNumber',           label: 'To',              width: 140 },
+  { key: 'company',            label: 'Company Name',    width: 200 },
+  { key: 'contactHistory',     label: 'Contact History', width: 145 },
+  { key: 'status',             label: 'Status',          width: 105 },
+  { key: 'duration',           label: 'Duration',        width: 90  },
+  { key: 'recording',          label: 'Recording',       width: 110 },
+  { key: 'analysis',           label: 'Analysis',        width: 120 },
+  { key: 'lastContacted',      label: 'Last Contacted',  width: 160 },
+  { key: 'previousCallsCount', label: 'Previous Calls',  width: 115 },
+]
+// Last Contacted / Previous Calls are the "optional" columns from the spec —
+// available in Edit Columns but off by default; everything else matches
+// what was already shown before Edit Columns existed on this page.
+const DEFAULT_COLUMNS = ['callDate', 'direction', 'fromNumber', 'toNumber', 'company', 'contactHistory', 'status', 'duration', 'recording', 'analysis']
+const COLUMNS_STORAGE_KEY = 'mwz_calls_visible_columns'
+
+// Every column here holds short, fixed-format content (phone numbers,
+// dates, counts) that should stay on one line — nowrap, not the table's
+// default wrap-anywhere behavior (which is what caused phone numbers to
+// break character-by-character). Company Name is the deliberate exception:
+// it keeps its own 2-line-clamp wrapping (set inline where it renders),
+// since company names are free text and can genuinely be long.
+const CALL_TD_STYLE = {
+  callDate:           { whiteSpace: 'nowrap', color: '#0f172a', fontWeight: 500 },
+  direction:          { whiteSpace: 'nowrap' },
+  fromNumber:         { whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 12 },
+  toNumber:           { whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 12 },
+  contactHistory:     { whiteSpace: 'nowrap' },
+  status:             { whiteSpace: 'nowrap' },
+  duration:           { whiteSpace: 'nowrap', fontWeight: 600, color: '#374151' },
+  recording:          { whiteSpace: 'nowrap' },
+  analysis:           { whiteSpace: 'nowrap' },
+  lastContacted:      { whiteSpace: 'nowrap', color: '#374151' },
+  previousCallsCount: { whiteSpace: 'nowrap', color: '#374151', fontWeight: 600 },
+}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -53,9 +102,26 @@ function StatusBadge({ status }) {
   return (
     <span style={{
       fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
-      background: c.bg, color: c.color,
+      background: c.bg, color: c.color, whiteSpace: 'nowrap',
     }}>
       {c.label}
+    </span>
+  )
+}
+
+function ContactHistoryBadge({ value }) {
+  const map = {
+    'New Contact':     { bg: '#eff6ff', color: '#2563eb' },
+    'Existing Contact': { bg: '#f0fdf4', color: '#16a34a' },
+    'Re-contact':       { bg: '#fff7ed', color: '#ea580c' },
+  }
+  const c = map[value] || { bg: '#f8fafc', color: '#64748b' }
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+      background: c.bg, color: c.color, whiteSpace: 'nowrap',
+    }}>
+      {value || '—'}
     </span>
   )
 }
@@ -72,7 +138,7 @@ function AnalysisBadge({ status, title }) {
   return (
     <span
       title={title || undefined}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: c.color, cursor: title ? 'help' : 'default' }}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: c.color, cursor: title ? 'help' : 'default', whiteSpace: 'nowrap' }}
     >
       {c.icon} {c.label}
     </span>
@@ -463,6 +529,20 @@ function CallsInner() {
   const [search,           setSearch]           = useState('')
   const [debouncedSearch,  setDebouncedSearch]   = useState('')
 
+  const [visibleColumns, setVisibleColumns] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLUMNS_STORAGE_KEY))
+      return Array.isArray(saved) && saved.length ? saved : DEFAULT_COLUMNS
+    } catch {
+      return DEFAULT_COLUMNS
+    }
+  })
+  const saveVisibleColumns = (cols) => {
+    setVisibleColumns(cols)
+    localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify(cols))
+  }
+  const orderedVisibleFields = CALLS_FIELDS.filter(f => visibleColumns.includes(f.key))
+
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
   const fetchLogs = useCallback((pg, searchTerm = '') => {
@@ -554,13 +634,92 @@ function CallsInner() {
     }
   }
 
+  // Renders one dynamic-column cell's content for a call row. Keeps every
+  // existing column's exact prior look/behavior — this only reorganizes
+  // which of them are shown via Edit Columns, nothing about how each one
+  // renders or what data it reads.
+  const renderCallCell = (f, log) => {
+    switch (f.key) {
+      case 'callDate':
+        return fmtDate(log.callDate)
+      case 'direction':
+        return log.direction === 'inbound' ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#7c3aed', fontSize: 12, fontWeight: 600 }}>
+            <PhoneIncoming size={13} /> Inbound
+          </span>
+        ) : log.direction === 'missed' ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#dc2626', fontSize: 12, fontWeight: 600 }}>
+            <PhoneMissed size={13} /> Missed
+          </span>
+        ) : (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#2563eb', fontSize: 12, fontWeight: 600 }}>
+            <PhoneOutgoing size={13} /> Outbound
+          </span>
+        )
+      case 'fromNumber':
+        return log.fromNumber || '—'
+      case 'toNumber':
+        return log.toNumber || '—'
+      case 'company':
+        return log.company ? (
+          <span
+            style={{
+              color: '#3b82f6', fontWeight: 600, cursor: 'pointer',
+              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+              overflow: 'hidden', textOverflow: 'ellipsis', overflowWrap: 'anywhere',
+            }}
+            onClick={() => navigate(`/companies/${log.company.id}`)}
+          >
+            {log.company.name}
+          </span>
+        ) : (
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
+        )
+      case 'contactHistory':
+        return <ContactHistoryBadge value={log.contactHistory} />
+      case 'status':
+        return <StatusBadge status={log.status} />
+      case 'duration':
+        return fmtDuration(log.duration)
+      case 'recording':
+        return log.recordingUrl ? (
+          <a
+            href={log.recordingUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="ch-btn ch-btn-outline"
+            style={{ textDecoration: 'none' }}
+          >
+            <Play size={11} /> Play
+          </a>
+        ) : (
+          <span style={{ fontSize: 12, color: '#94a3b8' }}>No recording</span>
+        )
+      case 'analysis':
+        return log.recordingUrl ? (
+          <AnalysisBadge
+            status={log.analysisStatus}
+            title={log.analysisStatus === 'failed' ? log.analysisError : undefined}
+          />
+        ) : (
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>—</span>
+        )
+      case 'lastContacted':
+        return fmtDate(log.lastContacted)
+      case 'previousCallsCount':
+        return log.previousCallsCount ?? 0
+      default:
+        return '—'
+    }
+  }
+
   return (
     <>
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
-        .ch-table { width: 100%; border-collapse: collapse; }
-        .ch-table th { background: #f8fafc; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; padding: 10px 14px; text-align: left; border-bottom: 1px solid #e2e8f0; white-space: nowrap; }
-        .ch-table td { padding: 12px 14px; font-size: 13px; color: #374151; border-bottom: 1px solid #f1f5f9; vertical-align: middle; max-width: 260px; overflow-wrap: anywhere; }
+        .ch-table { width: 100%; min-width: max-content; table-layout: fixed; border-collapse: collapse; }
+        .ch-table th { background: #f8fafc; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .5px; padding: 10px 14px; text-align: left; border-bottom: 1px solid #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ch-table td { padding: 12px 14px; font-size: 13px; color: #374151; border-bottom: 1px solid #f1f5f9; vertical-align: middle; overflow: hidden; text-overflow: ellipsis; }
         .ch-table tr:hover td { background: #fafbff; }
         .ch-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; font-family: inherit; }
         .ch-btn-primary { background: #e63329; color: #fff; }
@@ -603,6 +762,7 @@ function CallsInner() {
               <RefreshCw size={13} style={{ animation: syncing ? 'spin 1s linear infinite' : 'none' }} />
               {syncing ? 'Syncing…' : 'Sync calls'}
             </button>
+            <EditColumnsMenu fields={CALLS_FIELDS} visibleColumns={visibleColumns} onSave={saveVisibleColumns} alwaysShownKey="__none__" />
             <a
               href={CALLHIPPO_URL}
               target="_blank"
@@ -644,15 +804,9 @@ function CallsInner() {
                       />
                     </th>
                     <th style={{ width: 44 }}>#</th>
-                    <th style={{ width: 150 }}>Date & Time</th>
-                    <th style={{ width: 100 }}>Direction</th>
-                    <th style={{ width: 130 }}>From</th>
-                    <th style={{ width: 130 }}>To</th>
-                    <th>Company Name</th>
-                    <th style={{ width: 100 }}>Status</th>
-                    <th style={{ width: 90 }}>Duration</th>
-                    <th style={{ width: 110 }}>Recording</th>
-                    <th style={{ width: 110 }}>Analysis</th>
+                    {orderedVisibleFields.map(f => (
+                      <th key={f.key} style={f.width ? { width: f.width } : undefined}>{f.label}</th>
+                    ))}
                     <th style={{ width: 210 }}>Actions</th>
                   </tr>
                 </thead>
@@ -670,69 +824,9 @@ function CallsInner() {
                       <td style={{ color: '#94a3b8', fontSize: 12, fontWeight: 500, minWidth: 32 }}>
                         {(page - 1) * PAGE_SIZE + idx + 1}
                       </td>
-                      <td style={{ whiteSpace: 'nowrap', color: '#0f172a', fontWeight: 500 }}>
-                        {fmtDate(log.callDate)}
-                      </td>
-                      <td>
-                        {log.direction === 'inbound' ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#7c3aed', fontSize: 12, fontWeight: 600 }}>
-                            <PhoneIncoming size={13} /> Inbound
-                          </span>
-                        ) : log.direction === 'missed' ? (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#dc2626', fontSize: 12, fontWeight: 600 }}>
-                            <PhoneMissed size={13} /> Missed
-                          </span>
-                        ) : (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#2563eb', fontSize: 12, fontWeight: 600 }}>
-                            <PhoneOutgoing size={13} /> Outbound
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{log.fromNumber || '—'}</td>
-                      <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{log.toNumber   || '—'}</td>
-                      <td>
-                        {log.company ? (
-                          <span
-                            style={{
-                              color: '#3b82f6', fontWeight: 600, cursor: 'pointer',
-                              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                              overflow: 'hidden', textOverflow: 'ellipsis', overflowWrap: 'anywhere',
-                            }}
-                            onClick={() => navigate(`/companies/${log.company.id}`)}
-                          >
-                            {log.company.name}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
-                        )}
-                      </td>
-                      <td><StatusBadge status={log.status} /></td>
-                      <td style={{ fontWeight: 600, color: '#374151' }}>{fmtDuration(log.duration)}</td>
-                      <td>
-                        {log.recordingUrl ? (
-                          <a
-                            href={log.recordingUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="ch-btn ch-btn-outline"
-                            style={{ textDecoration: 'none' }}
-                          >
-                            <Play size={11} /> Play
-                          </a>
-                        ) : (
-                          <span style={{ fontSize: 12, color: '#94a3b8' }}>No recording</span>
-                        )}
-                      </td>
-                      <td>
-                        {log.recordingUrl ? (
-                          <AnalysisBadge
-                            status={log.analysisStatus}
-                            title={log.analysisStatus === 'failed' ? log.analysisError : undefined}
-                          />
-                        ) : (
-                          <span style={{ fontSize: 11, color: '#94a3b8' }}>—</span>
-                        )}
-                      </td>
+                      {orderedVisibleFields.map(f => (
+                        <td key={f.key} style={CALL_TD_STYLE[f.key]}>{renderCallCell(f, log)}</td>
+                      ))}
                       <td>
                         <div style={{ display: 'flex', gap: 6 }}>
                           {/* Analyze button — only if recording exists and not yet analyzed */}
