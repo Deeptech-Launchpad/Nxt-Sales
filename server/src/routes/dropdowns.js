@@ -171,6 +171,24 @@ router.patch('/:id', auth, async (req, res) => {
   }
 })
 
+// GET /api/dropdowns/:id/usage — read-only usage count the frontend calls
+// before confirming a disable (PATCH enabled:false), so the confirmation can
+// show the real number of existing records affected instead of a generic
+// warning. Disabling a value doesn't corrupt data (a stale value already
+// degrades gracefully wherever it's shown/edited), so this is a soft warning,
+// not a hard block like DELETE below.
+router.get('/:id/usage', auth, async (req, res) => {
+  try {
+    const option = await prisma.dropdownOption.findUnique({ where: { id: req.params.id } })
+    if (!option) return res.status(404).json({ message: 'Not found.' })
+    const count = await countValueUsage(option.fieldKey, option.value)
+    res.json({ count })
+  } catch (err) {
+    console.error('[Dropdowns] usage error:', err.message)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
 // DELETE /api/dropdowns/:id — hard-delete only if no Company/Deal row
 // currently stores this value; otherwise force a disable instead so existing
 // records never end up displaying an unrecognized, orphaned value.
@@ -207,20 +225,20 @@ function parseCustomFieldKey(fieldKey) {
   return { entity: m[1] === 'company' ? 'Company' : 'Deal', key: m[2] }
 }
 
-// Checks real usage before a hard delete: built-in fields are checked against
-// their real Company/Deal column(s) via BUILT_IN_DROPDOWN_FIELDS (unchanged
-// behavior from the old USAGE_LOOKUP, just registry-driven); custom fields
-// are checked against CustomFieldValue. An unrecognized fieldKey defensively
-// returns false, same as before.
-async function isValueInUse(fieldKey, value) {
+// Counts real usage of a dropdown value across every place it's stored:
+// built-in fields check their real Company/Deal column(s) via
+// BUILT_IN_DROPDOWN_FIELDS (unchanged behavior from the old USAGE_LOOKUP,
+// just registry-driven, and correctly following `extraUsage` — e.g.
+// company.country's count also includes deal.country, since both share the
+// same dropdown list); custom fields are checked against CustomFieldValue.
+// An unrecognized fieldKey defensively returns 0, same as before.
+async function countValueUsage(fieldKey, value) {
   const builtIn = BUILT_IN_DROPDOWN_FIELDS.find(f => f.fieldKey === fieldKey)
   if (builtIn) {
     const targets = [{ model: builtIn.model, column: builtIn.column }, ...(builtIn.extraUsage || [])]
-    for (const t of targets) {
-      const count = await prisma[t.model].count({ where: { [t.column]: value } })
-      if (count > 0) return true
-    }
-    return false
+    let total = 0
+    for (const t of targets) total += await prisma[t.model].count({ where: { [t.column]: value } })
+    return total
   }
 
   const custom = parseCustomFieldKey(fieldKey)
@@ -228,14 +246,17 @@ async function isValueInUse(fieldKey, value) {
     const field = await prisma.customFieldDefinition.findUnique({
       where: { entity_key: { entity: custom.entity, key: custom.key } },
     })
-    if (!field) return false
-    const count = await prisma.customFieldValue.count({
+    if (!field) return 0
+    return prisma.customFieldValue.count({
       where: { fieldId: field.id, OR: [{ textValue: value }, { listValue: { array_contains: [value] } }] },
     })
-    return count > 0
   }
 
-  return false
+  return 0
+}
+
+async function isValueInUse(fieldKey, value) {
+  return (await countValueUsage(fieldKey, value)) > 0
 }
 
 module.exports = router

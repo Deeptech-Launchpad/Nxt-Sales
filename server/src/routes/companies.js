@@ -56,6 +56,17 @@ function normalizeDomain(v) {
     .replace(/\/+$/, '')
 }
 
+// Trim stray leading/trailing whitespace from admin-managed dropdown-backed
+// text (industry/country) before it's written — Excel imports especially are
+// prone to trailing spaces that silently break exact-match filtering
+// downstream, even though the reads are already case/whitespace-tolerant.
+function trimOrNull(v) {
+  if (v === undefined) return undefined
+  if (v === null) return null
+  const t = String(v).trim()
+  return t || null
+}
+
 // In-memory duplicate index for bulk import/preview — replaces a `findFirst`
 // DB round trip per row (the original approach, fine for a handful of rows
 // but a 10,000+ row import made 10,000+ sequential queries, slow enough to
@@ -188,7 +199,10 @@ async function buildCompanyWhere(query, userId) {
   }
 
   if (leadStatuses) where.leadStatus = { in: leadStatuses.split(',') }
-  if (industries)   where.industry   = { in: industries.split(',') }
+  // Industry filter values come from the admin-managed dropdown but imported
+  // Company.industry data doesn't always match casing exactly — case-insensitive
+  // match, same reasoning as country below.
+  if (industries)   where.industry   = { in: industries.split(','), mode: 'insensitive' }
   // Country filter values come from the admin-managed dropdown (often
   // ALL CAPS, e.g. "IRELAND") but imported Company.country data is
   // Title Case (e.g. "Ireland") — case-insensitive match so they still line up.
@@ -562,8 +576,8 @@ router.post('/bulk', auth, async (req, res) => {
           const setIfBlank = (key, newVal) => { if (isBlank(existingDup[key]) && !isBlank(newVal)) data[key] = newVal }
 
           setIfBlank('domain',                c.domain || null)
-          setIfBlank('industry',              c.industry || null)
-          setIfBlank('country',               c.country || null)
+          setIfBlank('industry',              trimOrNull(c.industry))
+          setIfBlank('country',               trimOrNull(c.country))
           setIfBlank('leadStatus',            c.leadStatus || null)
           setIfBlank('endPdpUrl',             c.endPdpUrl || null)
           setIfBlank('cms',                   c.cms || null)
@@ -629,8 +643,8 @@ router.post('/bulk', auth, async (req, res) => {
             phone:                 phoneList[0] || null,
             phones:                phoneList.length ? phoneList : null,
             domain:                c.domain || null,
-            industry:              c.industry || null,
-            country:               c.country || null,
+            industry:              trimOrNull(c.industry),
+            country:               trimOrNull(c.country),
             leadStatus:            c.leadStatus || null,
             status:                'Lead',
             ownerId:               matchedOwnerId,
@@ -904,12 +918,12 @@ router.post('/', auth, async (req, res) => {
           emails:          emailList.length ? emailList : null,
           phone:           primaryPhone,
           phones:          phoneList.length ? phoneList : null,
-          industry:        industry || null,
+          industry:        trimOrNull(industry),
           leadStatus:      leadStatus || null,
           status:          status    || 'Lead',
           ownerId:         ownerId   || req.user.id,
           domain:                domain                || null,
-          country:               country               || null,
+          country:               trimOrNull(country),
           endPdpUrl:             endPdpUrl             || null,
           cms:                   cms                   || null,
           remarks:               remarks               || null,
@@ -988,12 +1002,12 @@ router.put('/:id', auth, async (req, res) => {
                         : (email !== undefined && { email: email ? email.toLowerCase().trim() : null })),
           ...(phoneList ? { phone: phoneList[0] || null, phones: phoneList.length ? phoneList : null }
                         : (phone !== undefined && { phone: phone || null })),
-          ...(industry !== undefined && { industry: industry || null }),
+          ...(industry !== undefined && { industry: trimOrNull(industry) }),
           ...(leadStatus !== undefined && { leadStatus: leadStatus || null }),
           ...(status !== undefined && { status: status || 'Lead' }),
           ...(ownerId !== undefined && { ownerId: ownerId || null }),
           ...(domain !== undefined && { domain: domain || null }),
-          ...(country !== undefined && { country: country || null }),
+          ...(country !== undefined && { country: trimOrNull(country) }),
           ...(endPdpUrl !== undefined && { endPdpUrl: endPdpUrl || null }),
           ...(cms !== undefined && { cms: cms || null }),
           ...(remarks !== undefined && { remarks: remarks || null }),
