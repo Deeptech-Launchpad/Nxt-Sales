@@ -80,6 +80,24 @@ export default function DropdownManager() {
   }
 
   const toggleEnabled = async (opt) => {
+    // Turning OFF an in-use value doesn't corrupt data (existing records
+    // keep showing it via a "(no longer in list)" fallback wherever it's
+    // edited), but the admin should know before doing it — check usage first
+    // so the confirmation can show the real count instead of a blind toggle.
+    if (opt.enabled) {
+      try {
+        const { data } = await api.get(`/dropdowns/${opt.id}/usage`)
+        if (data.count > 0) {
+          const ok = window.confirm(
+            `${data.count} existing record${data.count === 1 ? '' : 's'} still use "${opt.label}". ` +
+            `Disabling it won't change those records, but it will be hidden from the dropdown for new entries. Disable anyway?`
+          )
+          if (!ok) return
+        }
+      } catch {
+        // Usage check failing shouldn't block the toggle — fall through.
+      }
+    }
     await api.patch(`/dropdowns/${opt.id}`, { enabled: !opt.enabled })
     refreshAfterWrite()
   }
