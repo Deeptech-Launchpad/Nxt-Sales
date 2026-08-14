@@ -130,6 +130,55 @@ async function buildCompanyPhoneIndex() {
   return index
 }
 
+const RECONTACT_THRESHOLD_MS = 180 * 24 * 60 * 60 * 1000 // 180 days
+
+// Contact History (Calls Dashboard): classifies each call against every
+// OTHER call to the exact same toNumber that happened strictly before it.
+//
+// Previously grouped by companyId when a call had a matched company (so a
+// company with several phone numbers on file shared one combined history).
+// That produced a real, confirmed discrepancy: a company match is made by
+// normalizePhone() comparing only the LAST 10 DIGITS (buildCompanyPhoneIndex,
+// above) — which tolerates formatting differences like "+1 (555) 123-4567"
+// vs "5551234567", but ALSO silently collapses two different international
+// numbers that merely share the same trailing 10 digits (e.g. +353... vs
+// +356..., different countries, same national number). That inflated a
+// call's Previous Calls count with calls to what were likely mistyped/
+// different numbers, and made it diverge from what the dashboard's own
+// phone-number search shows for the same number. Grouping strictly by exact
+// toNumber match keeps this column consistent with the search box and
+// immune to that phone-normalization false-positive. Computed fresh per
+// request from the existing CallLog rows — no new table, no writes.
+async function attachContactHistory(logs) {
+  const phones = [...new Set(logs.filter(l => l.toNumber).map(l => l.toNumber))]
+
+  const related = phones.length
+    ? await prisma.callLog.findMany({
+        where: { toNumber: { in: phones } },
+        select: { callDate: true, toNumber: true },
+      })
+    : []
+
+  const datesByKey = new Map()
+  for (const r of related) {
+    if (!datesByKey.has(r.toNumber)) datesByKey.set(r.toNumber, [])
+    datesByKey.get(r.toNumber).push(r.callDate.getTime())
+  }
+
+  return logs.map(l => {
+    const currentMs = l.callDate.getTime()
+    // Strictly before the current call — the current call itself is always
+    // present in `related` too, so this filter is also what excludes it.
+    const priorMs = (datesByKey.get(l.toNumber) || []).filter(ms => ms < currentMs)
+    const previousCallsCount = priorMs.length
+    const lastContacted = previousCallsCount ? new Date(Math.max(...priorMs)) : null
+    const contactHistory = previousCallsCount === 0
+      ? 'New Contact'
+      : (currentMs - lastContacted.getTime() >= RECONTACT_THRESHOLD_MS ? 'Re-contact' : 'Existing Contact')
+    return { ...l, contactHistory, lastContacted, previousCallsCount }
+  })
+}
+
 // ── GET /api/callhippo/logs — return synced call logs from DB ────────────────
 // ?search= filters by phone number (matches From or To, substring). Company
 // name is included via the companyId set during Sync (Update 10).
@@ -150,7 +199,7 @@ router.get('/logs', auth, async (req, res) => {
         hideBinnedCompany,
       ],
     } : hideBinnedCompany
-    const [logs, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       prisma.callLog.findMany({
         where,
         orderBy: { callDate: 'desc' },
@@ -160,6 +209,7 @@ router.get('/logs', auth, async (req, res) => {
       }),
       prisma.callLog.count({ where }),
     ])
+    const logs = await attachContactHistory(rows)
     res.json({ logs, total, page: Number(page), limit: Number(limit) })
   } catch (err) {
     console.error('[CallHippo] fetch logs error:', err.message)
