@@ -7,6 +7,8 @@ import CreateDealModal from '../components/modals/CreateDealModal'
 import ViewDealModal from '../components/modals/ViewDealModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
 import DealBoard from '../components/DealBoard'
+import FilterDropdown from '../components/filters/FilterDropdown'
+import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import { renderCustomCell } from '../utils/customFieldRender'
 import { formatCurrency } from '../utils/formatCurrency'
 import { dealFlagsLabel } from '../utils/dealFlags'
@@ -51,8 +53,14 @@ export default function Deals() {
   const [viewDeal, setViewDeal]   = useState(null)
   const [dealFields, setDealFields] = useState([])
   const [search, setSearch]       = useState('')
+  const [countryFilter, setCountryFilter] = useState([])
   const [dealsTab, setDealsTab]   = useState('all') // 'all' | 'mine'
   const [viewMode, setViewMode]   = useState(() => localStorage.getItem(VIEW_STORAGE_KEY) || 'list')
+
+  // Same shared 'company.country' dropdown list CreateDealModal already uses
+  // for a Deal's own (denormalized) country field — not a separate list.
+  const { options: countryValues } = useDropdownOptions('company.country')
+  const countryOptions = countryValues.map(o => ({ value: o.value, label: o.label }))
 
   const setView = (v) => { setViewMode(v); localStorage.setItem(VIEW_STORAGE_KEY, v) }
 
@@ -138,14 +146,20 @@ export default function Deals() {
   // deal's own ownerId) — see fetchDeals above. All Deals returns every
   // deal visible to the user with no further client-side owner filtering.
 
-  // Search covers both views — Deal Name, Company Name, Contact Person,
-  // Email, Domain.
+  // Search + Country filter both cover List and Board views identically —
+  // Deals.jsx fetches its full dataset once (no server pagination, unlike
+  // Companies.jsx) and filters client-side; Board view is handed this same
+  // filteredDeals array as a plain prop, so both stay in sync automatically.
   const filteredDeals = (() => {
     const q = search.trim().toLowerCase()
-    if (!q) return deals
-    return deals.filter(d => [
-      d.title, d.companyName, d.company?.name, d.contactPerson, d.contactEmail, d.domainName,
-    ].some(v => v && String(v).toLowerCase().includes(q)))
+    return deals.filter(d => {
+      const matchesSearch = !q || [
+        d.title, d.companyName, d.company?.name, d.contactPerson, d.contactEmail, d.domainName,
+      ].some(v => v && String(v).toLowerCase().includes(q))
+      const matchesCountry = countryFilter.length === 0
+        || countryFilter.some(c => (d.country || '').toLowerCase() === c.toLowerCase())
+      return matchesSearch && matchesCountry
+    })
   })()
 
   // All Deals can now show deals owned by any user, so initials must be
@@ -247,6 +261,13 @@ export default function Deals() {
               onBlur={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none' }}
             />
           </div>
+
+          <FilterDropdown
+            label="Country"
+            options={countryOptions}
+            selected={countryFilter}
+            onChange={setCountryFilter}
+          />
 
           <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
             <button

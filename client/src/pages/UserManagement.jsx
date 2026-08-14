@@ -278,6 +278,9 @@ export default function UserManagement() {
       {/* Table */}
       <div style={{ padding: 24 }}>
         <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+          {/* Separate scroll wrapper from the corner-rounding div above — overflow:visible
+              here lets the Actions dropdown escape the card instead of being clipped. */}
+          <div style={{ overflowX: 'auto', overflowY: 'visible' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
@@ -335,6 +338,7 @@ export default function UserManagement() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 

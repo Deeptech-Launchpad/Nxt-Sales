@@ -522,10 +522,6 @@ export default function Companies() {
                   </button>
                 </td>
                 <td className="name-cell">
-                  <span className="avatar" style={{ fontSize: '10px', letterSpacing: '-0.5px' }}>
-                    {(c.name || '??').slice(0, 2).toUpperCase()}
-                  </span>
-                  <span className="link-style" onClick={() => openCompany(c.id)}>{c.name}</span>
                   {c._count?.deals > 0 && (
                     <span
                       title={`${c._count.deals} deal${c._count.deals > 1 ? 's' : ''} for this company`}
@@ -535,9 +531,13 @@ export default function Companies() {
                         padding: '2px 8px', whiteSpace: 'nowrap',
                       }}
                     >
-                      Deal Created
+                      DC
                     </span>
                   )}
+                  <span className="avatar" style={{ fontSize: '10px', letterSpacing: '-0.5px' }}>
+                    {(c.name || '??').slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className="link-style" onClick={() => openCompany(c.id)}>{c.name}</span>
                 </td>
                 {orderedVisibleFields.map(f => <td key={f.key}><div className="cell-clamp">{renderCompanyCell(f, c)}</div></td>)}
               </tr>
