@@ -61,6 +61,13 @@ export default function Deals() {
   // for a Deal's own (denormalized) country field — not a separate list.
   const { options: countryValues } = useDropdownOptions('company.country')
   const countryOptions = countryValues.map(o => ({ value: o.value, label: o.label }))
+  // Client Type stores a stable value separate from its current display
+  // label (Settings → Dropdown Lists can rename the label without touching
+  // the stored value) — this table was rendering the raw stored value
+  // directly, so it could show a different Client Type than Edit Deal's
+  // <select> (which already resolves value -> current label). See the
+  // matching fix/comment in ViewDealModal.jsx for the full explanation.
+  const { options: clientTypeValues } = useDropdownOptions('deal.clientType')
 
   const setView = (v) => { setViewMode(v); localStorage.setItem(VIEW_STORAGE_KEY, v) }
 
@@ -177,6 +184,10 @@ export default function Deals() {
       return d.domainName ? `${name} / ${d.domainName}` : name
     }
     if (f.key === 'ownerId') return initialsFor(d.owner?.name)
+    if (f.key === 'clientType') {
+      if (!d.clientType) return '--'
+      return clientTypeValues.find(o => o.value === d.clientType)?.label ?? d.clientType
+    }
     if (f.key === 'value') return formatCurrency(d.value, d.currency)
     if (f.key === '_flags') return dealFlagsLabel(d) || '--'
     if (f.key === 'poc' || f.key === 'proposalShared') return d[f.key] ? 'Yes' : 'No'

@@ -251,7 +251,10 @@ export default function Companies() {
         ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
         ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
         ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
-        ...(industryFilter.length   > 0 && { industries:   industryFilter.join(',') }),
+        // Array, not comma-joined — several industry values contain a
+        // literal comma in their own name (e.g. "Construction, Building
+        // Materials"), which a joined string would shred on the backend.
+        ...(industryFilter.length   > 0 && { industries:   industryFilter }),
         ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
         ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
       }
@@ -277,7 +280,7 @@ export default function Companies() {
     ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
     ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
     ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
-    ...(industryFilter.length   > 0 && { industries:   industryFilter.join(',') }),
+    ...(industryFilter.length   > 0 && { industries:   industryFilter }),
     ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
     ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
   }
@@ -293,7 +296,7 @@ export default function Companies() {
       ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
       ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
       ...(createDateFilter.length > 0 && { createDate:   createDateFilter[0] }),
-      ...(industryFilter.length   > 0 && { industries:   industryFilter.join(',') }),
+      ...(industryFilter.length   > 0 && { industries:   industryFilter }),
       ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
       ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
     }
