@@ -4,6 +4,7 @@ import {
   Star, Target, ClipboardList, Calendar, CalendarCheck, CheckCircle2, XCircle, FileText,
 } from 'lucide-react'
 import { useCustomFieldDefinitions } from '../../hooks/useCustomFieldDefinitions'
+import { useDropdownOptions } from '../../hooks/useDropdownOptions'
 import { renderCustomCell } from '../../utils/customFieldRender'
 import { formatCurrency } from '../../utils/formatCurrency'
 import { normalizeUrl } from '../../utils/url'
@@ -35,6 +36,21 @@ function Section({ icon: Icon, title, children }) {
 // happens via the pencil icon (unchanged), which opens CreateDealModal.
 export default function ViewDealModal({ deal, onClose }) {
   const { fields: customFields } = useCustomFieldDefinitions('Deal')
+  // Client Type stores a stable value (e.g. "Partner") separate from its
+  // current display label (e.g. "Data Enrichment - Partnership") — Settings
+  // → Dropdown Lists can rename the label without touching the stored value
+  // (renaming the value itself would orphan every deal that already has it,
+  // see dropdowns.js's PATCH /:id). CreateDealModal's <select> already
+  // resolves this correctly via <option value={o.value}>{o.label}</option>;
+  // this view was printing the raw stored value instead, so the same deal
+  // could show two different Client Types between View and Edit. Resolve
+  // through the same live dropdown source Edit uses, falling back to the
+  // raw value for anything that's since been removed entirely (not just
+  // relabeled) so nothing silently disappears.
+  const { options: clientTypes } = useDropdownOptions('deal.clientType')
+  const clientTypeLabel = deal.clientType
+    ? (clientTypes.find(o => o.value === deal.clientType)?.label ?? deal.clientType)
+    : deal.clientType
 
   // See CreateCompanyModal.jsx for why this exists — the overlay must only
   // close when BOTH mousedown and the resulting click land directly on it.
@@ -96,7 +112,7 @@ export default function ViewDealModal({ deal, onClose }) {
           </Section>
 
           <Section icon={Briefcase} title="Opportunity">
-            <Field icon={Tag} label="Client Type" value={deal.clientType} />
+            <Field icon={Tag} label="Client Type" value={clientTypeLabel} />
             <Field icon={Briefcase} label="Opportunity Type" value={deal.opportunityType} />
             <Field icon={ClipboardList} label="Service Requirements" value={deal.serviceRequirement} full />
             <Field icon={Star} label="Strategic Importance" value={deal.strategicImportance} full />
