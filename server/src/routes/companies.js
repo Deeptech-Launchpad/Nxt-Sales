@@ -202,7 +202,15 @@ async function buildCompanyWhere(query, userId) {
   // Industry filter values come from the admin-managed dropdown but imported
   // Company.industry data doesn't always match casing exactly — case-insensitive
   // match, same reasoning as country below.
-  if (industries)   where.industry   = { in: industries.split(','), mode: 'insensitive' }
+  //
+  // industries arrives as a real array (?industries[]=A&industries[]=B, sent
+  // by axios for an array param) — NOT comma-joined. Several real industry
+  // values contain a literal comma in their own name (e.g. "Construction,
+  // Building Materials", "Plumbing & PVF (Pipe, Valve, Fitting)"), so
+  // splitting a joined string on ',' would shred those into garbage
+  // fragments that never match anything. A bare string is still accepted as
+  // a single-value fallback for any other caller of this shared builder.
+  if (industries)   where.industry   = { in: Array.isArray(industries) ? industries : [industries], mode: 'insensitive' }
   // Country filter values come from the admin-managed dropdown (often
   // ALL CAPS, e.g. "IRELAND") but imported Company.country data is
   // Title Case (e.g. "Ireland") — case-insensitive match so they still line up.
