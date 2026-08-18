@@ -13,6 +13,7 @@ import TaskModal    from '../../components/activities/TaskModal'
 import ActivityFeed      from '../../components/activities/ActivityFeed'
 import EditRecordModal   from '../../components/EditRecordModal'
 import CreateDealModal   from '../../components/modals/CreateDealModal'
+import CompanyIntelligence from '../../components/CompanyIntelligence'
 import { valueList } from '../../utils/multiValue'
 import { normalizeUrl } from '../../utils/url'
 import { invalidateCompanyEmail } from '../../utils/emailCache'
@@ -129,6 +130,11 @@ function OverviewTab({ company, recentActs }) {
 function IntelligenceTab({ company }) {
   return (
     <div>
+      {/* AI-generated pre-call/pre-email insights — explicit Generate button,
+          reuses the Email Tool's saved Gemini configuration. */}
+      <CompanyIntelligence company={company} />
+
+      {/* Factual CRM data, kept clearly separate from the AI section above. */}
       <div className="data-highlights" style={{ gridTemplateColumns: '1fr', marginBottom: 20 }}>
         <div className="highlight-item">
           <span className="highlight-label">Lead Status</span>
