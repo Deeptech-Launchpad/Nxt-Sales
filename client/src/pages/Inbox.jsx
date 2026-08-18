@@ -62,10 +62,12 @@ export default function Inbox() {
 
   const goCompose = (to) => navigate('/email', { state: { to: to || '' } })
 
-  const handleReply = (thread) => {
-    const fallback = openItem?.direction === 'outbound' ? openItem?.toEmail : openItem?.fromEmail
-    const addr = thread?.matchedCompanyEmail || fallback || ''
-    goCompose(addr)
+  // `draft` is built by ThreadDrawer's Reply/Reply All/Forward buttons
+  // (to/cc/subject/quotedHtml/threadId/emailMode/template) — passed straight
+  // through as compose state so the one composer pipeline picks it up.
+  const handleReply = (draft) => {
+    if (!draft) return
+    navigate('/email', { state: { ...draft, companyId: openItem?.companyId || undefined, companyName: openItem?.companyName || undefined } })
     setOpenItem(null)
   }
 

@@ -496,6 +496,13 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
   const [template, setTemplate]     = useState(initialDraft?.template || '1')
   const [subject, setSubject]       = useState(initialDraft?.subject || '')
   const [body, setBody]             = useState(initialDraft?.body || '')
+  // Set only by a genuine Reply/Reply All/Forward (see ThreadDrawer.jsx) — an
+  // explicit thread to continue (skips the fuzzy sender/recipient matching
+  // heuristic server-side) and the quoted/forwarded original message, which
+  // the backend places after the signature on send. Empty for every other
+  // compose path, including drafts and the Company "Log an email" flow.
+  const [threadId,   setThreadId]   = useState(initialDraft?.threadId || '')
+  const [quotedHtml, setQuotedHtml] = useState(initialDraft?.quotedHtml || '')
 
   const [beforeFile, setBeforeFile]   = useState(null)
   const [afterFile, setAfterFile]     = useState(null)
@@ -529,6 +536,8 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
     setTemplate(initialDraft.template || '1')
     setSubject(initialDraft.subject || '')
     setBody(initialDraft.body || '')
+    setThreadId(initialDraft.threadId || '')
+    setQuotedHtml(initialDraft.quotedHtml || '')
     setBeforeFile(null); setAfterFile(null)
     setBeforeThumb(null); setAfterThumb(null)
     setAdditionalFiles([])
@@ -538,15 +547,24 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
   }, [initialDraft])
 
   // Arriving from a company (Email quick action, "Log an email", or clicking a
-  // saved company address) — prefill the recipient so the composer is ready to
-  // send without retyping. companyContext.companyId travels with the send so
-  // the email is filed against that company.
+  // saved company address) OR from a Reply/Reply All/Forward action in the
+  // Inbox/ThreadDrawer (which carries no companyId when opened cross-company)
+  // — prefill whatever the caller supplied. companyContext.companyId, when
+  // present, travels with the send so the email is filed against that company.
   useEffect(() => {
     if (!companyContext) return
     if (companyContext.to) setTo(companyContext.to)
+    if (companyContext.cc) setCc(companyContext.cc)
+    if (companyContext.subject) setSubject(companyContext.subject)
+    if (companyContext.quotedHtml) setQuotedHtml(companyContext.quotedHtml)
+    if (companyContext.threadId) setThreadId(companyContext.threadId)
+    if (companyContext.emailMode) setEmailMode(companyContext.emailMode)
+    // Reply/Reply All/Forward are always a blank freeform message, never one
+    // of the before/after marketing templates.
+    if (companyContext.template) setTemplate(companyContext.template)
     if (companyContext.companyName) setClientName(prev => prev || companyContext.companyName)
   // eslint-disable-next-line
-  }, [companyContext?.to, companyContext?.companyId])
+  }, [companyContext?.to, companyContext?.companyId, companyContext?.threadId, companyContext?.subject])
 
   const handleTemplateChange = (val) => {
     setTemplate(val)
@@ -785,24 +803,29 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
 
     setSending(true)
     try {
-      if (gmailStatus.connected) {
-        // Send via NXT Sales backend
-        await api.post('/email/send', {
-          to, cc: cc || undefined, bcc: bcc || undefined,
-          subject: previewSubject || subject,
-          htmlBody: previewHtml,
-          emailMode,
-          companyId: companyContext?.companyId || undefined,
-          attachments: attachments.map(a => ({
-            filename: a.name,
-            content: a.data,
-            mimeType: a.type
-          }))
-        })
-      } else {
-        // Send directly via Gmail API using local access token
-        await sendViaGmailDirect(localToken, to, cc, bcc, previewSubject || subject, previewHtml, attachments)
-      }
+      // Always the one backend send pipeline (server/src/routes/email.js
+      // POST /send) — signature insertion, threading, and HTML body
+      // construction happen exactly once, in exactly one place, regardless of
+      // which Gmail connection authorizes the send. standaloneAccessToken is
+      // only ever used by the backend when this account has no backend-linked
+      // Gmail connection (EmailAccount row) — otherwise it's ignored there in
+      // favor of the real connected account, so passing it here is harmless
+      // even when gmailStatus.connected is already true via the backend.
+      await api.post('/email/send', {
+        to, cc: cc || undefined, bcc: bcc || undefined,
+        subject: previewSubject || subject,
+        htmlBody: previewHtml,
+        emailMode,
+        threadId: threadId || undefined,
+        quotedHtml: quotedHtml || undefined,
+        companyId: companyContext?.companyId || undefined,
+        standaloneAccessToken: localValid ? localToken : undefined,
+        attachments: attachments.map(a => ({
+          filename: a.name,
+          content: a.data,
+          mimeType: a.type
+        }))
+      })
 
       // The company's conversation cache no longer reflects reality — the user
       // returns to Company Detail by navigation (a remount, not a refreshKey
@@ -821,6 +844,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
   const clearForm = () => {
     setTo(''); setCc(''); setBcc(''); setClientName('')
     setTemplate('1'); setSubject(''); setBody('')
+    setThreadId(''); setQuotedHtml('')
     setBeforeFile(null); setAfterFile(null)
     setBeforeThumb(null); setAfterThumb(null)
     setAdditionalFiles([])
@@ -883,6 +907,21 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
               <option value="new">New Conversation</option>
             </select>
           </div>
+
+          {/* Present only for a genuine Reply/Reply All/Forward (see
+              ThreadDrawer.jsx) — the quoted original message that will be
+              appended after your signature on send. Read-only; not part of
+              the editable body above. */}
+          {quotedHtml && (
+            <div className="et-form-group">
+              <label className="et-label">Quoted below your signature</label>
+              <div
+                className="et-input et-readonly"
+                style={{ height: 'auto', maxHeight: 160, overflowY: 'auto', whiteSpace: 'normal', lineHeight: 1.5 }}
+                dangerouslySetInnerHTML={{ __html: quotedHtml }}
+              />
+            </div>
+          )}
 
           {/* Client Type — selects which template set (Static vs E-commerce) loads */}
           <div className="et-form-group">
@@ -1576,58 +1615,13 @@ function SettingsSection({ onGmailChange }) {
   )
 }
 
-// ─────────────────────────────────────────────────────────
-// Direct Gmail API Send (standalone fallback)
-// ─────────────────────────────────────────────────────────
-async function sendViaGmailDirect(token, to, cc, bcc, subject, bodyHtml, attachments) {
-  const boundary = 'AltiusOutreachBoundary_' + Math.random().toString(36).substring(2)
-  const parts = []
-
-  parts.push(`To: ${to}`)
-  if (cc)  parts.push(`Cc: ${cc}`)
-  if (bcc) parts.push(`Bcc: ${bcc}`)
-  parts.push(`Subject: =?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`)
-  parts.push('MIME-Version: 1.0')
-
-  const styledBody = `<div style="font-family:Verdana,Arial,sans-serif;font-size:14px;line-height:1.6;color:#222;background:#fff;padding:20px;border-radius:8px">${bodyHtml}</div>`
-
-  if (attachments.length > 0) {
-    parts.push(`Content-Type: multipart/mixed; boundary="${boundary}"`)
-    parts.push('')
-    parts.push(`--${boundary}`)
-    parts.push('Content-Type: text/html; charset=utf-8')
-    parts.push('Content-Transfer-Encoding: base64')
-    parts.push('')
-    parts.push(btoa(unescape(encodeURIComponent(styledBody))))
-    attachments.forEach(f => {
-      parts.push(`--${boundary}`)
-      parts.push(`Content-Type: ${f.type}; name="${f.name}"`)
-      parts.push(`Content-Disposition: attachment; filename="${f.name}"`)
-      parts.push('Content-Transfer-Encoding: base64')
-      parts.push('')
-      parts.push(f.data)
-    })
-    parts.push(`--${boundary}--`)
-  } else {
-    parts.push('Content-Type: text/html; charset=utf-8')
-    parts.push('Content-Transfer-Encoding: base64')
-    parts.push('')
-    parts.push(btoa(unescape(encodeURIComponent(styledBody))))
-  }
-
-  const raw = btoa(unescape(encodeURIComponent(parts.join('\r\n'))))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-
-  const resp = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ raw })
-  })
-  if (!resp.ok) {
-    const err = await resp.json()
-    throw new Error(err.error?.message || 'Gmail API send failed')
-  }
-}
+// The standalone-Gmail-token direct-to-Gmail-API send path that used to live
+// here (sendViaGmailDirect) has been removed — it was a second, divergent
+// implementation that never applied the signature or thread headers. Every
+// send now goes through POST /api/email/send (see sendEmail() above), which
+// accepts a standaloneAccessToken and forwards it to the backend, so a
+// standalone-connected user gets the exact same signature/threading/body
+// pipeline as a backend-connected one — see server/src/routes/email.js.
 
 // ─────────────────────────────────────────────────────────
 // Main EmailTool Component
@@ -1639,18 +1633,34 @@ export default function EmailTool() {
   const [draftsCount, setDraftsCount] = useState(0)
   const [initialDraft, setInitialDraft] = useState(null)
 
-  // Company context handed over by Company Details (Email quick action, "Log an
-  // email", or clicking a saved address). Marketing → Email is the single
-  // compose surface, so this is how company scope reaches it.
-  const companyContext = location.state?.companyId
-    ? { to: location.state.to || '', companyId: location.state.companyId, companyName: location.state.companyName || '' }
+  // Context handed to the composer by another screen: Company Details (Email
+  // quick action, "Log an email", or clicking a saved address — carries a
+  // companyId), or a Reply/Reply All/Forward action from Inbox/ThreadDrawer
+  // (carries to/cc/subject/quotedHtml/threadId, often with NO companyId since
+  // Inbox is cross-company). Marketing → Email is the single compose surface,
+  // so this is how every "open the composer already primed" flow reaches it —
+  // built from any of these fields being present, not gated on companyId.
+  const composeState = location.state
+  const companyContext = (composeState && (composeState.companyId || composeState.to || composeState.threadId))
+    ? {
+        to: composeState.to || '',
+        cc: composeState.cc || '',
+        subject: composeState.subject || '',
+        quotedHtml: composeState.quotedHtml || '',
+        threadId: composeState.threadId || '',
+        emailMode: composeState.emailMode || '',
+        template: composeState.template || '',
+        companyId: composeState.companyId || '',
+        companyName: composeState.companyName || '',
+      }
     : null
 
-  // Land directly on the composer when arriving from a company.
+  // Land directly on the composer when arriving from a company or a Reply/
+  // Reply All/Forward action.
   useEffect(() => {
     if (companyContext) setSection('composer')
   // eslint-disable-next-line
-  }, [location.state?.companyId, location.state?.to])
+  }, [location.state?.companyId, location.state?.to, location.state?.threadId])
 
   // Check NXT Sales backend Gmail status
   useEffect(() => {
