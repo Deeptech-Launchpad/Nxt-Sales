@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Paperclip, Eye, ArrowUpRight, ArrowDownLeft, Reply } from 'lucide-react'
+import { X, Paperclip, Eye, ArrowUpRight, ArrowDownLeft, Reply, ReplyAll, Forward } from 'lucide-react'
 import api from '../../api/client'
 import { threadCache } from '../../utils/emailCache'
 import '../../styles/email-conversations.css'
@@ -24,6 +24,101 @@ function fmtSize(bytes) {
   const k = 1024, units = ['B', 'KB', 'MB']
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), units.length - 1)
   return `${(bytes / Math.pow(k, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+// ── Reply / Reply All / Forward ─────────────────────────────────────────────
+// Builds the composer's initial state for a genuine in-app reply/reply-all/
+// forward — see EmailTool.jsx's `companyContext` handling, which consumes
+// exactly this shape via navigate('/email', { state: {...} }). Kept here
+// (not duplicated in Inbox.jsx/EmailConversations.jsx) so both callers of
+// this drawer get identical reply behavior from one implementation, same as
+// ThreadMessage/ThreadDrawer itself already are.
+
+const EMAIL_ADDR_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
+function extractAddrs(v) { return (v || '').match(EMAIL_ADDR_RE) || [] }
+
+function escapeHtml(s) {
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// Gmail's own web client wraps a reply's quoted history in exactly this
+// structure — a "gmail_quote" div holding an attribution line followed by a
+// blockquote with Gmail's own quote-indent styling and class. Reproducing it
+// verbatim (not a custom-styled div) is the actual fix for the reported bug:
+// Gmail's thread view folds content behind "Show trimmed content" by
+// recognizing THIS specific markup, so using it here means Gmail folds
+// exactly this section and nothing else — in particular never the signature,
+// which sits before this block in the HTML, outside it entirely.
+function buildQuoteHtml(msg, mode) {
+  const when = msg.createdAt ? fmtDateTime(msg.createdAt) : ''
+  const bodyHtml = escapeHtml(msg.body || '').replace(/\n/g, '<br>')
+  if (mode === 'forward') {
+    // A native Gmail Forward is its own plain block, never wrapped in
+    // blockquote/gmail_quote — Gmail doesn't fold forwarded content the way
+    // it folds reply history, so this intentionally stays unwrapped too.
+    return `<div style="margin-top:16px">`
+      + `<div dir="ltr">---------- Forwarded message ---------</div>`
+      + `<div dir="ltr">From: ${escapeHtml(msg.fromEmail || '')}</div>`
+      + `<div dir="ltr">Date: ${escapeHtml(when)}</div>`
+      + `<div dir="ltr">Subject: ${escapeHtml(msg.subject || '')}</div>`
+      + `<div dir="ltr">To: ${escapeHtml(msg.toEmail || '')}</div>`
+      + `<br>`
+      + bodyHtml
+      + `</div>`
+  }
+  return `<div class="gmail_quote">`
+    + `<div dir="ltr" class="gmail_attr">On ${escapeHtml(when)}, ${escapeHtml(msg.fromEmail || '')} wrote:<br></div>`
+    + `<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">`
+    + bodyHtml
+    + `</blockquote>`
+    + `</div>`
+}
+
+// mode: 'reply' | 'replyAll' | 'forward'. Acts on the LAST message in the
+// loaded thread (the same message a real mail client's Reply/Forward on an
+// open conversation acts on). Returns null if the thread has no messages yet.
+function buildReplyDraft(data, mode) {
+  const messages = data?.messages || []
+  if (messages.length === 0) return null
+  const last = messages[messages.length - 1]
+
+  // Every outbound message in this thread was sent from the one connected
+  // mailbox — reuse its address as "me" so Reply All can exclude it from Cc.
+  // If the thread is 100% inbound (never replied to yet), there is no way to
+  // know "me" from the thread alone; Reply All simply has nothing to exclude.
+  const ownEmail = (extractAddrs(messages.find(m => m.direction === 'outbound')?.fromEmail || '')[0] || '').toLowerCase()
+  const counterpart = data?.matchedCompanyEmail || extractAddrs(last.fromEmail || '')[0] || ''
+
+  let to = '', cc = ''
+  if (mode === 'forward') {
+    // Forward has no default recipient — the user picks one, same as any
+    // mail client's Forward action.
+  } else {
+    to = (last.direction === 'outbound'
+      ? extractAddrs(last.toEmail || '')[0]
+      : extractAddrs(last.fromEmail || '')[0]) || counterpart
+
+    if (mode === 'replyAll') {
+      const toLower = (to || '').toLowerCase()
+      const all = new Set()
+      ;[last.fromEmail, last.toEmail, last.ccEmail].forEach(field =>
+        extractAddrs(field || '').forEach(a => all.add(a.toLowerCase())))
+      cc = [...all].filter(a => a !== toLower && a !== ownEmail).join(', ')
+    }
+  }
+
+  const subjectPrefix = mode === 'forward' ? 'Fwd: ' : 'Re: '
+  const baseSubject = (data?.subject || last.subject || '').replace(/^(re|fwd?)\s*:\s*/i, '')
+
+  return {
+    to,
+    cc,
+    subject: `${subjectPrefix}${baseSubject}`,
+    quotedHtml: buildQuoteHtml(last, mode),
+    threadId: data?.threadId || null,
+    emailMode: 'continue',
+    template: 'manual',
+  }
 }
 
 // ── One message inside the thread ──────────────────────────────────────────
@@ -151,14 +246,36 @@ export default function ThreadDrawer({ threadId, companyId, summary, onClose, on
             {(data?.matchedCompanyEmail || summary?.address) && (
               <><span>·</span><span>via {data?.matchedCompanyEmail || summary?.address}</span></>
             )}
+            {/* Reply/Reply All/Forward act on the last message of the loaded
+                thread, so they need real message data (not just the summary
+                row) — disabled until that finishes loading. */}
             {onReply && (
-              <button
-                className="ec-btn"
-                style={{ marginLeft: 'auto', padding: '3px 9px' }}
-                onClick={() => onReply(data || summary)}
-              >
-                <Reply size={12} /> Reply
-              </button>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <button
+                  className="ec-btn"
+                  style={{ padding: '3px 9px' }}
+                  disabled={messages.length === 0}
+                  onClick={() => onReply(buildReplyDraft(data, 'reply'))}
+                >
+                  <Reply size={12} /> Reply
+                </button>
+                <button
+                  className="ec-btn"
+                  style={{ padding: '3px 9px' }}
+                  disabled={messages.length === 0}
+                  onClick={() => onReply(buildReplyDraft(data, 'replyAll'))}
+                >
+                  <ReplyAll size={12} /> Reply All
+                </button>
+                <button
+                  className="ec-btn"
+                  style={{ padding: '3px 9px' }}
+                  disabled={messages.length === 0}
+                  onClick={() => onReply(buildReplyDraft(data, 'forward'))}
+                >
+                  <Forward size={12} /> Forward
+                </button>
+              </div>
             )}
           </div>
         </div>

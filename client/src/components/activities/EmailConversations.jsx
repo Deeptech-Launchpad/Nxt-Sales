@@ -163,9 +163,13 @@ export default function EmailConversations({ companyId, companyName, refreshKey 
     navigate('/email', { state: { to: to || '', companyId, companyName } })
   }
 
-  const handleReply = (thread) => {
-    const addr = thread?.matchedCompanyEmail || thread?.address || ''
-    goCompose(addr)
+  // `draft` is built by ThreadDrawer's Reply/Reply All/Forward buttons
+  // (to/cc/subject/quotedHtml/threadId/emailMode/template) — passed straight
+  // through as compose state, with this company's context attached, so the
+  // sent reply/forward still files under the right company.
+  const handleReply = (draft) => {
+    if (!draft) return
+    navigate('/email', { state: { ...draft, companyId, companyName } })
   }
 
   const groups = data?.addresses || []
