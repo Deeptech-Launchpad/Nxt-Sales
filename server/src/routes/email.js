@@ -30,11 +30,24 @@ function trackingPixel(token) {
 // Never throws: any failure (API error, no sendAs entry, empty signature)
 // resolves to null — the caller then sends without a signature rather than
 // inventing one, exactly like a Gmail account with no signature configured.
-async function getGmailSignature(gmail) {
+// fromEmail is the address this message is actually being sent from (the
+// connected EmailAccount's own address) — an account can have several sendAs
+// identities/aliases, and Gmail's own "isDefault" flag marks whichever one is
+// pre-selected in Gmail's OWN compose window, which is NOT necessarily the
+// identity we're sending as here. Confirmed live in production: an account
+// with two sendAs entries had its real, connected address at isDefault:false
+// and a different alias at isDefault:true — matching by isDefault alone
+// picked that unrelated alias's signature instead of the sending address's
+// own. Match on the actual From address first; isDefault/isPrimary/first are
+// only a fallback for the (should never happen) case where sendAs.list()
+// doesn't include our own connected address at all.
+async function getGmailSignature(gmail, fromEmail) {
   try {
     const res = await gmail.users.settings.sendAs.list({ userId: 'me' })
     const sendAsList = res.data.sendAs || []
-    const chosen = sendAsList.find(s => s.isDefault) || sendAsList.find(s => s.isPrimary) || sendAsList[0]
+    const from = (fromEmail || '').toLowerCase()
+    const chosen = sendAsList.find(s => (s.sendAsEmail || '').toLowerCase() === from)
+      || sendAsList.find(s => s.isDefault) || sendAsList.find(s => s.isPrimary) || sendAsList[0]
     const sig = (chosen?.signature || '').trim()
     return sig || null
   } catch (err) {
@@ -451,7 +464,7 @@ router.post('/send', auth, async (req, res) => {
     // signature" affordance ever doubling it up; no current composer path
     // inserts it into the editable body itself.
     let signatureHtml = ''
-    const gmailSig = await getGmailSignature(gmail)
+    const gmailSig = await getGmailSignature(gmail, fromEmail)
     if (gmailSig) {
       const sigPlain = stripHtml(gmailSig)
       const alreadyPresent = sigPlain.length > 10 && stripHtml(baseHtml).includes(sigPlain)
