@@ -18,16 +18,42 @@ function trackingPixel(token) {
   return `<img src="${TRACK_BASE}/api/email/track/open/${token}.gif" width="1" height="1" alt="" style="display:none;max-height:0;max-width:0;opacity:0;overflow:hidden" />`
 }
 
-// The signature is stored as plain text (a simple textarea in Settings) but
-// gets appended into an HTML email body — escape it and turn newlines into
-// <br> so it renders as typed instead of as raw/unsafe HTML.
-// image is an optional data-URI string (already compressed client-side) rendered under the text.
-function signatureToHtml(text, image) {
-  const escaped = (text || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const textHtml = escaped ? escaped.replace(/\n/g, '<br>') : ''
-  const imgHtml = image ? `<div style="margin-top:6px"><img src="${image}" style="max-width:280px;max-height:120px" alt="" /></div>` : ''
-  return `<div style="font-family:Verdana,Arial,sans-serif;font-size:13px;color:#444">${textHtml}${imgHtml}</div>`
+// ── Outgoing signature: sourced from the connected Gmail account itself ────
+// The signature source of truth is Gmail's own "sendAs" configuration (Gmail
+// → Settings → Accounts → signature), NOT anything stored in our own DB — so
+// there is exactly one place a user edits their signature, and the CRM can
+// never drift out of sync with it. `users.settings.sendAs.list` is covered by
+// the gmail.readonly scope this app already requests (confirmed against
+// Google's own API discovery document — sendAs.list accepts any of
+// gmail.settings.basic / gmail.modify / gmail.readonly / mail.google.com),
+// so no new OAuth consent is needed from already-connected users.
+// Never throws: any failure (API error, no sendAs entry, empty signature)
+// resolves to null — the caller then sends without a signature rather than
+// inventing one, exactly like a Gmail account with no signature configured.
+async function getGmailSignature(gmail) {
+  try {
+    const res = await gmail.users.settings.sendAs.list({ userId: 'me' })
+    const sendAsList = res.data.sendAs || []
+    const chosen = sendAsList.find(s => s.isDefault) || sendAsList.find(s => s.isPrimary) || sendAsList[0]
+    const sig = (chosen?.signature || '').trim()
+    return sig || null
+  } catch (err) {
+    console.warn('[Email Send] Gmail signature lookup failed, sending without one:', err.message)
+    return null
+  }
+}
+
+// Gmail's own web client always wraps a signature in a div carrying this
+// exact class — matching it (rather than inventing our own wrapper) is what
+// keeps Gmail's thread-view quote-folding from ever mistaking the signature
+// for quoted history, and matches a native Gmail signature byte-for-byte in
+// how the recipient's client renders/recognizes it.
+function wrapGmailSignature(html) {
+  return `<div class="gmail_signature" data-smartmail="gmail_signature">${html}</div>`
+}
+
+function stripHtml(html) {
+  return (html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 // Recursively extract plain-text body from nested MIME parts.
@@ -322,13 +348,24 @@ async function resolveThreadMeta(gmail, threadId) {
   }
 }
 
-// POST /api/email/send — send email via Gmail API
+// POST /api/email/send — send email via Gmail API. THE single send pipeline —
+// every CRM-originated outgoing email (new, reply, reply-all, forward) goes
+// through this one route, so signature insertion, threading, HTML body
+// construction, and the actual Gmail call are never duplicated elsewhere.
 // Accepts: to, subject, body (plain) OR htmlBody (html), cc, bcc,
 //          attachments: [{ filename, content (base64), mimeType }]
 //          companyId
 //          emailMode: 'new' | 'continue' (optional) — see Thread continuation below
+//          threadId (optional) — explicit thread to continue, see below
+//          quotedHtml (optional) — prior/forwarded message HTML, placed AFTER
+//            the signature (composer-built, see ThreadDrawer.jsx's reply/
+//            reply-all/forward actions)
+//          standaloneAccessToken (optional) — see account resolution below
 router.post('/send', auth, async (req, res) => {
-  const { to, subject, body, htmlBody, cc, bcc, attachments = [], companyId, emailMode } = req.body
+  const {
+    to, subject, body, htmlBody, cc, bcc, attachments = [], companyId, emailMode,
+    threadId: explicitThreadId, quotedHtml, standaloneAccessToken,
+  } = req.body
   if (!to || !subject) return res.status(400).json({ message: 'To and Subject are required.' })
 
   // Never trust the frontend on this — a bin'd company should reject writes
@@ -351,57 +388,90 @@ router.post('/send', auth, async (req, res) => {
   const account = await prisma.emailAccount.findFirst({
     where: { userId: req.user.id, provider: 'gmail' },
   })
-  if (!account) {
+  if (!account && !standaloneAccessToken) {
     return res.status(400).json({ message: 'Gmail not connected. Please connect your Gmail account first.' })
   }
 
   try {
     const { google } = require('googleapis')
-    const oauth2Client = getOAuth2Client()
-    oauth2Client.setCredentials({
-      access_token: account.accessToken,
-      refresh_token: account.refreshToken,
-    })
 
-    oauth2Client.on('tokens', async (tokens) => {
-      if (tokens.access_token) {
-        await prisma.emailAccount.update({
-          where: { userId_provider: { userId: req.user.id, provider: 'gmail' } },
-          data: {
-            accessToken: tokens.access_token,
-            ...(tokens.expiry_date && { expiresAt: new Date(tokens.expiry_date) }),
-          },
-        })
+    // Two ways to authorize this send, resolved to the same `gmail` client and
+    // `fromEmail` so every line below is identical either way — this is what
+    // makes it ONE pipeline instead of a second, divergent client-side send:
+    //   1. The backend-linked Gmail account (EmailAccount row) — preferred,
+    //      supports refresh-token renewal, persisted here.
+    //   2. A legacy standalone-OAuth access token (the separate "Google
+    //      Client ID" flow in Settings — a short-lived, client-side-only
+    //      implicit grant with no refresh token to persist). Used only when
+    //      no backend-linked account exists for this user.
+    let gmail, fromEmail
+    if (account) {
+      const oauth2Client = getOAuth2Client()
+      oauth2Client.setCredentials({
+        access_token: account.accessToken,
+        refresh_token: account.refreshToken,
+      })
+      oauth2Client.on('tokens', async (tokens) => {
+        if (tokens.access_token) {
+          await prisma.emailAccount.update({
+            where: { userId_provider: { userId: req.user.id, provider: 'gmail' } },
+            data: {
+              accessToken: tokens.access_token,
+              ...(tokens.expiry_date && { expiresAt: new Date(tokens.expiry_date) }),
+            },
+          })
+        }
+      })
+      gmail = google.gmail({ version: 'v1', auth: oauth2Client })
+      fromEmail = account.email
+    } else {
+      const standaloneClient = new google.auth.OAuth2()
+      standaloneClient.setCredentials({ access_token: standaloneAccessToken })
+      gmail = google.gmail({ version: 'v1', auth: standaloneClient })
+      try {
+        const profile = await gmail.users.getProfile({ userId: 'me' })
+        fromEmail = profile.data.emailAddress
+      } catch (profileErr) {
+        return res.status(401).json({ message: 'Standalone Gmail session expired. Please reconnect Gmail in Settings.' })
       }
-    })
-
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client })
+    }
 
     // Use htmlBody if provided; otherwise convert plain body to a simple HTML wrapper
     const baseHtml = htmlBody
       || (body ? `<div style="font-family:sans-serif;line-height:1.6">${body.replace(/\n/g, '<br>')}</div>` : '')
 
-    // Default signature (Update: Email Fix 5) — saved once per user, appended
-    // automatically to every send through this route, so it's covered no
-    // matter which UI surface sent the request (Email Tool, Contact/Company
-    // "Log an email"). Never blocks a send if the lookup fails for any reason.
+    // Signature — the connected Gmail account's own sendAs signature (see
+    // getGmailSignature above), appended automatically to every send through
+    // this route regardless of which UI surface sent the request (Email
+    // Tool, Contact/Company "Log an email", Reply/Reply All/Forward). Never
+    // blocks a send if the lookup fails. Skipped if the composed body
+    // already contains the same signature text (compared on stripped text,
+    // since Gmail signatures are rich HTML where an exact markup substring
+    // match would be unreliable) — guards against a future manual "insert
+    // signature" affordance ever doubling it up; no current composer path
+    // inserts it into the editable body itself.
     let signatureHtml = ''
-    try {
-      const sigUser = await prisma.user.findUnique({ where: { id: req.user.id }, select: { signature: true, signatureImage: true } })
-      const sigText = sigUser?.signature?.trim() || ''
-      const sigImage = sigUser?.signatureImage || ''
-      if (sigText || sigImage) signatureHtml = `<br>${signatureToHtml(sigText, sigImage)}`
-    } catch (sigErr) {
-      console.warn('[Email Send] Signature lookup failed, sending without it:', sigErr.message)
+    const gmailSig = await getGmailSignature(gmail)
+    if (gmailSig) {
+      const sigPlain = stripHtml(gmailSig)
+      const alreadyPresent = sigPlain.length > 10 && stripHtml(baseHtml).includes(sigPlain)
+      if (!alreadyPresent) signatureHtml = `<br>${wrapGmailSignature(gmailSig)}`
     }
 
     // Open-tracking: unique token embedded as a hidden pixel; when the recipient
     // opens the email the pixel loads and /track/open records it against this id.
     const trackingId  = crypto.randomUUID()
-    const effectiveHtml = `${baseHtml}${signatureHtml}${trackingPixel(trackingId)}`
+    // Quoted/forwarded content (built client-side by ThreadDrawer.jsx's
+    // Reply/Reply All/Forward actions) is placed AFTER the signature, matching
+    // standard reply layout: [content] [signature] [quoted original].
+    const effectiveHtml = `${baseHtml}${signatureHtml}${quotedHtml || ''}${trackingPixel(trackingId)}`
 
     // ── Thread continuation ─────────────────────────────────
-    // Three ways this resolves, in priority order:
+    // Four ways this resolves, in priority order:
+    //   0. explicit threadId        → the caller already knows exactly which
+    //      thread this continues (a genuine in-app Reply/Reply All/Forward
+    //      opened from a loaded conversation) — skip the address-matching
+    //      heuristic entirely and continue that thread directly.
     //   1. emailMode === 'new'      → always a fresh conversation (no lookup at all).
     //   2. emailMode === 'continue' → look up the latest thread by sender+recipient
     //      email (Email Mode dropdown — Update 4). No companyId needed, so this
@@ -415,7 +485,14 @@ router.post('/send', auth, async (req, res) => {
     let inReplyTo   = null
     let references  = null
 
-    if (emailMode === 'new') {
+    if (explicitThreadId) {
+      threadId = explicitThreadId
+      const meta = await resolveThreadMeta(gmail, threadId)
+      sendSubject = meta.subject || subject
+      inReplyTo  = meta.inReplyTo
+      references = meta.references
+
+    } else if (emailMode === 'new') {
       // explicit: skip all lookup, send completely fresh
 
     } else if (emailMode === 'continue') {
@@ -433,7 +510,7 @@ router.post('/send', auth, async (req, res) => {
       // opposite direction). Normalising with extractAddresses() — the same
       // helper the sync matching rules already use — makes both shapes
       // compare equal, so "latest" really means latest.
-      const meAddr  = account.email.trim().toLowerCase()
+      const meAddr  = fromEmail.trim().toLowerCase()
       const toAddrs = extractAddresses(to)   // the To field may itself carry a display name
 
       // Broad DB-side prefilter (substring, so it catches both shapes), then
@@ -502,7 +579,7 @@ router.post('/send', auth, async (req, res) => {
     }
 
     const rawBuffer = buildRawEmail({
-      from: account.email,
+      from: fromEmail,
       to,
       cc:  cc  || null,
       bcc: bcc || null,
@@ -552,7 +629,7 @@ router.post('/send', auth, async (req, res) => {
         body: body || (htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ').trim().slice(0, 2000) : null),
         toEmail: to,
         ccEmail: cc || null,
-        fromEmail: account.email,
+        fromEmail: fromEmail,
         subject: sendSubject,
         emailStatus: 'sent',
         direction: 'outbound',
