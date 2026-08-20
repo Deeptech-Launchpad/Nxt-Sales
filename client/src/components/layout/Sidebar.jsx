@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, Building2, TrendingUp, Mail,
   Settings, ChevronDown, Search, FileCode,
   Inbox, Phone, Calendar, CheckSquare, MessageSquare,
-  PanelLeftClose, PanelLeftOpen
+  PanelLeftClose, PanelLeftOpen, BarChart3
 } from 'lucide-react'
 
 const menuStructure = [
@@ -28,6 +28,7 @@ const menuStructure = [
     icon: Mail,
     items: [
       { to: '/email', label: 'Email', icon: FileCode },
+      { to: '/ai-usage', label: 'AI Usage', icon: BarChart3 },
     ],
   },
 ]
