@@ -33,6 +33,33 @@ model User {
   conversationMemberships ConversationMember[]
   chatMentions ChatMention[]
   chatMessageReceipts ChatMessageReceipt[]
+  aiUsage          AiUsage[]
+}
+
+// One row per AI/LLM request made from the CRM, recorded from whatever usage
+// metadata the provider itself returned — never estimated. Rows are written by
+// the single shared tracking helper (client/src/utils/aiUsage.js), so every
+// current and future AI feature is captured without per-feature counting logic.
+//
+// hasUsageData is false when a provider answered successfully but returned no
+// token counts at all; those rows still count as a request but contribute zero
+// tokens, so the totals stay honest instead of silently under-reporting.
+model AiUsage {
+  id           String   @id @default(cuid())
+  userId       String
+  feature      String
+  provider     String
+  model        String
+  promptTokens Int      @default(0)
+  outputTokens Int      @default(0)
+  totalTokens  Int      @default(0)
+  hasUsageData Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, feature])
+  @@index([userId, model])
 }
 
 model Company {
