@@ -14,6 +14,7 @@
 
 import { callGeminiWithFallback } from './geminiModel'
 import { valueList } from './multiValue'
+import { AI_FEATURES } from './aiUsage'
 
 // ── AI settings (single source of truth: Email Tool → Settings) ────────────
 export function getAiSettings() {
@@ -154,7 +155,7 @@ export async function generateCompanyInsights(company, extraContext = {}) {
     systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents: [{ parts: [{ text: dataBlock }] }],
     generationConfig: { responseMimeType: 'application/json', temperature: 0.4 },
-  })
+  }, { feature: AI_FEATURES.CUSTOMER_INTELLIGENCE })
 
   const text = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
   const insights = parseInsightsJson(text)
