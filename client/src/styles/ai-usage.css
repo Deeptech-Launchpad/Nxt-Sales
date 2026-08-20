@@ -1,0 +1,136 @@
+/* AI Usage Dashboard — dark theme, same design tokens as the Email Tool
+   (styles/email-tool.css) since both live under Marketing. Scoped to
+   .aiu-root so it cannot affect the light-themed CRM pages.
+
+   Every text colour here is an explicit light token on a dark surface — the
+   bug in the first version was inheriting near-black CRM text onto a dark
+   card, so nothing in this file relies on inherited colour. */
+
+.aiu-root {
+  --aiu-bg:        #0A0F1D;
+  --aiu-card:      rgba(22, 28, 45, 0.7);
+  --aiu-card-2:    rgba(30, 41, 59, 0.55);
+  --aiu-border:    rgba(255, 255, 255, 0.08);
+  --aiu-border-s:  rgba(255, 255, 255, 0.14);
+  --aiu-red:       #E11D48;
+  --aiu-txt:       #F8FAFC;   /* primary text  */
+  --aiu-txt-s:     #94A3B8;   /* secondary     */
+  --aiu-txt-m:     #64748B;   /* muted/labels  */
+  --aiu-teal:      #2DD4BF;
+  --aiu-violet:    #A78BFA;
+  --aiu-amber:     #FBBF24;
+  --aiu-green:     #34D399;
+  --aiu-fh:        'Outfit', system-ui, sans-serif;
+  --aiu-fb:        'Inter', system-ui, sans-serif;
+
+  /* Escape Layout's 24px padding so the dashboard fills the content area,
+     matching how .et-root does it. */
+  margin: -24px;
+  min-height: calc(100% + 48px);
+  padding: 28px 32px 40px;
+  box-sizing: border-box;
+  font-family: var(--aiu-fb);
+  color: var(--aiu-txt);
+  background-color: var(--aiu-bg);
+  background-image:
+    radial-gradient(at 0% 0%, rgba(225,29,72,0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(15,23,42,0.9) 0px, transparent 50%);
+}
+
+.aiu-root *, .aiu-root *::before, .aiu-root *::after { box-sizing: border-box; }
+
+/* ── Header ─────────────────────────────────────────────── */
+.aiu-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
+.aiu-title { font-family: var(--aiu-fh); font-size: 24px; font-weight: 700; color: var(--aiu-txt); letter-spacing: -0.3px; }
+.aiu-sub { font-size: 13px; color: var(--aiu-txt-s); margin-top: 3px; }
+.aiu-header-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+.aiu-range { display: flex; gap: 2px; background: var(--aiu-card); border: 1px solid var(--aiu-border); border-radius: 9px; padding: 3px; }
+.aiu-range button {
+  background: transparent; border: none; cursor: pointer; font-family: inherit;
+  font-size: 12.5px; font-weight: 600; color: var(--aiu-txt-s);
+  padding: 6px 13px; border-radius: 6px; transition: background .15s, color .15s;
+}
+.aiu-range button:hover { color: var(--aiu-txt); background: rgba(255,255,255,0.05); }
+.aiu-range button.active { background: var(--aiu-red); color: #fff; }
+
+.aiu-icon-btn {
+  display: flex; align-items: center; gap: 6px; background: var(--aiu-card);
+  border: 1px solid var(--aiu-border); color: var(--aiu-txt-s); cursor: pointer;
+  padding: 8px 12px; border-radius: 8px; font-family: inherit; font-size: 12.5px; font-weight: 600;
+  transition: color .15s, border-color .15s;
+}
+.aiu-icon-btn:hover:not(:disabled) { color: var(--aiu-txt); border-color: var(--aiu-border-s); }
+.aiu-icon-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Summary cards ──────────────────────────────────────── */
+.aiu-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 22px; }
+.aiu-card {
+  background: var(--aiu-card); border: 1px solid var(--aiu-border);
+  border-radius: 12px; padding: 15px 17px;
+}
+.aiu-card-label {
+  font-size: 10.5px; font-weight: 700; color: var(--aiu-txt-m);
+  text-transform: uppercase; letter-spacing: .6px; display: flex; align-items: center; gap: 6px;
+}
+.aiu-card-value {
+  font-family: var(--aiu-fh); font-size: 26px; font-weight: 700;
+  color: var(--aiu-txt); margin-top: 6px; line-height: 1.1; font-variant-numeric: tabular-nums;
+}
+.aiu-card-note { font-size: 11px; color: var(--aiu-txt-m); margin-top: 4px; }
+
+/* ── Panels ─────────────────────────────────────────────── */
+.aiu-panel {
+  background: var(--aiu-card); border: 1px solid var(--aiu-border);
+  border-radius: 12px; padding: 18px 20px; margin-bottom: 18px;
+}
+.aiu-panel-title {
+  font-family: var(--aiu-fh); font-size: 14.5px; font-weight: 600; color: var(--aiu-txt);
+  display: flex; align-items: center; gap: 8px; margin-bottom: 14px;
+}
+.aiu-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; }
+
+/* ── Tables ─────────────────────────────────────────────── */
+.aiu-table-wrap { overflow-x: auto; }
+.aiu-table { width: 100%; border-collapse: collapse; }
+.aiu-table th {
+  text-align: left; font-size: 10.5px; font-weight: 700; color: var(--aiu-txt-m);
+  text-transform: uppercase; letter-spacing: .5px; padding: 8px 10px;
+  border-bottom: 1px solid var(--aiu-border-s); white-space: nowrap;
+}
+.aiu-table td {
+  font-size: 13px; color: var(--aiu-txt); padding: 9px 10px;
+  border-bottom: 1px solid var(--aiu-border); white-space: nowrap;
+}
+.aiu-table tbody tr:last-child td { border-bottom: none; }
+.aiu-table tbody tr:hover td { background: rgba(255,255,255,0.03); }
+.aiu-num { text-align: right; font-variant-numeric: tabular-nums; }
+.aiu-strong { font-weight: 700; color: var(--aiu-txt); }
+.aiu-dim { color: var(--aiu-txt-s); }
+.aiu-cost { color: var(--aiu-green); font-weight: 600; font-variant-numeric: tabular-nums; }
+.aiu-na { color: var(--aiu-txt-m); font-style: italic; }
+
+/* ── Chart ──────────────────────────────────────────────── */
+.aiu-chart { position: relative; height: 260px; }
+
+/* ── Notices ────────────────────────────────────────────── */
+.aiu-note {
+  font-size: 12px; line-height: 1.55; color: var(--aiu-txt-s);
+  border-top: 1px solid var(--aiu-border); padding-top: 12px; margin-top: 6px;
+}
+.aiu-warn {
+  font-size: 12.5px; line-height: 1.5; color: #FCD34D;
+  background: rgba(251, 191, 36, 0.08); border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 8px; padding: 10px 13px; margin-bottom: 16px;
+}
+.aiu-error {
+  font-size: 12.5px; color: #FCA5A5;
+  background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 8px; padding: 10px 13px; margin-bottom: 16px;
+}
+.aiu-empty { font-size: 13px; color: var(--aiu-txt-s); padding: 18px 2px; text-align: center; }
+.aiu-badge {
+  font-size: 9.5px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+  text-transform: uppercase; letter-spacing: .4px;
+}
+.aiu-badge-partial { color: var(--aiu-amber); background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.3); }
