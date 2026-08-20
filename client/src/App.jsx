@@ -18,6 +18,7 @@ import Meetings from './pages/Meetings'
 import Tasks from './pages/Tasks'
 import Chat from './pages/Chat'
 import EmailTool from './pages/EmailTool'
+import AiUsage from './pages/AiUsage'
 import UserManagement from './pages/UserManagement'
 import AcceptInvite from './pages/AcceptInvite'
 import ForgotPassword from './pages/ForgotPassword'
@@ -56,6 +57,7 @@ export default function App() {
             <Route path="tasks" element={<Tasks />} />
             <Route path="chat" element={<Chat />} />
             <Route path="email" element={<EmailTool />} />
+            <Route path="ai-usage" element={<AiUsage />} />
             <Route path="users" element={<UserManagement />} />
             <Route path="profile" element={<Profile />} />
             <Route path="settings" element={<Settings />} />
