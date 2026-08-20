@@ -7,6 +7,8 @@ import DeliverabilityReport from '../components/activities/DeliverabilityReport'
 import { runDeliverabilityAnalysis } from '../utils/emailDeliverability'
 import { compressImageIfNeeded } from '../utils/imageCompress'
 import { discoverBestGeminiModel, callGeminiWithFallback } from '../utils/geminiModel'
+import { recordAiUsage, AI_FEATURES } from '../utils/aiUsage'
+import AiUsagePanel from '../components/AiUsagePanel'
 import { stripInlineFontSize } from '../utils/sanitizeEmailHtml'
 import { invalidateCompanyEmail } from '../utils/emailCache'
 
@@ -317,10 +319,11 @@ async function generateAiEmail(clientName, beforeFile, afterFile, settings, clie
     if (beforeFile) parts.push({ inlineData: { mimeType: beforeFile.type, data: beforeFile.data } })
     if (afterFile)  parts.push({ inlineData: { mimeType: afterFile.type,  data: afterFile.data  } })
 
+    // Usage is recorded inside callGeminiWithFallback — see utils/aiUsage.js.
     const d = await callGeminiWithFallback(aiKey, aiModel, {
       contents: [{ parts }],
       systemInstruction: { parts: [{ text: systemPrompt }] },
-    })
+    }, { feature: AI_FEATURES.EMAIL_AI_GENERATION })
     emailText = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
   } else if (aiProvider === 'openai') {
@@ -343,6 +346,7 @@ async function generateAiEmail(clientName, beforeFile, afterFile, settings, clie
     })
     if (!resp.ok) { const e = await resp.json(); throw new Error(e.error?.message || 'OpenAI API Error') }
     const d = await resp.json()
+    recordAiUsage({ provider: 'openai', model: 'gpt-4o', feature: AI_FEATURES.EMAIL_AI_GENERATION, response: d })
     emailText = d.choices?.[0]?.message?.content || ''
 
   } else if (aiProvider === 'anthropic') {
@@ -364,6 +368,7 @@ async function generateAiEmail(clientName, beforeFile, afterFile, settings, clie
     })
     if (!resp.ok) { const e = await resp.json(); throw new Error(e.error?.message || 'Anthropic API Error') }
     const d = await resp.json()
+    recordAiUsage({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', feature: AI_FEATURES.EMAIL_AI_GENERATION, response: d })
     emailText = d.content?.[0]?.text || ''
   }
 
@@ -1565,6 +1570,10 @@ function SettingsSection({ onGmailChange }) {
             )}
           </div>
         </div>
+
+        {/* Token consumption across every AI feature, tracked centrally —
+            see utils/aiUsage.js. Read-only; changes no AI behavior. */}
+        <AiUsagePanel />
 
         <div className="et-settings-card">
           <div className="et-settings-title">Email Signature</div>
