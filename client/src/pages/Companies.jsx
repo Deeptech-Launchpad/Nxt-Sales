@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Search, LayoutGrid, List, Download, Plus,
   ChevronDown, SlidersHorizontal, Pencil, Upload, Trash2, Star
@@ -153,13 +153,25 @@ export default function Companies({ recentsMode = false }) {
     UNASSIGNED_STATUS_OPTION,
   ]
 
+  // Tab / page / search / every filter live in the URL, so opening a company
+  // and pressing Back restores exactly the view the user left — no recreating
+  // filters. It also makes a filtered list shareable and refresh-safe.
+  // Values are joined with "|" rather than "," because several real filter
+  // values contain a literal comma (e.g. the industry "Construction, Building
+  // Materials"), which a comma-joined param would shred.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlList = (key) => {
+    const v = searchParams.get(key)
+    return v ? v.split('|').filter(Boolean) : []
+  }
+
   const [companies, setCompanies]     = useState([])
   const [total, setTotal]             = useState(0)
   const [loading, setLoading]         = useState(true)
-  const [search, setSearch]           = useState('')
+  const [search, setSearch]           = useState(() => searchParams.get('q') || '')
   const [view, setView]               = useState('table')
-  const [activeTab, setActiveTab]     = useState('all')
-  const [page, setPage]               = useState(1)
+  const [activeTab, setActiveTab]     = useState(() => searchParams.get('tab') || 'all')
+  const [page, setPage]               = useState(() => Math.max(1, parseInt(searchParams.get('page'), 10) || 1))
   const [selected, setSelected]       = useState([])
 
   const [showCreate, setShowCreate]   = useState(false)
@@ -167,14 +179,14 @@ export default function Companies({ recentsMode = false }) {
   const [deleting, setDeleting]       = useState(false)
   const [recycleBinCount, setRecycleBinCount] = useState(0)
 
-  const [ownerFilter,      setOwnerFilter]      = useState([])
-  const [createDateFilter, setCreateDateFilter] = useState([])
-  const [leadStatusFilter, setLeadStatusFilter] = useState([])
-  const [industryFilter,   setIndustryFilter]   = useState([])
-  const [countryFilter,    setCountryFilter]    = useState([])
-  const [hasDealFilter,    setHasDealFilter]    = useState([])
-  const [cmsFilter,        setCmsFilter]        = useState([])
-  const [remarksFilter,    setRemarksFilter]    = useState([])
+  const [ownerFilter,      setOwnerFilter]      = useState(() => urlList('owners'))
+  const [createDateFilter, setCreateDateFilter] = useState(() => urlList('created'))
+  const [leadStatusFilter, setLeadStatusFilter] = useState(() => urlList('status'))
+  const [industryFilter,   setIndustryFilter]   = useState(() => urlList('industry'))
+  const [countryFilter,    setCountryFilter]    = useState(() => urlList('country'))
+  const [hasDealFilter,    setHasDealFilter]    = useState(() => urlList('hasDeal'))
+  const [cmsFilter,        setCmsFilter]        = useState(() => urlList('cms'))
+  const [remarksFilter,    setRemarksFilter]    = useState(() => urlList('remarks'))
   const { options: ownerDropdownOptions } = useDropdownOptions('company.ownerId')
   const { options: industryValues } = useDropdownOptions('company.industry')
   const { options: countryValues }  = useDropdownOptions('company.country')
@@ -192,12 +204,18 @@ export default function Companies({ recentsMode = false }) {
   // toolbar, chosen via the "+" button — persisted so the choice sticks
   // across reloads, same pattern as visibleColumns below.
   const [activeOptionalFilters, setActiveOptionalFilters] = useState(() => {
+    let saved = []
     try {
-      const saved = JSON.parse(localStorage.getItem(OPTIONAL_FILTERS_STORAGE_KEY))
-      return Array.isArray(saved) ? saved : []
-    } catch {
-      return []
-    }
+      const raw = JSON.parse(localStorage.getItem(OPTIONAL_FILTERS_STORAGE_KEY))
+      if (Array.isArray(raw)) saved = raw
+    } catch { /* ignore malformed preference */ }
+    // An optional filter arriving in the URL (a shared link, or Back from a
+    // company) must have its chip visible, otherwise the list would be
+    // filtered by something the user cannot see or clear.
+    const fromUrl = OPTIONAL_FILTER_DEFS
+      .map(d => d.key)
+      .filter(k => searchParams.get(k === 'industry' ? 'industry' : k))
+    return [...new Set([...saved, ...fromUrl])]
   })
   const saveActiveOptionalFilters = (keys) => {
     // Removing a filter also clears its current selection immediately, so
@@ -251,6 +269,20 @@ export default function Companies({ recentsMode = false }) {
       .map(o => ({ value: o.value, label: o.label })),
     { value: 'unassigned', label: 'Unassigned' },
   ]
+
+  useEffect(() => {
+    const p = new URLSearchParams()
+    if (activeTab !== 'all') p.set('tab', activeTab)
+    if (page > 1) p.set('page', String(page))
+    if (search) p.set('q', search)
+    const lists = {
+      owners: ownerFilter, created: createDateFilter, status: leadStatusFilter,
+      industry: industryFilter, country: countryFilter, hasDeal: hasDealFilter,
+      cms: cmsFilter, remarks: remarksFilter,
+    }
+    for (const [k, v] of Object.entries(lists)) if (v.length) p.set(k, v.join('|'))
+    if (p.toString() !== searchParams.toString()) setSearchParams(p, { replace: true })
+  }, [activeTab, page, search, ownerFilter, createDateFilter, leadStatusFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch companies from API
   const fetchCompanies = useCallback(async () => {
@@ -581,7 +613,23 @@ export default function Companies({ recentsMode = false }) {
                   <span className="avatar" style={{ fontSize: '10px', letterSpacing: '-0.5px' }}>
                     {(c.name || '??').slice(0, 2).toUpperCase()}
                   </span>
-                  <span className="link-style" onClick={() => openCompany(c.id)}>{c.name}</span>
+                  {/* A real anchor so the browser offers its normal
+                      "Open link in new tab/window", middle-click and
+                      Ctrl/Cmd-click. Left-click is still intercepted for SPA
+                      navigation, which is what carries listContext through so
+                      the Companies filters/search/page are preserved on
+                      return (and Prev/Next walks the same filtered list). */}
+                  <a
+                    className="link-style"
+                    href={`/companies/${c.id}`}
+                    onClick={e => {
+                      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+                      e.preventDefault()
+                      openCompany(c.id)
+                    }}
+                  >
+                    {c.name}
+                  </a>
                 </td>
                 {orderedVisibleFields.map(f => <td key={f.key}><div className="cell-clamp">{renderCompanyCell(f, c)}</div></td>)}
               </tr>

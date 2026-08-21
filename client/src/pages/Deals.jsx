@@ -71,6 +71,11 @@ export default function Deals() {
   // to the dashboard rather than silently dropping the filter.
   const [searchParams, setSearchParams] = useSearchParams()
   const focusKey  = searchParams.get('focus')
+  // Deal Open Date period, carried from the Deals Dashboard cards so the list
+  // shows exactly the deals the card counted.
+  const yearParam  = parseInt(searchParams.get('year'), 10)
+  const monthParam = parseInt(searchParams.get('month'), 10)
+  const hasPeriod  = Number.isFinite(yearParam)
   const focus     = FOCUS_FILTERS[focusKey] || null
   const [viewMode, setViewMode]   = useState(() => localStorage.getItem(VIEW_STORAGE_KEY) || 'list')
 
@@ -183,7 +188,18 @@ export default function Deals() {
       const matchesCountry = countryFilter.length === 0
         || countryFilter.some(c => (d.country || '').toLowerCase() === c.toLowerCase())
       const matchesFocus = !focus || focus.test(d)
-      return matchesSearch && matchesCountry && matchesFocus
+      // Deals with no Deal Open Date cannot belong to a period, so they are
+      // excluded while a period filter is active - matching the dashboard.
+      let matchesPeriod = true
+      if (hasPeriod) {
+        if (!d.openDate) matchesPeriod = false
+        else {
+          const od = new Date(d.openDate)
+          matchesPeriod = od.getFullYear() === yearParam
+            && (!Number.isFinite(monthParam) || od.getMonth() + 1 === monthParam)
+        }
+      }
+      return matchesSearch && matchesCountry && matchesFocus && matchesPeriod
     })
   })()
 
