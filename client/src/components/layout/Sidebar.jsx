@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, Building2, TrendingUp, Mail,
   Settings, ChevronDown, Search, FileCode,
   Inbox, Phone, Calendar, CheckSquare, MessageSquare,
-  PanelLeftClose, PanelLeftOpen, BarChart3
+  PanelLeftClose, PanelLeftOpen, BarChart3, History
 } from 'lucide-react'
 
 const menuStructure = [
@@ -16,7 +16,9 @@ const menuStructure = [
     icon: LayoutDashboard,
     items: [
       { to: '/companies', label: 'Companies', icon: Building2 },
+      { to: '/recents', label: 'Recents', icon: History },
       { to: '/deals', label: 'Deals', icon: TrendingUp },
+      { to: '/deals-dashboard', label: 'Deals Dashboard', icon: BarChart3 },
       { to: '/inbox', label: 'Inbox', icon: Inbox },
       { to: '/calls', label: 'Calls', icon: Phone },
       { to: '/meetings', label: 'Meetings', icon: Calendar },
