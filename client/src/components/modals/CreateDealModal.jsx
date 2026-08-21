@@ -11,7 +11,7 @@ const emptyForm = {
   contactPerson: '', contactPhone: '', contactEmail: '', serviceRequirement: '',
   clientWebsiteUrl: '', opportunityType: '', value: '', currency: 'USD', strategicImportance: '',
   expectedOutcome: '', stage: 'Discussion', notes: '', poc: false, proposalShared: false,
-  pocReceivedDate: '', pocDeliveredDate: '',
+  pocReceivedDate: '', pocDeliveredDate: '', openDate: '',
 }
 
 // Create or edit a deal. Pass `deal` (an existing deal record) to edit it —
@@ -51,6 +51,7 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
     proposalShared:      !!deal.proposalShared,
     pocReceivedDate:     deal.pocReceivedDate ? String(deal.pocReceivedDate).slice(0, 10) : '',
     pocDeliveredDate:    deal.pocDeliveredDate ? String(deal.pocDeliveredDate).slice(0, 10) : '',
+    openDate:            deal.openDate ? String(deal.openDate).slice(0, 10) : '',
     customFields:        extractCustomFieldValues(deal),
   } : { ...emptyForm, customFields: {} })
   const [saving, setSaving] = useState(false)
@@ -117,6 +118,7 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
       proposalShared:      form.proposalShared,
       pocReceivedDate:     form.pocReceivedDate || null,
       pocDeliveredDate:    form.pocDeliveredDate || null,
+      openDate:            form.openDate || null,
       customFields:        form.customFields,
     }
     try {
@@ -164,6 +166,14 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
               <input type="checkbox" checked={form.proposalShared} onChange={e => set('proposalShared', e.target.checked)} style={{ width: 15, height: 15 }} />
               Proposal Shared
             </label>
+          </div>
+
+          {/* Deal Open Date — the business date the deal opened. Kept separate
+              from the record's created date, and it is what the Deals
+              Dashboard month/year filter reports on. */}
+          <div className="form-group">
+            <label>Deal Open Date</label>
+            <input type="date" value={form.openDate} onChange={e => set('openDate', e.target.value)} />
           </div>
 
           <div className="form-group" style={{ display: 'flex', gap: 20, flexDirection: 'row' }}>
