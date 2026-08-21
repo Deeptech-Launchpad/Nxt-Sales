@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Pencil, Trash2, Search, List, LayoutGrid } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
@@ -43,6 +43,17 @@ const DEAL_OWNER_COLUMN = { key: 'ownerId', label: 'Deal Owner' }
 // dynamic Deal field list) — client-side-only, same pattern as Deal Owner.
 const DEAL_FLAGS_COLUMN = { key: '_flags', label: 'POC / Proposal Shared' }
 
+// Deep-link targets used by the Deals Dashboard cards (/deals?focus=poc).
+// Kept as data so a new dashboard card only needs an entry here, and so the
+// same predicate drives both the filtering and the removable chip label.
+const FOCUS_FILTERS = {
+  active:   { label: 'Active deals',    test: d => !/won|lost/i.test(d.stage || '') },
+  won:      { label: 'Won deals',       test: d => /won/i.test(d.stage || '') },
+  lost:     { label: 'Lost deals',      test: d => /lost/i.test(d.stage || '') },
+  poc:      { label: 'POC',             test: d => !!d.poc },
+  proposal: { label: 'Proposal Shared', test: d => !!d.proposalShared },
+}
+
 export default function Deals() {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -55,6 +66,12 @@ export default function Deals() {
   const [search, setSearch]       = useState('')
   const [countryFilter, setCountryFilter] = useState([])
   const [dealsTab, setDealsTab]   = useState('all') // 'all' | 'mine'
+  // Set by the Deals Dashboard cards. Lives in the URL (not state) so the
+  // filtered view is shareable, survives a browser refresh, and Back returns
+  // to the dashboard rather than silently dropping the filter.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const focusKey  = searchParams.get('focus')
+  const focus     = FOCUS_FILTERS[focusKey] || null
   const [viewMode, setViewMode]   = useState(() => localStorage.getItem(VIEW_STORAGE_KEY) || 'list')
 
   // Same shared 'company.country' dropdown list CreateDealModal already uses
@@ -165,7 +182,8 @@ export default function Deals() {
       ].some(v => v && String(v).toLowerCase().includes(q))
       const matchesCountry = countryFilter.length === 0
         || countryFilter.some(c => (d.country || '').toLowerCase() === c.toLowerCase())
-      return matchesSearch && matchesCountry
+      const matchesFocus = !focus || focus.test(d)
+      return matchesSearch && matchesCountry && matchesFocus
     })
   })()
 
@@ -211,7 +229,23 @@ export default function Deals() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18, background: '#fff', borderRadius: 12, padding: 26, boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 18, borderBottom: '1px solid #eef1f5' }}>
         <div>
-          <h1 style={{ fontSize: 23, fontWeight: 700, color: '#0f172a', letterSpacing: '-.2px' }}>Deals</h1>
+          <h1 style={{ fontSize: 23, fontWeight: 700, color: '#0f172a', letterSpacing: '-.2px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            Deals
+            {/* Arrived from a Deals Dashboard card — show what's being filtered
+                and let the user clear it without going back. */}
+            {focus && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 99, padding: '3px 10px' }}>
+                {focus.label}
+                <button
+                  title="Clear this filter"
+                  onClick={() => { const p = new URLSearchParams(searchParams); p.delete('focus'); setSearchParams(p, { replace: true }) }}
+                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#1d4ed8', padding: 0, display: 'flex', fontSize: 14, lineHeight: 1 }}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </h1>
           <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>
             {loading ? 'Loading…' : (
               <>

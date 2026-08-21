@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed,
@@ -524,10 +525,14 @@ function CallsInner() {
   const [syncMsg,      setSyncMsg]      = useState('')
   const [viewLog,      setViewLog]      = useState(null)
   const [analyzingIds, setAnalyzingIds] = useState(new Set())
-  const [page,         setPage]         = useState(1)
+  // Page, search and the open analysis all live in the URL so ANY refresh -
+  // the 15s auto-refresh, F5, or a restored tab - comes back to the same
+  // place instead of resetting to page 1 of the unfiltered list.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [page,         setPage]         = useState(() => Math.max(1, parseInt(searchParams.get('page'), 10) || 1))
   const [selectedIds,  setSelectedIds]  = useState(new Set())
-  const [search,           setSearch]           = useState('')
-  const [debouncedSearch,  setDebouncedSearch]   = useState('')
+  const [search,           setSearch]           = useState(() => searchParams.get('q') || '')
+  const [debouncedSearch,  setDebouncedSearch]   = useState(() => searchParams.get('q') || '')
 
   const [visibleColumns, setVisibleColumns] = useState(() => {
     try {
@@ -564,6 +569,15 @@ function CallsInner() {
 
   useEffect(() => { fetchLogs(page, debouncedSearch) }, [fetchLogs, page, debouncedSearch])
 
+  // Mirror the current context into the URL. replace:true so this never fills
+  // the back stack - Back should still leave Calls, not step through pages.
+  useEffect(() => {
+    const p = new URLSearchParams(searchParams)
+    page > 1 ? p.set('page', String(page)) : p.delete('page')
+    debouncedSearch ? p.set('q', debouncedSearch) : p.delete('q')
+    if (p.toString() !== searchParams.toString()) setSearchParams(p, { replace: true })
+  }, [page, debouncedSearch]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Clear selection whenever page changes
   useEffect(() => { setSelectedIds(new Set()) }, [page])
 
@@ -573,9 +587,39 @@ function CallsInner() {
   useEffect(() => {
     const active = logs.some(l => l.analysisStatus === 'analyzing' || l.analysisStatus === 'pending')
     if (!active) return
-    const timer = setInterval(() => fetchLogs(page), 15000)
+    // Must pass the CURRENT search term: calling fetchLogs(page) alone let
+    // searchTerm default to '', so each automatic refresh silently discarded
+    // the user's active search and reloaded the unfiltered list underneath
+    // them - the auto-refresh-loses-my-context bug.
+    const timer = setInterval(() => fetchLogs(page, debouncedSearch), 15000)
     return () => clearInterval(timer)
-  }, [logs, fetchLogs, page])
+  }, [logs, fetchLogs, page, debouncedSearch])
+
+  // Recording Analysis is identified in the URL (?analysis=<id>) rather than
+  // held only in component state, so an automatic refresh - or a real browser
+  // refresh - reopens the exact analysis the user was reading instead of
+  // dumping them back on the Calls list.
+  const openAnalysis = (log) => {
+    setViewLog(log)
+    const p = new URLSearchParams(searchParams)
+    p.set('analysis', log.id)
+    setSearchParams(p, { replace: true })
+  }
+  const closeAnalysis = () => {
+    setViewLog(null)
+    const p = new URLSearchParams(searchParams)
+    p.delete('analysis')
+    setSearchParams(p, { replace: true })
+  }
+
+  // Reopen from the URL once the logs for this page have loaded.
+  useEffect(() => {
+    const id = searchParams.get('analysis')
+    if (!id) { if (viewLog) setViewLog(null); return }
+    if (viewLog?.id === id) return
+    const match = logs.find(l => l.id === id)
+    if (match) setViewLog(match)
+  }, [logs, searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const goToPage = (pg) => {
     if (pg < 1 || pg > totalPages) return
@@ -853,7 +897,7 @@ function CallsInner() {
                           {log.analysisStatus === 'completed' && log.analysisResult && (
                             <button
                               className="ch-btn ch-btn-details"
-                              onClick={() => setViewLog(log)}
+                              onClick={() => openAnalysis(log)}
                             >
                               <BarChart2 size={11} /> View Details
                             </button>
@@ -955,7 +999,7 @@ function CallsInner() {
 
       {/* Analysis details modal */}
       {viewLog && (
-        <AnalysisModal callLog={viewLog} onClose={() => setViewLog(null)} />
+        <AnalysisModal callLog={viewLog} onClose={() => closeAnalysis()} />
       )}
     </>
   )

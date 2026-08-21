@@ -35,6 +35,8 @@ const OPTIONAL_FILTER_DEFS = [
   { key: 'industry', label: 'Industry' },
   { key: 'country',  label: 'Country' },
   { key: 'hasDeal',  label: 'Deals Created' },
+  { key: 'cms',      label: 'CMS' },
+  { key: 'remarks',  label: 'Remarks' },
 ]
 
 // Not admin-managed like Industry/Country — a fixed yes/no choice, so no
@@ -142,7 +144,7 @@ const TABS = [
   { key: 'unassigned', label: 'Unassigned companies' },
 ]
 
-export default function Companies() {
+export default function Companies({ recentsMode = false }) {
   const navigate      = useNavigate()
   const { user }      = useAuth()
   const { options: leadStatusValues } = useDropdownOptions('company.leadStatus')
@@ -171,11 +173,20 @@ export default function Companies() {
   const [industryFilter,   setIndustryFilter]   = useState([])
   const [countryFilter,    setCountryFilter]    = useState([])
   const [hasDealFilter,    setHasDealFilter]    = useState([])
+  const [cmsFilter,        setCmsFilter]        = useState([])
+  const [remarksFilter,    setRemarksFilter]    = useState([])
   const { options: ownerDropdownOptions } = useDropdownOptions('company.ownerId')
   const { options: industryValues } = useDropdownOptions('company.industry')
   const { options: countryValues }  = useDropdownOptions('company.country')
   const industryOptions = industryValues.map(o => ({ value: o.value, label: o.label }))
   const countryOptions  = countryValues.map(o => ({ value: o.value, label: o.label }))
+  // CMS and Remarks options are discovered from the live Company data by the
+  // backend (derived dropdowns), so a brand-new CMS value becomes filterable
+  // as soon as a company is saved with it - nothing is hardcoded here.
+  const { options: cmsValuesList }     = useDropdownOptions('company.cms')
+  const { options: remarksValuesList } = useDropdownOptions('company.remarks')
+  const cmsOptions     = cmsValuesList.map(o => ({ value: o.value, label: o.label }))
+  const remarksOptions = remarksValuesList.map(o => ({ value: o.value, label: o.label }))
 
   // Which OPTIONAL filters (Industry/Country) are currently shown in the
   // toolbar, chosen via the "+" button — persisted so the choice sticks
@@ -195,6 +206,8 @@ export default function Companies() {
     if (!keys.includes('industry')) setIndustryFilter([])
     if (!keys.includes('country'))  setCountryFilter([])
     if (!keys.includes('hasDeal'))  setHasDealFilter([])
+    if (!keys.includes('cms'))      setCmsFilter([])
+    if (!keys.includes('remarks'))  setRemarksFilter([])
     setActiveOptionalFilters(keys)
     localStorage.setItem(OPTIONAL_FILTERS_STORAGE_KEY, JSON.stringify(keys))
     setPage(1)
@@ -247,6 +260,9 @@ export default function Companies() {
         page,
         limit: PAGE_SIZE,
         view: activeTab === 'all' ? undefined : activeTab,
+        // Recents: newest activity (created OR edited) first - see the sort
+        // handling in GET /api/companies.
+        ...(recentsMode && { sort: 'recent' }),
         ...(search && { search }),
         ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
         ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
@@ -257,6 +273,8 @@ export default function Companies() {
         ...(industryFilter.length   > 0 && { industries:   industryFilter }),
         ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
         ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
+        ...(cmsFilter.length        > 0 && { cmsValues:     cmsFilter }),
+        ...(remarksFilter.length    > 0 && { remarksValues: remarksFilter }),
       }
       const { data } = await api.get('/companies', { params })
       setCompanies(data.companies || [])
@@ -266,7 +284,7 @@ export default function Companies() {
     } finally {
       setLoading(false)
     }
-  }, [page, activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter])
+  }, [page, activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter, recentsMode])
 
   useEffect(() => { fetchCompanies() }, [fetchCompanies])
 
@@ -283,6 +301,8 @@ export default function Companies() {
     ...(industryFilter.length   > 0 && { industries:   industryFilter }),
     ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
     ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
+        ...(cmsFilter.length        > 0 && { cmsValues:     cmsFilter }),
+        ...(remarksFilter.length    > 0 && { remarksValues: remarksFilter }),
   }
   const openCompany = (id) => navigate(`/companies/${id}`, { state: { listContext } })
 
@@ -299,10 +319,12 @@ export default function Companies() {
       ...(industryFilter.length   > 0 && { industries:   industryFilter }),
       ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
       ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
+        ...(cmsFilter.length        > 0 && { cmsValues:     cmsFilter }),
+        ...(remarksFilter.length    > 0 && { remarksValues: remarksFilter }),
     }
     const { data } = await api.get('/companies/export', { params })
     return data.companies || []
-  }, [activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter])
+  }, [activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter])
 
   // Tab change resets page
   const switchTab = (key) => { setActiveTab(key); setPage(1); setSelected([]) }
@@ -337,6 +359,7 @@ export default function Companies() {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const hasFilters = ownerFilter.length > 0 || createDateFilter.length > 0 || leadStatusFilter.length > 0
     || industryFilter.length > 0 || countryFilter.length > 0 || hasDealFilter.length > 0
+    || cmsFilter.length > 0 || remarksFilter.length > 0
 
   // Export always includes every Company field (a superset of the visible
   // table columns) — except 'phone', the legacy primary-scalar mirror of the
@@ -382,9 +405,11 @@ export default function Companies() {
       <div className="contacts-header">
         <div className="header-left">
           <h1 className="contacts-title">
-            Companies
+            {recentsMode ? 'Recents' : 'Companies'}
           </h1>
-          <span className="records-count">{total} records</span>
+          <span className="records-count">
+            {total} records{recentsMode ? ' · most recently created or updated first' : ''}
+          </span>
         </div>
         <div className="header-actions">
           {selected.length > 0 && (
@@ -466,12 +491,28 @@ export default function Companies() {
               singleSelect
             />
           )}
+          {activeOptionalFilters.includes('cms') && (
+            <FilterDropdown
+              label="CMS"
+              options={cmsOptions}
+              selected={cmsFilter}
+              onChange={v => { setCmsFilter(v); setPage(1) }}
+            />
+          )}
+          {activeOptionalFilters.includes('remarks') && (
+            <FilterDropdown
+              label="Remarks"
+              options={remarksOptions}
+              selected={remarksFilter}
+              onChange={v => { setRemarksFilter(v); setPage(1) }}
+            />
+          )}
           <AddFilterMenu fields={OPTIONAL_FILTER_DEFS} activeKeys={activeOptionalFilters} onSave={saveActiveOptionalFilters} />
           <button className="filter-chip chip-icon" title="Edit filters"><Pencil size={13} /></button>
           <button className="filter-chip advanced-filter"><SlidersHorizontal size={13} /> Advanced filters</button>
           {hasFilters && (
             <button className="filter-chip" style={{ color: '#ef4444', borderColor: '#fecaca' }}
-              onClick={() => { setOwnerFilter([]); setCreateDateFilter([]); setLeadStatusFilter([]); setIndustryFilter([]); setCountryFilter([]); setHasDealFilter([]); setPage(1) }}>
+              onClick={() => { setOwnerFilter([]); setCreateDateFilter([]); setLeadStatusFilter([]); setIndustryFilter([]); setCountryFilter([]); setHasDealFilter([]); setCmsFilter([]); setRemarksFilter([]); setPage(1) }}>
               Clear all
             </button>
           )}

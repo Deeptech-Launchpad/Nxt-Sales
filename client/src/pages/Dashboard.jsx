@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { TrendingUp, Briefcase, CheckCircle, Mail, Plus, Building2, PhoneCall, CalendarClock, AlertTriangle, CheckSquare, Target, FileCheck } from 'lucide-react'
+import { TrendingUp, Mail, Plus, Building2, PhoneCall, CalendarClock, AlertTriangle, CheckSquare, BarChart3 } from 'lucide-react'
 import api from '../api/client'
 import '../styles/dashboard.css'
 
@@ -9,6 +9,7 @@ const quickActions = [
   { label: 'New Deal',    Icon: TrendingUp, color: '#fef9ee', iconColor: '#f59e0b', to: '/deals' },
   { label: 'Send Email',  Icon: Mail,       color: '#f0fdf4', iconColor: '#22c55e', to: '/email' },
   { label: 'Create Task', Icon: Plus,       color: '#fff1f2', iconColor: '#e63329', to: '/tasks' },
+  { label: 'Deals Dashboard', Icon: BarChart3, color: '#eff6ff', iconColor: '#3b82f6', to: '/deals-dashboard' },
 ]
 
 export default function Dashboard() {
@@ -41,8 +42,6 @@ export default function Dashboard() {
 
   const kpiCards = [
     { label: 'Total Companies',       value: kpis?.totalCompanies,       Icon: Building2,     color: '#eff6ff', iconColor: '#3b82f6' },
-    { label: 'Deals in Progress',     value: kpis?.dealsInProgress,      Icon: Briefcase,     color: '#f0fdf4', iconColor: '#22c55e' },
-    { label: 'Won Clients This Month',value: kpis?.wonClientsThisMonth,  Icon: CheckCircle,   color: '#fff1f2', iconColor: '#e63329' },
     { label: 'Calls Today',           value: kpis?.callsToday,           Icon: PhoneCall,     color: '#fef9ee', iconColor: '#f59e0b' },
     { label: 'Follow-ups Due Today',  value: kpis?.followUpsDueToday,    Icon: CalendarClock, color: '#f5f3ff', iconColor: '#8b5cf6' },
     { label: 'Tasks Overdue',         value: kpis?.tasksOverdue,         Icon: AlertTriangle, color: '#fef2f2', iconColor: '#ef4444' },
@@ -50,38 +49,16 @@ export default function Dashboard() {
 
   const todayTasks = kpis?.todayTasks || []
 
-  const activeDeals = deals.filter(d => !/won|lost/i.test(d.stage || ''))
-  const wonDeals    = deals.filter(d => /won/i.test(d.stage || ''))
+  // Deal-specific cards (Total/Active/Won/POC/Proposal Shared) now live on the
+  // dedicated Deals Dashboard (/deals-dashboard) and are deliberately NOT
+  // duplicated here. Recent Deals stays as a general-activity preview.
   const recentDeals = deals.slice(0, 5)
-
-  const pocDeals             = deals.filter(d => d.poc)
-  const proposalSharedDeals  = deals.filter(d => d.proposalShared)
-
-  const stats = [
-    { label: 'Total Deals',       value: deals.length,              Icon: TrendingUp,  color: '#fef9ee', iconColor: '#f59e0b' },
-    { label: 'Active Deals',      value: activeDeals.length,        Icon: Briefcase,   color: '#f0fdf4', iconColor: '#22c55e' },
-    { label: 'Won Deals',         value: wonDeals.length,           Icon: CheckCircle, color: '#fff1f2', iconColor: '#e63329' },
-    { label: 'POC',                value: pocDeals.length,           Icon: Target,      color: '#eff6ff', iconColor: '#3b82f6' },
-    { label: 'Proposal Shared',   value: proposalSharedDeals.length, Icon: FileCheck,   color: '#f5f3ff', iconColor: '#8b5cf6' },
-  ]
 
   return (
     <div className="dashboard">
       <div>
         <h1 className="dash-greeting">Good morning, <span>{firstName}</span> 👋</h1>
         <p className="dash-sub">Here's what's happening with your marketing today.</p>
-      </div>
-
-      <div className="stats-grid">
-        {stats.map(({ label, value, Icon, color, iconColor }) => (
-          <div key={label} className="stat-card">
-            <div className="stat-icon-wrap" style={{ background: color }}>
-              <Icon size={17} color={iconColor} />
-            </div>
-            <div className="stat-value">{loading ? '—' : value}</div>
-            <div className="stat-label">{label}</div>
-          </div>
-        ))}
       </div>
 
       <div className="stats-grid">
