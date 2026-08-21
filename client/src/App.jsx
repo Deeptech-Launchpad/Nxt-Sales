@@ -8,7 +8,9 @@ import Settings from './pages/Settings'
 import DropdownManager from './pages/settings/DropdownManager'
 import CustomFieldsManager from './pages/settings/CustomFieldsManager'
 import Dashboard from './pages/Dashboard'
+import DealsDashboard from './pages/DealsDashboard'
 import Companies from './pages/Companies'
+import Recents from './pages/Recents'
 import Deals from './pages/Deals'
 import CompanyDetail from './pages/companies/CompanyDetail'
 import CompanyRecycleBin from './pages/companies/CompanyRecycleBin'
@@ -48,9 +50,11 @@ export default function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="companies" element={<Companies />} />
+            <Route path="recents" element={<Recents />} />
             <Route path="companies/recycle-bin" element={<CompanyRecycleBin />} />
             <Route path="companies/:id" element={<CompanyDetail />} />
             <Route path="deals" element={<Deals />} />
+            <Route path="deals-dashboard" element={<DealsDashboard />} />
             <Route path="inbox" element={<Inbox />} />
             <Route path="calls" element={<Calls />} />
             <Route path="meetings" element={<Meetings />} />
