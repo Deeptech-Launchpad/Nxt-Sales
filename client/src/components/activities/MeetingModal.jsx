@@ -86,7 +86,7 @@ export default function MeetingModal({
 
   const save = async () => {
     if (!title.trim()) { setError('Title is required.'); return }
-    if (needsCompanyPicker && !pickedCompanyId) { setError('Please select a company.'); return }
+
     setSaving(true); setError('')
 
     try {
@@ -118,7 +118,7 @@ export default function MeetingModal({
           description: body || null,
           location:    location || null,
           attendees:   attendees,
-          companyId: pickedCompanyId,
+          companyId: pickedCompanyId || null,
           assignedToId: assignedTo || null,
           customFields,
         })
@@ -142,7 +142,7 @@ export default function MeetingModal({
         const endTimeDate = new Date(startTime.getTime() + Number(durationM) * 60000)
         const res = await api.post('/activities', {
           type: 'meeting',
-          companyId: pickedCompanyId,
+          companyId: pickedCompanyId || null,
           title: title.trim(),
           body: body || null,
           startTime: startTime.toISOString(),
@@ -241,7 +241,7 @@ export default function MeetingModal({
         <div className="act-popup-body">
           {needsCompanyPicker && (
             <div className="act-form-group" style={{ marginBottom: 12 }}>
-              <label>Company *</label>
+              <label>Company <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional)</span></label>
               <CompanyPicker
                 value={pickedCompanyId}
                 label={pickedCompanyName}
