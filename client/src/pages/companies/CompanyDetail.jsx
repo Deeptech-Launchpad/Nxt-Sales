@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import {
   ChevronDown, ChevronLeft, ChevronRight, FileText, Mail, Phone,
   CheckSquare, Calendar, MoreHorizontal,
@@ -14,6 +14,7 @@ import ActivityFeed      from '../../components/activities/ActivityFeed'
 import EditRecordModal   from '../../components/EditRecordModal'
 import CreateDealModal   from '../../components/modals/CreateDealModal'
 import CompanyIntelligence from '../../components/CompanyIntelligence'
+import CompanyCalls from '../../components/activities/CompanyCalls'
 import { valueList } from '../../utils/multiValue'
 import { normalizeUrl } from '../../utils/url'
 import { invalidateCompanyEmail } from '../../utils/emailCache'
@@ -41,7 +42,7 @@ const LEFT_FIELDS = [
   { label: 'Remarks',         key: 'remarks'                      },
 ]
 
-const CENTER_TABS = ['Overview', 'Activities', 'Intelligence']
+const CENTER_TABS = ['Overview', 'Activities', 'Calls', 'Intelligence']
 
 // Resizable side panels (drag the handle between panels). Persisted per
 // browser, same localStorage-preference pattern used elsewhere in the app
@@ -177,7 +178,20 @@ export default function CompanyDetail() {
   const [company,    setCompany]    = useState(null)
   const [loading,    setLoading]    = useState(true)
   const [notFound,   setNotFound]   = useState(false)
-  const [centerTab,  setCenterTab]  = useState('Overview')
+  // The active tab lives in the URL (?tab=Calls) so a refresh - automatic or
+  // a real browser reload - returns to the same tab of the same company
+  // instead of resetting to Overview or bouncing back to the Companies list.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabFromUrl = searchParams.get('tab')
+  const [centerTab, setCenterTabState] = useState(
+    CENTER_TABS.includes(tabFromUrl) ? tabFromUrl : 'Overview'
+  )
+  const setCenterTab = (tab) => {
+    setCenterTabState(tab)
+    const p = new URLSearchParams(searchParams)
+    tab === 'Overview' ? p.delete('tab') : p.set('tab', tab)
+    setSearchParams(p, { replace: true })
+  }
   const [recentActs, setRecentActs] = useState([])
   const [neighbors,  setNeighbors]  = useState({ prevId: null, nextId: null })
 
@@ -554,6 +568,12 @@ export default function CompanyDetail() {
           {centerTab === 'Activities' && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
               <ActivityFeed companyId={id} companyName={company.name} contactEmail={company.email} onAction={openModal} refreshKey={feedRefreshKey} />
+            </div>
+          )}
+
+          {centerTab === 'Calls' && (
+            <div className="detail-center-body">
+              <CompanyCalls companyId={id} />
             </div>
           )}
 
