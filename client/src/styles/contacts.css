@@ -205,11 +205,29 @@
 
 /* ── Table ── */
 .contacts-table-wrapper {
-  overflow-x: auto;
+  /* Records scroll INSIDE this box - both axes - so the page shell, header,
+     toolbar and pager stay put while only the rows move. Horizontal scrolling
+     works natively here for trackpad swipes and shift+wheel.
+     The height is viewport-relative rather than fixed so the layout stays
+     responsive; the fallback keeps a usable box on very short screens. */
+  overflow: auto;
+  max-height: calc(100vh - 330px);
+  min-height: 240px;
+  /* Stops a scroll that reaches the end of the table from chaining out and
+     scrolling the whole page instead. */
+  overscroll-behavior: contain;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   margin-top: 12px;
 }
+
+/* Slimmer scrollbars so the horizontal one doesn't eat a full row of height. */
+.contacts-table-wrapper::-webkit-scrollbar { width: 10px; height: 10px; }
+.contacts-table-wrapper::-webkit-scrollbar-track { background: #f8fafc; }
+.contacts-table-wrapper::-webkit-scrollbar-thumb {
+  background: #cbd5e1; border-radius: 99px; border: 2px solid #f8fafc;
+}
+.contacts-table-wrapper::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
 .contacts-table {
   width: 100%;
@@ -220,6 +238,20 @@
 .contacts-table thead {
   background: #f8fafc;
   border-bottom: 1px solid #e2e8f0;
+}
+
+/* Column headers stay visible while the rows scroll under them. Applied to
+   the cells (not thead) because a sticky <thead> is unreliable on
+   border-collapse tables across browsers. */
+.contacts-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  /* Must be opaque - rows would otherwise show through while scrolling. */
+  background: #f8fafc;
+  /* border-collapse drops the header's own border when stuck, so the divider
+     is drawn as a shadow instead. */
+  box-shadow: inset 0 -1px 0 #e2e8f0;
 }
 
 .contacts-table thead th {
