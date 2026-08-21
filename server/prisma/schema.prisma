@@ -130,6 +130,12 @@ model Deal {
   // Nullable, no default — existing deals simply have both empty until set.
   pocReceivedDate  DateTime?
   pocDeliveredDate DateTime?
+  // Deal Open Date - the business date the deal actually opened, which is
+  // deliberately NOT createdAt (when the row was typed into the CRM). Deals
+  // are often entered days or weeks after they really opened, and the Deals
+  // Dashboard month/year filter reports on the business date.
+  // Nullable with no default so existing rows are untouched.
+  openDate         DateTime?
   company   Company?  @relation(fields: [companyId], references: [id])
   owner     User      @relation(fields: [ownerId], references: [id])
 
@@ -402,4 +408,37 @@ model EmailAccount {
 
   @@unique([userId, provider])
   @@index([userId])
+}
+
+// Editable AI prompt / email templates for the Email Tool (Update 8).
+//
+// The two client types (ecommerce / static) and their four templates each
+// already existed hardcoded in the client. They are seeded into this table on
+// first use from client/src/utils/emailPromptDefaults.js so nothing is lost or
+// duplicated, and from then on the saved row is what the composer uses.
+//
+// kind distinguishes the two shapes that already exist:
+//   content   - a predefined subject + HTML body (templates 1, 2 and 4)
+//   ai_prompt - a system prompt sent to Gemini (template 3, the PDP audit)
+// {{clientName}} is substituted at generation time, matching what the
+// hardcoded builders did with their clientName argument.
+//
+// isSystem marks the eight originals so the UI can stop them being deleted;
+// they remain fully editable.
+model PromptTemplate {
+  id         String   @id @default(cuid())
+  clientType String
+  templateKey String
+  label      String
+  kind       String   @default("content")
+  subject    String?
+  content    String   @db.Text
+  enabled    Boolean  @default(true)
+  isSystem   Boolean  @default(false)
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([clientType, templateKey])
+  @@index([clientType, enabled])
 }
