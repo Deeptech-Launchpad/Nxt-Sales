@@ -62,4 +62,73 @@ router.get('/stats', auth, async (req, res) => {
   }
 })
 
+// GET /api/dashboard/deal-stats — every metric on the dedicated Deals
+// Dashboard. Same discipline as /stats above: each figure is a DB-side count,
+// never a full /deals fetch shipped to the browser (the Main Dashboard used to
+// derive its deal cards that way, which is exactly what this replaces).
+//
+// `stageBreakdown` and `recent` are small grouped/limited reads so the page can
+// show a stage chart and a recent list without a second round trip.
+router.get('/deal-stats', auth, async (req, res) => {
+  try {
+    const now = new Date()
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
+    const [
+      totalDeals,
+      activeDeals,
+      wonDeals,
+      lostDeals,
+      pocDeals,
+      proposalSharedDeals,
+      wonClientsThisMonth,
+      dealsWithoutCompany,
+      stageGroups,
+      valueAgg,
+      recent,
+    ] = await Promise.all([
+      prisma.deal.count(),
+      prisma.deal.count({ where: { stage: { notIn: ['Won', 'Lost'] } } }),
+      prisma.deal.count({ where: { stage: 'Won' } }),
+      prisma.deal.count({ where: { stage: 'Lost' } }),
+      prisma.deal.count({ where: { poc: true } }),
+      prisma.deal.count({ where: { proposalShared: true } }),
+      prisma.deal.count({ where: { stage: 'Won', updatedAt: { gte: startOfMonth } } }),
+      prisma.deal.count({ where: { companyId: null } }),
+      prisma.deal.groupBy({ by: ['stage'], _count: { _all: true } }),
+      prisma.deal.aggregate({ _sum: { value: true } }),
+      prisma.deal.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 8,
+        select: {
+          id: true, title: true, stage: true, value: true, currency: true, createdAt: true,
+          company: { select: { id: true, name: true } },
+        },
+      }),
+    ])
+
+    res.json({
+      totalDeals,
+      activeDeals,
+      wonDeals,
+      lostDeals,
+      pocDeals,
+      proposalSharedDeals,
+      wonClientsThisMonth,
+      // Surfaced so the dashboard can explain a deals-vs-companies gap rather
+      // than leaving it looking like a bug: a Deal's companyId is nullable, so
+      // these deals can never appear under any company.
+      dealsWithoutCompany,
+      totalValue: valueAgg._sum.value || 0,
+      stageBreakdown: stageGroups
+        .map(g => ({ stage: g.stage || '(none)', count: g._count._all }))
+        .sort((a, b) => b.count - a.count),
+      recent,
+    })
+  } catch (err) {
+    console.error('[Dashboard] deal-stats error:', err.message)
+    res.status(500).json({ message: 'Server error.' })
+  }
+})
+
 module.exports = router

@@ -175,7 +175,12 @@ async function attachContactHistory(logs) {
     const contactHistory = previousCallsCount === 0
       ? 'New Contact'
       : (currentMs - lastContacted.getTime() >= RECONTACT_THRESHOLD_MS ? 'Re-contact' : 'Existing Contact')
-    return { ...l, contactHistory, lastContacted, previousCallsCount }
+    // NR = New Reach (never contacted before), AR = Already Reached.
+    // Derived from the same prior-call evidence as contactHistory above so
+    // the two can never disagree; contactHistory is kept unchanged because
+    // the Calls table column already renders it.
+    const reachStatus = previousCallsCount === 0 ? 'NR' : 'AR'
+    return { ...l, contactHistory, reachStatus, lastContacted, previousCallsCount }
   })
 }
 
@@ -184,21 +189,25 @@ async function attachContactHistory(logs) {
 // name is included via the companyId set during Sync (Update 10).
 router.get('/logs', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 50, search } = req.query
+    const { page = 1, limit = 50, search, companyId } = req.query
     const skip = (Number(page) - 1) * Number(limit)
     // Hide call logs whose linked company is in the Recycle Bin — it should
     // behave as if that company no longer exists. Logs with no company at all
     // (companyId: null) are unaffected.
     const hideBinnedCompany = { OR: [{ companyId: null }, { company: { deletedAt: null } }] }
+    // companyId scopes the list to one company (Company Detail -> Calls tab).
+    // It reuses these same CallLog rows rather than duplicating call records
+    // anywhere, so the company view and the global Calls page always agree.
+    const scope = [hideBinnedCompany, ...(companyId ? [{ companyId }] : [])]
     const where = search ? {
       AND: [
         { OR: [
           { fromNumber: { contains: search } },
           { toNumber:   { contains: search } },
         ] },
-        hideBinnedCompany,
+        ...scope,
       ],
-    } : hideBinnedCompany
+    } : { AND: scope }
     const [rows, total] = await Promise.all([
       prisma.callLog.findMany({
         where,

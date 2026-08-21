@@ -2,6 +2,7 @@ const router = require('express').Router()
 const auth   = require('../middleware/authMiddleware')
 const { PrismaClient } = require('@prisma/client')
 const { BUILT_IN_DROPDOWN_FIELDS } = require('../constants/dropdownFields')
+const { DERIVED_DROPDOWN_FIELDS, getDerivedField } = require('../constants/derivedDropdownFields')
 
 const prisma = new PrismaClient()
 
@@ -34,6 +35,77 @@ async function getLeadOwnerOptions() {
   ]
 }
 
+// Options for a DERIVED field (see constants/derivedDropdownFields.js): the
+// distinct values actually present in the data, UNIONed with any curated
+// DropdownOption rows an admin added for the same fieldKey. This is what makes
+// CMS self-maintaining — save a company with a brand-new CMS and it becomes a
+// filter option immediately, with no code change and no Settings entry.
+//
+// The table/column are read only from the registry and re-looked-up here by
+// fieldKey, so nothing user-supplied ever reaches the raw query.
+async function getDerivedOptions(field) {
+  const allowed = DERIVED_DROPDOWN_FIELDS.find(f => f.fieldKey === field.fieldKey)
+  if (!allowed) return []
+
+  // Grouped with counts rather than a plain DISTINCT: real imported data holds
+  // the same CMS under several casings ("shopify"/"Shopify",
+  // "Wix ecommerce"/"Wix Ecommerce"). The filter matches case-insensitively,
+  // so listing each casing separately would show duplicate options that all
+  // return the same rows. Counts let us collapse them and keep the casing that
+  // actually appears most often.
+  const sql =
+    'SELECT btrim("' + allowed.column + '") AS value, COUNT(*)::int AS n ' +
+    'FROM "' + allowed.table + '" ' +
+    'WHERE "deletedAt" IS NULL ' +
+    'AND "' + allowed.column + '" IS NOT NULL ' +
+    "AND btrim(\"" + allowed.column + "\") <> '' " +
+    'GROUP BY 1 ORDER BY 1 ASC'
+  const grouped = await prisma.$queryRawUnsafe(sql)
+
+  const byLower = new Map()
+  for (const g of grouped) {
+    const v = (g.value || '').trim()
+    if (!v) continue
+    const k = v.toLowerCase()
+    const prev = byLower.get(k)
+    if (!prev) byLower.set(k, { value: v, count: g.n })
+    else {
+      // Keep the most common casing; ties keep the first seen alphabetically.
+      if (g.n > prev.count) prev.value = v
+      prev.count += g.n
+    }
+  }
+  const rows = [...byLower.values()].sort((a, b) => a.value.localeCompare(b.value))
+
+  // Curated rows win on label/order/enabled; discovered-only values follow.
+  // A value an admin explicitly DISABLED stays hidden even if it is still
+  // present in the data — otherwise disabling would silently do nothing.
+  const curated = await prisma.dropdownOption.findMany({
+    where: { fieldKey: field.fieldKey },
+    orderBy: { order: 'asc' },
+  })
+  const curatedByValue = new Map(curated.map(c => [c.value.trim().toLowerCase(), c]))
+
+  const out = curated.filter(c => c.enabled).map(c => ({ ...c, derived: false }))
+  let i = out.length
+  for (const r of rows) {
+    const v = (r.value || '').trim()
+    if (!v) continue
+    if (curatedByValue.has(v.toLowerCase())) continue
+    out.push({
+      id: 'derived:' + field.fieldKey + ':' + v,
+      fieldKey: field.fieldKey,
+      value: v,
+      label: v,
+      order: i++,
+      enabled: true,
+      derived: true,
+      count: r.count,
+    })
+  }
+  return out
+}
+
 // GET /api/dropdowns/fields — every field this system can manage: the 9
 // built-in ones (BUILT_IN_DROPDOWN_FIELDS) plus every active custom field
 // whose type is dropdown/multiselect (Dynamic Custom Fields). Declared before
@@ -46,6 +118,9 @@ router.get('/fields', auth, async (req, res) => {
     })
     const fields = [
       ...BUILT_IN_DROPDOWN_FIELDS.map(f => ({ fieldKey: f.fieldKey, label: f.label, group: f.fieldKey.split('.')[0] === 'company' ? 'Company' : 'Deal' })),
+      // Derived fields (CMS, Remarks) are manageable here too — an admin can
+      // add or relabel a value; discovered values appear alongside for free.
+      ...DERIVED_DROPDOWN_FIELDS.map(f => ({ fieldKey: f.fieldKey, label: f.label, group: 'Company', derived: true })),
       ...customDropdownFields.map(f => ({ fieldKey: `${f.entity.toLowerCase()}.custom.${f.key}`, label: f.label, group: f.entity, custom: true })),
     ]
     res.json(fields)
@@ -61,6 +136,10 @@ router.get('/:fieldKey', auth, async (req, res) => {
   try {
     if (req.params.fieldKey === LEAD_OWNER_FIELD_KEY) {
       return res.json(await getLeadOwnerOptions())
+    }
+    const derived = getDerivedField(req.params.fieldKey)
+    if (derived) {
+      return res.json(await getDerivedOptions(derived))
     }
     const options = await prisma.dropdownOption.findMany({
       where: { fieldKey: req.params.fieldKey, enabled: true },

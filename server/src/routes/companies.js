@@ -175,7 +175,7 @@ async function companyIdsWithCustomFieldMatch(customFiltersJson) {
 // Shared filter builder — used by both the paginated list and the export
 // endpoint so "export with applied filters" always matches the on-screen list.
 async function buildCompanyWhere(query, userId) {
-  const { search, view, owners, leadStatuses, createDate, customFilters, industries, countries, hasDeal } = query
+  const { search, view, owners, leadStatuses, createDate, customFilters, industries, countries, hasDeal, cmsValues, remarksValues } = query
   // Companies in the Recycle Bin are archived — excluded from every normal
   // list/search/export view. Only the dedicated Recycle Bin routes look past this.
   const where = { deletedAt: null }
@@ -216,6 +216,19 @@ async function buildCompanyWhere(query, userId) {
   // Title Case (e.g. "Ireland") — case-insensitive match so they still line up.
   if (countries)    where.country    = { in: countries.split(','), mode: 'insensitive' }
 
+  // CMS / Remarks — options are DISCOVERED from the data itself rather than
+  // curated (see constants/derivedDropdownFields.js), so the filter values
+  // arriving here came straight from real column values. Matched
+  // case-insensitively for the same reason Industry/Country are: imported data
+  // varies in casing. Sent as real arrays (?cmsValues[]=A&cmsValues[]=B) since
+  // CMS names can legitimately contain a comma.
+  if (cmsValues) {
+    where.cms = { in: Array.isArray(cmsValues) ? cmsValues : [cmsValues], mode: 'insensitive' }
+  }
+  if (remarksValues) {
+    where.remarks = { in: Array.isArray(remarksValues) ? remarksValues : [remarksValues], mode: 'insensitive' }
+  }
+
   // Optional "Deals Created" filter — at least one Deal linked to this
   // company (or none), independent of every other filter above.
   if (hasDeal === 'yes') where.deals = { some: {} }
@@ -254,13 +267,24 @@ async function buildCompanyWhere(query, userId) {
 // ── GET /api/companies ─────────────────────────────────────
 router.get('/', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 100 } = req.query
+    const { page = 1, limit = 100, sort } = req.query
     const where = await buildCompanyWhere(req.query, req.user.id)
+
+    // Default order is unchanged (pinned first, then newest-created) so every
+    // existing caller behaves exactly as before. `sort=recent` powers the
+    // Recents module: most-recently-touched first, where "touched" is
+    // Prisma's @updatedAt — which covers create AND edit, since creating a row
+    // sets updatedAt too. Pinning is deliberately ignored here: Recents is
+    // about recency, and letting a pinned company sit permanently at the top
+    // would defeat that.
+    const orderBy = sort === 'recent'
+      ? [{ updatedAt: 'desc' }]
+      : [{ isPinned: 'desc' }, { createdAt: 'desc' }]
 
     const [companies, total] = await Promise.all([
       prisma.company.findMany({
         where,
-        orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
+        orderBy,
         skip: (Number(page) - 1) * Number(limit),
         take: Number(limit),
         include: {
