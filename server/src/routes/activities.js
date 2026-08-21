@@ -172,7 +172,14 @@ router.post('/', auth, async (req, res) => {
       meetLink, customFields,
     } = req.body
 
-    if (!type || !companyId) return res.status(400).json({ message: 'type and companyId required' })
+    if (!type) return res.status(400).json({ message: 'type is required' })
+    // A meeting can be scheduled before there is any company to attach it to
+    // (an intro call with a brand-new prospect, an internal sync). Every other
+    // activity type still belongs to a company. Activity.companyId is already
+    // nullable in the schema, so this is the only thing that enforced it.
+    if (!companyId && type !== 'meeting') {
+      return res.status(400).json({ message: 'companyId is required for this activity type.' })
+    }
 
     // Validate BEFORE creating the activity, same discipline companies.js
     // uses — a bad custom field value should never leave a half-created
@@ -191,7 +198,7 @@ router.post('/', auth, async (req, res) => {
     const activity = await prisma.activity.create({
       data: {
         type,
-        companyId,
+        companyId: companyId || null,
         userId: req.user.id,
         title:  title  || null,
         body:   body   || null,

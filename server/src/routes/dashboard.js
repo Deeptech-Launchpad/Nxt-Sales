@@ -74,6 +74,28 @@ router.get('/deal-stats', auth, async (req, res) => {
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
+    // Month/Year filter — scoped on Deal.openDate ("Deal Open Date", the
+    // business date the deal opened), deliberately NOT createdAt (when the row
+    // was entered) and never any Company date. `year` alone filters a whole
+    // year; `month` (1-12) narrows it. Deals with no openDate set are excluded
+    // while a filter is active, since they cannot be placed in a period —
+    // that count is returned as `undatedDeals` so the UI can say so rather
+    // than letting them silently vanish.
+    const year  = parseInt(req.query.year, 10)
+    const month = parseInt(req.query.month, 10)
+    let dateWhere = {}
+    if (Number.isFinite(year)) {
+      const from = Number.isFinite(month) && month >= 1 && month <= 12
+        ? new Date(year, month - 1, 1)
+        : new Date(year, 0, 1)
+      const to = Number.isFinite(month) && month >= 1 && month <= 12
+        ? new Date(year, month, 1)
+        : new Date(year + 1, 0, 1)
+      dateWhere = { openDate: { gte: from, lt: to } }
+    }
+    const scoped = (extra = {}) => ({ ...dateWhere, ...extra })
+    const filterActive = Object.keys(dateWhere).length > 0
+
     const [
       totalDeals,
       activeDeals,
@@ -87,27 +109,34 @@ router.get('/deal-stats', auth, async (req, res) => {
       valueAgg,
       recent,
     ] = await Promise.all([
-      prisma.deal.count(),
-      prisma.deal.count({ where: { stage: { notIn: ['Won', 'Lost'] } } }),
-      prisma.deal.count({ where: { stage: 'Won' } }),
-      prisma.deal.count({ where: { stage: 'Lost' } }),
-      prisma.deal.count({ where: { poc: true } }),
-      prisma.deal.count({ where: { proposalShared: true } }),
-      prisma.deal.count({ where: { stage: 'Won', updatedAt: { gte: startOfMonth } } }),
-      prisma.deal.count({ where: { companyId: null } }),
-      prisma.deal.groupBy({ by: ['stage'], _count: { _all: true } }),
-      prisma.deal.aggregate({ _sum: { value: true } }),
+      prisma.deal.count({ where: scoped() }),
+      prisma.deal.count({ where: scoped({ stage: { notIn: ['Won', 'Lost'] } }) }),
+      prisma.deal.count({ where: scoped({ stage: 'Won' }) }),
+      prisma.deal.count({ where: scoped({ stage: 'Lost' }) }),
+      prisma.deal.count({ where: scoped({ poc: true }) }),
+      prisma.deal.count({ where: scoped({ proposalShared: true }) }),
+      prisma.deal.count({ where: scoped({ stage: 'Won', updatedAt: { gte: startOfMonth } }) }),
+      prisma.deal.count({ where: scoped({ companyId: null }) }),
+      prisma.deal.groupBy({ by: ['stage'], where: scoped(), _count: { _all: true } }),
+      prisma.deal.aggregate({ where: scoped(), _sum: { value: true } }),
       prisma.deal.findMany({
+        where: scoped(),
         orderBy: { createdAt: 'desc' },
         take: 8,
         select: {
-          id: true, title: true, stage: true, value: true, currency: true, createdAt: true,
+          id: true, title: true, stage: true, value: true, currency: true, createdAt: true, openDate: true,
           company: { select: { id: true, name: true } },
         },
       }),
     ])
 
+    // Deals with no Deal Open Date - reported so a filtered view can say why
+    // the numbers are smaller instead of appearing to lose records.
+    const undatedDeals = filterActive ? await prisma.deal.count({ where: { openDate: null } }) : 0
+
     res.json({
+      filter: filterActive ? { year, month: Number.isFinite(month) ? month : null } : null,
+      undatedDeals,
       totalDeals,
       activeDeals,
       wonDeals,

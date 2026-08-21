@@ -174,14 +174,34 @@ async function companyIdsWithCustomFieldMatch(customFiltersJson) {
 
 // Shared filter builder — used by both the paginated list and the export
 // endpoint so "export with applied filters" always matches the on-screen list.
+// UPDATE 4 - companies owned by these users also appear under the
+// "Unassigned companies" tab, in addition to genuinely owner-less ones. This
+// is a business rule (their records are treated as an unallocated pool), not a
+// data problem, so nothing is reassigned - the companies still show normally
+// under All companies and keep their real owner.
+// Matched by name so it works across environments without hardcoding an id.
+const TREAT_AS_UNASSIGNED_OWNER_NAMES = ['Jency Karunanidhi']
+
+async function unassignedOwnerIds() {
+  if (!TREAT_AS_UNASSIGNED_OWNER_NAMES.length) return []
+  const users = await prisma.user.findMany({
+    where: { OR: TREAT_AS_UNASSIGNED_OWNER_NAMES.map(n => ({ name: { equals: n, mode: 'insensitive' } })) },
+    select: { id: true },
+  })
+  return users.map(u => u.id)
+}
+
 async function buildCompanyWhere(query, userId) {
-  const { search, view, owners, leadStatuses, createDate, customFilters, industries, countries, hasDeal, cmsValues, remarksValues } = query
+  const { search, view, owners, leadStatuses, createDate, customFilters, industries, countries, hasDeal, cmsValues, remarksValues, sort } = query
   // Companies in the Recycle Bin are archived — excluded from every normal
   // list/search/export view. Only the dedicated Recycle Bin routes look past this.
   const where = { deletedAt: null }
 
   if (view === 'mine')       where.ownerId = userId
-  if (view === 'unassigned') where.ownerId = null
+  if (view === 'unassigned') {
+    const extraIds = await unassignedOwnerIds()
+    where.ownerId = extraIds.length ? { in: [...extraIds, null] } : null
+  }
 
   if (owners) {
     const ownerList     = owners.split(',')
@@ -259,6 +279,25 @@ async function buildCompanyWhere(query, userId) {
   if (customFilters) {
     const ids = await companyIdsWithCustomFieldMatch(customFilters)
     if (ids !== null) where.id = { in: ids }
+  }
+
+  // UPDATE 3 - Recents lists only companies that were EDITED after creation.
+  // Prisma sets updatedAt on insert too, so a never-edited company has
+  // updatedAt == createdAt; a raw id subquery is the only way to express a
+  // column-to-column comparison, which Prisma's filter syntax cannot do.
+  // A 2-second margin absorbs the tiny write-time difference some rows show
+  // between the two timestamps on creation.
+  if (sort === 'recent') {
+    const edited = await prisma.$queryRaw`
+      SELECT "id" FROM "Company"
+      WHERE "deletedAt" IS NULL
+        AND "updatedAt" > "createdAt" + interval '2 seconds'
+    `
+    const editedIds = edited.map(r => r.id)
+    // Combine with any id restriction custom-field filtering already applied.
+    where.id = where.id && where.id.in
+      ? { in: where.id.in.filter(id => editedIds.includes(id)) }
+      : { in: editedIds }
   }
 
   return where
