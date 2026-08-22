@@ -116,7 +116,73 @@ function dateRangeFor(key) {
     last_180:     [new Date(now.getTime() - 180 * 86400000), now],
     last_365:     [new Date(now.getTime() - 365 * 86400000), now],
   }
-  return map[key] || null
+  if (map[key]) return map[key]
+  return explicitDateRange(key)
+}
+
+// Explicit calendar selections from the Create Date picker, alongside the
+// relative presets above. Accepted forms:
+//   YYYY                    -> the whole year
+//   YYYY-MM                 -> the whole month
+//   YYYY-MM-DD              -> that single day
+//   YYYY-MM-DD..YYYY-MM-DD  -> inclusive custom range
+//
+// Every boundary is built with Date.UTC, never `new Date(y, m, d)`:
+// Company.createdAt is stored as a UTC instant, so constructing boundaries in
+// the *server's* local zone would silently shift every window by the host's
+// offset — the same class of bug that misfiled Deal Open Dates. UTC makes the
+// result identical on a developer laptop and on the UTC production VPS.
+//
+// The end boundary is the last millisecond of the final day so the range is
+// inclusive of it (`lte`), otherwise "10 Feb to 15 Feb" would drop the 15th.
+function explicitDateRange(key) {
+  const dayStart = (y, m, d) => new Date(Date.UTC(y, m, d, 0, 0, 0, 0))
+  const dayEnd   = (y, m, d) => new Date(Date.UTC(y, m, d, 23, 59, 59, 999))
+  const valid    = (y, m, d) => {
+    const dt = dayStart(y, m, d)
+    // Rejects impossible dates like 2025-02-30, which Date would roll forward.
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m && dt.getUTCDate() === d
+  }
+
+  const s = String(key || '').trim()
+
+  // Custom range: YYYY-MM-DD..YYYY-MM-DD
+  const range = s.match(/^(\d{4})-(\d{2})-(\d{2})\.\.(\d{4})-(\d{2})-(\d{2})$/)
+  if (range) {
+    const [y1, m1, d1, y2, m2, d2] = range.slice(1).map(Number)
+    if (!valid(y1, m1 - 1, d1) || !valid(y2, m2 - 1, d2)) return null
+    let from = dayStart(y1, m1 - 1, d1)
+    let to   = dayEnd(y2, m2 - 1, d2)
+    // Tolerate a backwards range rather than returning nothing at all.
+    if (from > to) [from, to] = [dayStart(y2, m2 - 1, d2), dayEnd(y1, m1 - 1, d1)]
+    return [from, to]
+  }
+
+  // Single day: YYYY-MM-DD
+  const day = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (day) {
+    const [y, m, d] = day.slice(1).map(Number)
+    if (!valid(y, m - 1, d)) return null
+    return [dayStart(y, m - 1, d), dayEnd(y, m - 1, d)]
+  }
+
+  // Whole month: YYYY-MM. Day 0 of the NEXT month is the last day of this one,
+  // so leap years and 30/31-day months need no table.
+  const month = s.match(/^(\d{4})-(\d{2})$/)
+  if (month) {
+    const [y, m] = month.slice(1).map(Number)
+    if (m < 1 || m > 12) return null
+    return [dayStart(y, m - 1, 1), new Date(Date.UTC(y, m, 0, 23, 59, 59, 999))]
+  }
+
+  // Whole year: YYYY
+  const year = s.match(/^(\d{4})$/)
+  if (year) {
+    const y = Number(year[1])
+    return [dayStart(y, 0, 1), new Date(Date.UTC(y, 11, 31, 23, 59, 59, 999))]
+  }
+
+  return null
 }
 
 // linkedProfiles is a JSONB array — Prisma's query builder can't do a

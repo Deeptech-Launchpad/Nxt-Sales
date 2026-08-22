@@ -18,8 +18,14 @@ const prisma = new PrismaClient()
 // no known rate reports priced:false so the UI can say "Pricing unavailable"
 // instead of showing a fabricated number.
 //
-// All reads and writes are scoped to the authenticated user (req.user.id), so
-// one user's consumption is never mixed into another's.
+// WRITES are attributed to the authenticated user (req.user.id) — every row
+// still records who made the request, unchanged.
+//
+// READS (the dashboard summary) are deliberately APPLICATION-WIDE: this CRM
+// shares one Gemini/AI configuration across all users, so the bill is a single
+// shared bill. Scoping the dashboard to req.user.id showed each person only
+// their own slice and made the true total impossible to see. The summary route
+// therefore aggregates across all users and adds a per-user breakdown.
 
 const MAX_LEN = 120
 const clean = (v, fallback = 'unknown') => {
@@ -115,11 +121,13 @@ const finalize = (b) => ({
 // downloads individual rows except the small "recent requests" list.
 router.get('/summary', auth, async (req, res) => {
   try {
-    const userId = req.user.id
+    // No userId scoping: this dashboard reports the whole application's AI
+    // consumption (see the note at the top of this file). The window filter is
+    // the only thing that narrows the result set.
     const isAll = String(req.query.days).toLowerCase() === 'all'
     const days = isAll ? null : Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 365)
     const since = isAll ? null : new Date(Date.now() - days * 24 * 60 * 60 * 1000)
-    const where = isAll ? { userId } : { userId, createdAt: { gte: since } }
+    const where = isAll ? {} : { createdAt: { gte: since } }
 
     const sum = { _sum: { promptTokens: true, outputTokens: true, totalTokens: true }, _count: { _all: true } }
 
@@ -127,7 +135,7 @@ router.get('/summary', auth, async (req, res) => {
     // by-model — so all three are guaranteed mutually consistent, and per-model
     // rates are applied before any roll-up (a feature spanning two models is
     // costed per model, never with a blended rate).
-    const [groups, noMeta, recent, allTimeGroups] = await Promise.all([
+    const [groups, noMeta, recent, allTimeGroups, userGroups] = await Promise.all([
       prisma.aiUsage.groupBy({ by: ['feature', 'model', 'provider'], where, ...sum }),
       prisma.aiUsage.count({ where: { ...where, hasUsageData: false } }),
       prisma.aiUsage.findMany({
@@ -135,9 +143,15 @@ router.get('/summary', auth, async (req, res) => {
         select: {
           id: true, feature: true, provider: true, model: true, createdAt: true,
           promptTokens: true, outputTokens: true, totalTokens: true, hasUsageData: true,
+          // Recent activity now spans every user, so each row must say whose
+          // request it was — otherwise the list is unattributable.
+          user: { select: { id: true, name: true, email: true } },
         },
       }),
-      prisma.aiUsage.groupBy({ by: ['model', 'provider'], where: { userId }, ...sum }),
+      prisma.aiUsage.groupBy({ by: ['model', 'provider'], ...sum }),
+      // Per-user breakdown, costed per model (a user spanning two models is
+      // never costed at a blended rate).
+      prisma.aiUsage.groupBy({ by: ['userId', 'model', 'provider'], where, ...sum }),
     ])
 
     const totals = emptyBucket()
@@ -161,9 +175,24 @@ router.get('/summary', auth, async (req, res) => {
       addInto(allTime, g, estimateCost(g.provider, g.model, g._sum.promptTokens, g._sum.outputTokens))
     }
 
+    // Roll the (userId, model) groups up to one bucket per user, then resolve
+    // names in a single query rather than per group.
+    const userMap = new Map()
+    for (const g of userGroups) {
+      if (!userMap.has(g.userId)) userMap.set(g.userId, emptyBucket())
+      addInto(userMap.get(g.userId), g, estimateCost(g.provider, g.model, g._sum.promptTokens, g._sum.outputTokens))
+    }
+    const userRows = userMap.size
+      ? await prisma.user.findMany({
+          where: { id: { in: [...userMap.keys()] } },
+          select: { id: true, name: true, email: true },
+        })
+      : []
+    const userInfo = new Map(userRows.map(u => [u.id, u]))
+
     // Per-day, per-model so daily cost uses each model's own rate. Grouping by
     // a DATE expression isn't expressible through Prisma groupBy, so this is a
-    // parameterised raw query — still DB-side, still scoped to this user.
+    // parameterised raw query — still DB-side, now covering every user.
     const dailyRows = isAll
       ? await prisma.$queryRaw`
           SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
@@ -172,7 +201,7 @@ router.get('/summary', auth, async (req, res) => {
                  COALESCE(SUM("promptTokens"), 0)::int AS "promptTokens",
                  COALESCE(SUM("outputTokens"), 0)::int AS "outputTokens",
                  COALESCE(SUM("totalTokens"), 0)::int AS "totalTokens"
-          FROM "AiUsage" WHERE "userId" = ${userId}
+          FROM "AiUsage"
           GROUP BY 1, 2, 3 ORDER BY 1 ASC`
       : await prisma.$queryRaw`
           SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS day,
@@ -181,7 +210,7 @@ router.get('/summary', auth, async (req, res) => {
                  COALESCE(SUM("promptTokens"), 0)::int AS "promptTokens",
                  COALESCE(SUM("outputTokens"), 0)::int AS "outputTokens",
                  COALESCE(SUM("totalTokens"), 0)::int AS "totalTokens"
-          FROM "AiUsage" WHERE "userId" = ${userId} AND "createdAt" >= ${since}
+          FROM "AiUsage" WHERE "createdAt" >= ${since}
           GROUP BY 1, 2, 3 ORDER BY 1 ASC`
 
     const dayMap = new Map()
@@ -213,9 +242,25 @@ router.get('/summary', auth, async (req, res) => {
       daily: [...dayMap.entries()]
         .map(([day, b]) => ({ day, ...finalize(b) }))
         .sort((a, b) => a.day.localeCompare(b.day)),
+      // Who consumed what. A user deleted since their requests were logged
+      // still has rows (userId is retained), so fall back to a placeholder
+      // rather than dropping their tokens from the company-wide total.
+      byUser: [...userMap.entries()]
+        .map(([id, b]) => {
+          const u = userInfo.get(id)
+          return { userId: id, name: u?.name || 'Unknown user', email: u?.email || '', ...finalize(b) }
+        })
+        .sort((a, b) => b.totalTokens - a.totalTokens),
       recent: recent.map(r => {
         const c = estimateCost(r.provider, r.model, r.promptTokens, r.outputTokens)
-        return { ...r, totalCost: round6(c.totalCost), priced: c.priced }
+        const { user, ...rest } = r
+        return {
+          ...rest,
+          userName: user?.name || 'Unknown user',
+          userEmail: user?.email || '',
+          totalCost: round6(c.totalCost),
+          priced: c.priced,
+        }
       }),
     })
   } catch (err) {
