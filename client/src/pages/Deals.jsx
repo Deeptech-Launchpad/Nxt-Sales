@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, Pencil, Trash2, Search, List, LayoutGrid } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, List, LayoutGrid, Upload, ChevronDown } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
 import CreateDealModal from '../components/modals/CreateDealModal'
@@ -12,6 +12,8 @@ import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import { renderCustomCell } from '../utils/customFieldRender'
 import { formatCurrency } from '../utils/formatCurrency'
 import { dealFlagsLabel } from '../utils/dealFlags'
+import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUtils'
+import DealImportModal from '../components/modals/DealImportModal'
 
 const COLUMNS_STORAGE_KEY = 'mwz_deals_visible_columns'
 const VIEW_STORAGE_KEY = 'mwz_deals_view_mode'
@@ -46,12 +48,122 @@ const DEAL_FLAGS_COLUMN = { key: '_flags', label: 'POC / Proposal Shared' }
 // Deep-link targets used by the Deals Dashboard cards (/deals?focus=poc).
 // Kept as data so a new dashboard card only needs an entry here, and so the
 // same predicate drives both the filtering and the removable chip label.
+// Month/Year picker (Update 1) — generated around the current year so it
+// never goes stale.
+const DEAL_MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+const DEAL_CURRENT_YEAR = new Date().getFullYear()
+const DEAL_YEAR_OPTIONS = Array.from({ length: 7 }, (_, i) => DEAL_CURRENT_YEAR - 5 + i)
+
 const FOCUS_FILTERS = {
   active:   { label: 'Active deals',    test: d => !/won|lost/i.test(d.stage || '') },
   won:      { label: 'Won deals',       test: d => /won/i.test(d.stage || '') },
   lost:     { label: 'Lost deals',      test: d => /lost/i.test(d.stage || '') },
   poc:      { label: 'POC',             test: d => !!d.poc },
   proposal: { label: 'Proposal Shared', test: d => !!d.proposalShared },
+}
+
+// Columns written to every export format. Covers all Deal fields the system
+// stores, with the company/owner relations flattened to their names.
+const EXPORT_COLUMNS = [
+  { key: 'title',               header: 'Title' },
+  { key: '_companyName',        header: 'Company' },
+  { key: 'companyName',         header: 'Company Name (text)' },
+  { key: 'domainName',          header: 'Domain Name' },
+  { key: 'stage',               header: 'Stage' },
+  { key: 'value',               header: 'Value' },
+  { key: 'currency',            header: 'Currency' },
+  { key: 'country',             header: 'Country' },
+  { key: 'clientType',          header: 'Client Type' },
+  { key: 'contactPerson',       header: 'Contact Person' },
+  { key: 'contactPhone',        header: 'Contact Phone' },
+  { key: 'contactEmail',        header: 'Contact Email' },
+  { key: 'serviceRequirement',  header: 'Service Requirement' },
+  { key: 'clientWebsiteUrl',    header: 'Client Website URL' },
+  { key: 'opportunityType',     header: 'Opportunity Type' },
+  { key: 'strategicImportance', header: 'Strategic Importance' },
+  { key: 'expectedOutcome',     header: 'Expected Outcome' },
+  { key: '_poc',                header: 'POC' },
+  { key: '_proposalShared',     header: 'Proposal Shared' },
+  { key: '_openDate',           header: 'Deal Open Date' },
+  { key: '_pocReceivedDate',    header: 'POC Received Date' },
+  { key: '_pocDeliveredDate',   header: 'POC Delivered Date' },
+  { key: '_ownerName',          header: 'Deal Owner' },
+  { key: 'notes',               header: 'Notes' },
+  { key: '_createdAt',          header: 'Created Date' },
+]
+
+const dateOnly = (v) => (v ? String(v).slice(0, 10) : '')
+
+// Export menu — reuses the shared exportUtils helpers (the same ones the
+// Companies list uses), fed by GET /api/deals/export so it always covers every
+// deal, not just what happens to be loaded on screen.
+function DealExportMenu() {
+  const [open, setOpen] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  const run = async (fn, extraArgs = []) => {
+    setOpen(false); setExporting(true)
+    try {
+      const { data } = await api.get('/deals/export')
+      const records = (data.deals || []).map(d => ({
+        ...d,
+        _companyName: d.company?.name || '',
+        _ownerName: d.owner?.name || '',
+        _poc: d.poc ? 'Yes' : 'No',
+        _proposalShared: d.proposalShared ? 'Yes' : 'No',
+        _openDate: dateOnly(d.openDate),
+        _pocReceivedDate: dateOnly(d.pocReceivedDate),
+        _pocDeliveredDate: dateOnly(d.pocDeliveredDate),
+        _createdAt: dateOnly(d.createdAt),
+      }))
+      fn(records, 'deals', EXPORT_COLUMNS, ...extraArgs)
+    } catch {
+      // fetch failed — nothing to export; same lightweight handling the
+      // Companies export menu uses.
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div style={{ position: 'relative' }} ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        disabled={exporting}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, padding: '7px 12px', fontSize: 12.5, fontWeight: 600, color: '#334155', cursor: exporting ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+      >
+        <Upload size={13} /> {exporting ? 'Exporting…' : 'Export'} <ChevronDown size={11} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 3000, minWidth: 170, overflow: 'hidden' }}>
+          {[
+            { label: 'Export as CSV',   fn: () => run(exportCSV) },
+            { label: 'Export as Excel', fn: () => run(exportXLSX, ['Deals']) },
+            { label: 'Export as JSON',  fn: () => run(exportJSON) },
+            { label: 'Export as PDF',   fn: () => run(exportPDF, ['Deals Export — NXT MarketingWiz']) },
+          ].map(item => (
+            <button key={item.label} onClick={item.fn}
+              style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', textAlign: 'left', fontSize: 13, color: '#334155', cursor: 'pointer', fontFamily: 'DM Sans,system-ui,sans-serif' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function Deals() {
@@ -78,6 +190,8 @@ export default function Deals() {
   const hasPeriod  = Number.isFinite(yearParam)
   const focus     = FOCUS_FILTERS[focusKey] || null
   const [viewMode, setViewMode]   = useState(() => localStorage.getItem(VIEW_STORAGE_KEY) || 'list')
+  const [showImport, setShowImport] = useState(false)
+  const [reloadKey, setReloadKey]   = useState(0)
 
   // Same shared 'company.country' dropdown list CreateDealModal already uses
   // for a Deal's own (denormalized) country field — not a separate list.
@@ -131,7 +245,9 @@ export default function Deals() {
       .finally(() => setLoading(false))
   }, [dealsTab])
 
-  useEffect(() => { fetchDeals() }, [fetchDeals])
+  // reloadKey bumps after a successful import so the newly-created deals show
+  // up without a manual refresh.
+  useEffect(() => { fetchDeals() }, [fetchDeals, reloadKey])
 
   const handleDelete = async (dealId) => {
     if (!window.confirm('Delete this deal? This action cannot be undone.')) return
@@ -279,6 +395,15 @@ export default function Deals() {
           {viewMode === 'board' && (
             <EditColumnsMenu fields={editColumnsFields} visibleColumns={boardVisibleColumns} onSave={saveBoardVisibleColumns} alwaysShownKey="title" />
           )}
+          {/* Import / Export live here on the Deals page only — not on the
+              Deals Dashboard, which stays focused on summary cards/charts. */}
+          <button
+            onClick={() => setShowImport(true)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#334155', cursor: 'pointer', fontFamily: 'inherit' }}
+          >
+            <Upload size={13} /> Import
+          </button>
+          <DealExportMenu />
           <button
             onClick={() => setShowCreate(true)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 8, border: 'none', background: '#e63329', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', boxShadow: '0 1px 2px rgba(230,51,41,0.25)', transition: 'background .12s, box-shadow .12s' }}
@@ -329,6 +454,38 @@ export default function Deals() {
             selected={countryFilter}
             onChange={setCountryFilter}
           />
+
+          {/* Month/Year — filters on Deal Open Date (see FOCUS_FILTERS /
+              matchesPeriod above), not Created Date. Values live in the URL so
+              a Deals Dashboard card link (?year=&month=) and a manually picked
+              filter here behave identically and survive a refresh. */}
+          <select
+            value={Number.isFinite(yearParam) ? yearParam : ''}
+            onChange={e => {
+              const p = new URLSearchParams(searchParams)
+              if (e.target.value) p.set('year', e.target.value); else p.delete('year')
+              p.delete('month')
+              setSearchParams(p, { replace: true })
+            }}
+            style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', color: '#0f172a', background: '#fff' }}
+          >
+            <option value="">All years</option>
+            {DEAL_YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select
+            value={Number.isFinite(monthParam) ? monthParam : ''}
+            onChange={e => {
+              const p = new URLSearchParams(searchParams)
+              if (e.target.value) p.set('month', e.target.value); else p.delete('month')
+              setSearchParams(p, { replace: true })
+            }}
+            disabled={!hasPeriod}
+            title={hasPeriod ? undefined : 'Choose a year first'}
+            style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', color: hasPeriod ? '#0f172a' : '#94a3b8', background: hasPeriod ? '#fff' : '#f8fafc' }}
+          >
+            <option value="">All months</option>
+            {DEAL_MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          </select>
 
           <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
             <button
@@ -423,6 +580,12 @@ export default function Deals() {
           onClose={() => setViewDeal(null)}
         />
       )}
+
+      <DealImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={() => setReloadKey(k => k + 1)}
+      />
     </div>
   )
 }

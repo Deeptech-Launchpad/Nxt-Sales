@@ -16,7 +16,6 @@ import {
   buildStaticTemplate1, buildStaticTemplate4,
   applyClientName,
 } from '../utils/emailPromptDefaults'
-import PromptTemplatesPanel from '../components/PromptTemplatesPanel'
 import { invalidateCompanyEmail } from '../utils/emailCache'
 
 Chart.register(...registerables)
@@ -1103,64 +1102,9 @@ function SettingsSection({ onGmailChange }) {
   const [aiModel, setAiModel]               = useState(localStorage.getItem('ai_model') || 'gemini-2.5-flash')
   const [connecting, setConnecting]         = useState(false)
   const [detecting, setDetecting]           = useState(false)
-  const [signature, setSignature]           = useState('')
-  const [signatureImage, setSignatureImage] = useState('')
-  const [savingSig, setSavingSig]           = useState(false)
-  const [loadingSig, setLoadingSig]         = useState(true)
-  const [processingSigImage, setProcessingSigImage] = useState(false)
-
   const localToken  = localStorage.getItem('gmail_access_token')
   const localExpiry = parseInt(localStorage.getItem('gmail_token_expiry') || '0')
   const localValid  = localToken && Date.now() < localExpiry
-
-  // Signature is saved server-side per user (not localStorage) so it applies
-  // consistently everywhere — Email Tool, Contact email, Company email — via
-  // the backend's single /email/send route, not per-device.
-  useEffect(() => {
-    api.get('/users/me/signature')
-      .then(r => {
-        setSignature(r.data.signature || '')
-        setSignatureImage(r.data.signatureImage || '')
-      })
-      .catch(() => {})
-      .finally(() => setLoadingSig(false))
-  }, [])
-
-  const saveSignature = async () => {
-    setSavingSig(true)
-    try {
-      await api.put('/users/me/signature', { signature, signatureImage })
-      showToast('Signature saved — it will be added to every outgoing email.', 'success')
-    } catch (err) {
-      showToast('Failed to save signature: ' + (err?.response?.data?.message || err.message), 'error')
-    } finally {
-      setSavingSig(false)
-    }
-  }
-
-  // Compress (reusing the same attachment-compression logic) then convert to a
-  // data-URI, so the signature image stays small and needs no separate upload
-  // route/static-file infra — it's saved inline alongside the signature text.
-  const handleSigImagePick = async (e) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setProcessingSigImage(true)
-    try {
-      const compressed = await compressImageIfNeeded(file)
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result)
-        reader.onerror = reject
-        reader.readAsDataURL(compressed)
-      })
-      setSignatureImage(dataUrl)
-    } catch (err) {
-      showToast('Could not process that image: ' + err.message, 'error')
-    } finally {
-      setProcessingSigImage(false)
-    }
-  }
 
   // Auto-detect the best supported Gemini model for whatever key the user
   // pastes in — they should never have to know/guess a model name. Runs on
@@ -1332,56 +1276,8 @@ function SettingsSection({ onGmailChange }) {
           </div>
         </div>
 
-        {/* Token consumption across every AI feature, tracked centrally —
-            see utils/aiUsage.js. Read-only; changes no AI behavior. */}
-        <PromptTemplatesPanel />
-
         <AiUsagePanel />
 
-        <div className="et-settings-card">
-          <div className="et-settings-title">Email Signature</div>
-          <div className="et-form-group">
-            <label className="et-label">Default Signature</label>
-            <textarea
-              className="et-input"
-              rows={5}
-              placeholder="e.g. Your Name&#10;Your Title&#10;Company | Phone | Email"
-              value={signature}
-              disabled={loadingSig}
-              onChange={e => setSignature(e.target.value)}
-              style={{ resize: 'vertical', fontFamily: 'Verdana,Arial,sans-serif' }}
-            />
-            <div className="et-help-text">
-              Saved once for your account and automatically added to every outgoing email —
-              from the Email Tool, and from Contact/Company "Log an email" — no need to add it manually each time.
-            </div>
-          </div>
-          <div className="et-form-group">
-            <label className="et-label">Signature Image (optional)</label>
-            {signatureImage && (
-              <div style={{ marginBottom: 8 }}>
-                <img src={signatureImage} alt="Signature" style={{ maxWidth: 280, maxHeight: 120, display: 'block', border: '1px solid #e2e2e2', borderRadius: 4, padding: 4 }} />
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input type="file" accept="image/*" onChange={handleSigImagePick} disabled={processingSigImage || loadingSig} />
-              {signatureImage && (
-                <button type="button" className="et-btn" onClick={() => setSignatureImage('')} disabled={processingSigImage}>
-                  Remove
-                </button>
-              )}
-              {processingSigImage && <span className="et-help-text">Processing…</span>}
-            </div>
-            <div className="et-help-text">
-              e.g. a logo or handwritten-style signature. Shown below your signature text on every outgoing email.
-            </div>
-          </div>
-          <div className="et-settings-actions">
-            <button className="et-btn et-btn-primary" style={{ flex: 'none', minWidth: 140 }} onClick={saveSignature} disabled={savingSig || loadingSig}>
-              {savingSig ? 'Saving…' : 'Save Signature'}
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   )

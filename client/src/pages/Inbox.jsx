@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Mail, ArrowUpRight, ArrowDownLeft, Paperclip } from 'lucide-react'
+import { Search, Mail, ArrowUpRight, ArrowDownLeft, Paperclip, Upload as UploadIcon } from 'lucide-react'
+import DataExportMenu from '../components/DataExportMenu'
+import DataImportModal from '../components/modals/DataImportModal'
 import api from '../api/client'
 import ThreadDrawer from '../components/activities/ThreadDrawer'
 import '../styles/contacts.css'
@@ -28,6 +30,18 @@ function fmtDate(iso) {
 // (paginated, thread-deduped server-side). Opening a row reuses the exact
 // same ThreadDrawer the per-company Email tab uses (see EmailConversations.jsx),
 // so "the existing conversation/thread" is genuinely the same UI, not a copy.
+// Export columns for the Inbox — the same fields the list displays.
+const INBOX_EXPORT_COLUMNS = [
+  { key: 'subject',    header: 'Subject' },
+  { key: 'fromEmail',  header: 'From' },
+  { key: 'toEmail',    header: 'To' },
+  { key: 'ccEmail',    header: 'Cc' },
+  { key: 'direction',  header: 'Direction' },
+  { key: '_company',   header: 'Company Name' },
+  { key: '_date',      header: 'Date' },
+  { key: 'body',       header: 'Body' },
+]
+
 export default function Inbox() {
   const navigate = useNavigate()
   const [items, setItems]     = useState([])
@@ -38,6 +52,7 @@ export default function Inbox() {
   const [search, setSearch]       = useState('')
   const [directionTab, setDirectionTab] = useState('all') // 'all' | 'outbound' | 'inbound'
   const [openItem, setOpenItem]   = useState(null)
+  const [showImport, setShowImport] = useState(false)
 
   const switchTab = (tab) => { setDirectionTab(tab); setPage(1) }
 
@@ -78,6 +93,29 @@ export default function Inbox() {
           <h1 style={{ fontSize: 23, fontWeight: 700, color: '#0f172a', letterSpacing: '-.2px' }}>Inbox</h1>
           <span style={{ fontSize: 13.5, color: '#94a3b8', fontWeight: 500 }}>{loading ? 'Loading…' : `${total} conversation${total === 1 ? '' : 's'}`}</span>
         </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button
+          onClick={() => setShowImport(true)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#334155', cursor: 'pointer', fontFamily: 'inherit' }}
+        >
+          <UploadIcon size={13} /> Import
+        </button>
+        <DataExportMenu
+          filename="inbox"
+          sheetName="Inbox"
+          title="Inbox Export — NXT MarketingWiz"
+          columns={INBOX_EXPORT_COLUMNS}
+          fetchRows={async () => {
+            const { data } = await api.get('/data/inbox/export', {
+              params: { ...(directionTab !== 'all' && { direction: directionTab }) },
+            })
+            return (data.rows || []).map(r => ({
+              ...r,
+              _company: r.company?.name || '',
+              _date: r.createdAt ? String(r.createdAt).slice(0, 10) : '',
+            }))
+          }}
+        />
         <button
           onClick={() => goCompose('')}
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 8, border: 'none', background: '#e63329', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', boxShadow: '0 1px 2px rgba(230,51,41,0.25)', transition: 'background .12s, box-shadow .12s' }}
@@ -86,6 +124,7 @@ export default function Inbox() {
         >
           <Mail size={14} /> Compose
         </button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 20, alignItems: 'center', paddingBottom: 2, borderBottom: '1px solid #eef1f5' }}>
@@ -177,6 +216,16 @@ export default function Inbox() {
           <span className="per-page">{PAGE_SIZE} per page</span>
         </div>
       )}
+
+      <DataImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={() => fetchInbox()}
+        entityLabel="Inbox"
+        fieldsUrl="/data/inbox/import-fields"
+        importUrl="/data/inbox/bulk"
+        payloadKey="rows"
+      />
 
       {openItem && (
         <ThreadDrawer

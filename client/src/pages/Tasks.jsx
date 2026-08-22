@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
+import DataExportMenu from '../components/DataExportMenu'
+import DataImportModal from '../components/modals/DataImportModal'
+import { Upload as UploadIcon } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Pencil, Trash2, Search, AlertTriangle, Clock, CalendarClock, CheckCircle2 } from 'lucide-react'
 import api from '../api/client'
@@ -58,6 +61,19 @@ function fmtDateTime(d) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
+// Export columns for Tasks — mirrors what the table actually shows.
+const TASK_EXPORT_COLUMNS = [
+  { key: 'title',         header: 'Task' },
+  { key: 'body',          header: 'Description' },
+  { key: '_company',      header: 'Company Name' },
+  { key: '_country',      header: 'Country' },
+  { key: '_dueDate',      header: 'Due Date' },
+  { key: 'taskStatus',    header: 'Status' },
+  { key: '_assignedTo',   header: 'Assigned To' },
+  { key: '_createdAt',    header: 'Created Date' },
+]
+const isoDay = (v) => (v ? String(v).slice(0, 10) : '')
+
 export default function Tasks() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -74,6 +90,7 @@ export default function Tasks() {
   const [assigneeFilter, setAssigneeFilter] = useState('')
 
   const [showCreate, setShowCreate] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [editTask, setEditTask]     = useState(null)
 
   // Toggleable columns (Description, Auto-complete, + every active Task
@@ -167,6 +184,30 @@ export default function Tasks() {
           <h1 style={{ fontSize: 23, fontWeight: 700, color: '#0f172a', letterSpacing: '-.2px' }}>Tasks</h1>
           <span style={{ fontSize: 13.5, color: '#94a3b8', fontWeight: 500 }}>{loading ? 'Loading…' : `${total} task${total === 1 ? '' : 's'}`}</span>
         </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <button
+          onClick={() => setShowImport(true)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#334155', cursor: 'pointer', fontFamily: 'inherit' }}
+        >
+          <UploadIcon size={13} /> Import
+        </button>
+        <DataExportMenu
+          filename="tasks"
+          sheetName="Tasks"
+          title="Tasks Export — NXT MarketingWiz"
+          columns={TASK_EXPORT_COLUMNS}
+          fetchRows={async () => {
+            const { data } = await api.get('/data/tasks/export')
+            return (data.rows || []).map(t => ({
+              ...t,
+              _company: t.company?.name || '',
+              _country: t.company?.country || '',
+              _assignedTo: t.assignedTo?.name || '',
+              _dueDate: isoDay(t.dueDate),
+              _createdAt: isoDay(t.createdAt),
+            }))
+          }}
+        />
         <button
           onClick={() => setShowCreate(true)}
           style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 8, border: 'none', background: '#e63329', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', boxShadow: '0 1px 2px rgba(230,51,41,0.25)', transition: 'background .12s, box-shadow .12s' }}
@@ -175,6 +216,7 @@ export default function Tasks() {
         >
           <Plus size={14} /> Create task
         </button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 20, alignItems: 'center', paddingBottom: 2, borderBottom: '1px solid #eef1f5' }}>
@@ -332,6 +374,16 @@ export default function Tasks() {
       {editTask && (
         <TaskModal activity={editTask} onClose={() => setEditTask(null)} onSaved={() => fetchTasks()} />
       )}
+
+      <DataImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={() => fetchTasks()}
+        entityLabel="Tasks"
+        fieldsUrl="/data/tasks/import-fields"
+        importUrl="/data/tasks/bulk"
+        payloadKey="rows"
+      />
     </div>
   )
 }

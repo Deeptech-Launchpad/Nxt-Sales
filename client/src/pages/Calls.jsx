@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import DataExportMenu from '../components/DataExportMenu'
+import DataImportModal from '../components/modals/DataImportModal'
 import { useNavigate } from 'react-router-dom'
 import {
   Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed,
   RefreshCw, Play, Brain, ExternalLink, ChevronDown, ChevronRight,
-  CheckCircle, XCircle, Loader2, AlertCircle, BarChart2, X, Search
+  CheckCircle, XCircle, Loader2, AlertCircle, BarChart2, X, Search, Upload
 } from 'lucide-react'
 import api from '../api/client'
 import EditColumnsMenu from '../components/EditColumnsMenu'
@@ -510,6 +512,22 @@ class CallsErrorBoundary extends React.Component {
 
 // ── Main Calls Dashboard ─────────────────────────────────────────────────────
 
+// Export columns for Calls — mirrors the table's own fields.
+const CALL_EXPORT_COLUMNS = [
+  { key: '_callDate',    header: 'Call Date' },
+  { key: 'direction',    header: 'Direction' },
+  { key: 'fromNumber',   header: 'From Number' },
+  { key: 'toNumber',     header: 'To Number' },
+  { key: '_company',     header: 'Company Name' },
+  { key: 'reachStatus',  header: 'Reach (NR/AR)' },
+  { key: 'contactHistory', header: 'Contact History' },
+  { key: 'status',       header: 'Status' },
+  { key: 'duration',     header: 'Duration (seconds)' },
+  { key: 'agentName',    header: 'Agent Name' },
+  { key: 'recordingUrl', header: 'Recording URL' },
+  { key: 'analysisStatus', header: 'Analysis Status' },
+]
+
 export default function Calls() {
   return <CallsErrorBoundary><CallsInner /></CallsErrorBoundary>
 }
@@ -524,6 +542,7 @@ function CallsInner() {
   const [syncing,      setSyncing]      = useState(false)
   const [syncMsg,      setSyncMsg]      = useState('')
   const [viewLog,      setViewLog]      = useState(null)
+  const [showImport,   setShowImport]   = useState(false)
   const [analyzingIds, setAnalyzingIds] = useState(new Set())
   // Page, search and the open analysis all live in the URL so ANY refresh -
   // the 15s auto-refresh, F5, or a restored tab - comes back to the same
@@ -787,6 +806,23 @@ function CallsInner() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button className="ch-btn ch-btn-outline" onClick={() => setShowImport(true)}>
+              <Upload size={11} /> Import
+            </button>
+            <DataExportMenu
+              filename="calls"
+              sheetName="Calls"
+              title="Calls Export — NXT MarketingWiz"
+              columns={CALL_EXPORT_COLUMNS}
+              fetchRows={async () => {
+                const { data } = await api.get('/data/calls/export')
+                return (data.rows || []).map(c => ({
+                  ...c,
+                  _company: c.company?.name || '',
+                  _callDate: c.callDate ? new Date(c.callDate).toISOString().slice(0, 16).replace('T', ' ') : '',
+                }))
+              }}
+            />
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', borderRadius: 6, padding: '5px 10px', background: '#fff' }}>
               <Search size={13} color="#94a3b8" />
               <input
@@ -1001,6 +1037,16 @@ function CallsInner() {
       {viewLog && (
         <AnalysisModal callLog={viewLog} onClose={() => closeAnalysis()} />
       )}
+
+      <DataImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={() => fetchLogs(page, debouncedSearch)}
+        entityLabel="Calls"
+        fieldsUrl="/data/calls/import-fields"
+        importUrl="/data/calls/bulk"
+        payloadKey="rows"
+      />
     </>
   )
 }
