@@ -199,8 +199,23 @@ async function buildCompanyWhere(query, userId) {
 
   if (view === 'mine')       where.ownerId = userId
   if (view === 'unassigned') {
+    // BUG FIX: Prisma's `in` filter REJECTS a literal null in the array
+    // (`{ in: [id, null] }` throws PrismaClientValidationError — SQL's own
+    // IN() never matches NULL either, so even a raw query would have needed
+    // the same OR). That throw was caught by the route's catch-all and
+    // returned as a 500, which the client rendered as "No companies found" —
+    // this is why the tab broke as soon as a name in
+    // TREAT_AS_UNASSIGNED_OWNER_NAMES actually matched a user (never
+    // exercised locally, since no such user exists in the local DB).
+    // Expressed via `where.AND` rather than `where.OR`, because the search
+    // branch below does an unconditional `where.OR = [...]` — using OR here
+    // would silently get clobbered the moment a search term is also present.
     const extraIds = await unassignedOwnerIds()
-    where.ownerId = extraIds.length ? { in: [...extraIds, null] } : null
+    if (extraIds.length) {
+      where.AND = [...(where.AND || []), { OR: [{ ownerId: null }, { ownerId: { in: extraIds } }] }]
+    } else {
+      where.ownerId = null
+    }
   }
 
   if (owners) {
