@@ -7,11 +7,11 @@
 // is read here and sent only to Google's Gemini endpoint; it is never
 // rendered anywhere in the UI.
 //
-// Kept as a standalone module (prompt building, calling, parsing, caching)
-// so it can later be fed richer context — call summaries, email history,
-// meetings — via the optional `extraContext` parameter without touching the
-// Company detail page again.
+// The model now returns a human-readable "Sales Pitch Intelligence Sheet"
+// rather than JSON, so there is no schema to parse — the raw text is handed to
+// the UI, which renders it as the sheet. See SYSTEM_PROMPT below.
 
+import api from '../api/client'
 import { callGeminiWithFallback } from './geminiModel'
 import { valueList } from './multiValue'
 import { AI_FEATURES } from './aiUsage'
@@ -30,58 +30,163 @@ export function getAiSettings() {
 // keeps the last result per company alive across tab switches / Prev-Next
 // navigation within the session, so the user is never silently re-billed for
 // Gemini tokens by simply revisiting a page.
-const insightsCache = new Map() // companyId -> { insights, generatedAt, model }
+const insightsCache = new Map() // companyId -> { sheet, generatedAt, model, sources }
 
 export function getCachedInsights(companyId) {
   return insightsCache.get(companyId) || null
 }
 
 // ── Prompt ─────────────────────────────────────────────────────────────────
-// Every section is a list of { text, basis } items where basis is "fact"
-// (directly grounded in the CRM data supplied) or "inference" (the model's
-// own reasoning/recommendation) — this is what lets the UI visibly separate
-// factual information from AI inference.
-const SECTION_KEYS = [
-  'companyOverview',
-  'contactOverview',
-  'potentialBusinessNeeds',
-  'potentialOpportunities',
-  'recommendedApproach',
-  'talkingPoints',
-]
+// SUPPLIED VERBATIM BY THE PRODUCT OWNER — DO NOT REWRITE, SHORTEN, RESTRUCTURE
+// OR "IMPROVE" THIS STRING. Its wording, section order, role logic, output
+// rules and labels are all deliberate and finalized. Only the code that feeds
+// inputs into it (below) may change.
+const SYSTEM_PROMPT = `ROLE:
 
-const SYSTEM_PROMPT = `You are a B2B sales-intelligence assistant inside a CRM used by a digital commerce agency (services: structured eCommerce, product detail page optimization, CMS and web development, digital revenue growth).
+You are a Sales Intelligence Analyst working for Altisunxt, a Product Data
+Enrichment company. You support outbound sales agents who need to call or
+email decision makers at industrial/B2B distributors (e.g., AIS National)
+and pitch Altisunxt's catalog enrichment services. Your output feeds the
+CRM "Customer Intelligence" panel and must read like sales-ready ammunition,
+not a technical audit -- an agent should be able to speak from it directly
+on a live call.
 
-You will receive the CRM's stored data about ONE company. Produce pre-call/pre-email intelligence for the salesperson.
+INPUTS PROVIDED TO YOU:
+1. PDP_URL: A product detail page URL from the prospect's live store
+   (optional -- if absent, work from DOMAIN and CRM_DATA only).
+2. DOMAIN: The prospect's root domain.
+3. CRM_DATA: Structured fields already in CRM (company name, contact name,
+   job title, industry, lead owner, deal stage, CMS/platform if logged).
+4. GMAIL_THREAD_SUMMARIES: Auto-summarized synced Google Business inbox
+   content for this contact/domain (last contact date, key points,
+   sentiment, commitments made).
+5. PAGE_SOURCE (from PDP_URL or DOMAIN homepage): rendered HTML/text used
+   to detect CMS/platform, catalog scale, contact/address details, and
+   product content quality.
 
-STRICT RULES:
-- Use ONLY the CRM data provided plus, where clearly relevant, widely-known general knowledge about the company/industry. NEVER invent specific facts (revenue, headcount, tools, names, events) that are not in the data.
-- Every item must be labeled: basis "fact" when it restates or directly follows from the provided CRM data; basis "inference" for anything reasoned, assumed, or recommended (including general-knowledge claims).
-- If a section cannot be grounded at all (e.g. no contact person stored), return exactly one item: { "text": "Not available — <what is missing in the CRM>.", "basis": "fact" }. Do not pad with generic filler.
-- Plain sentences only. No markdown, no bullets characters, no headings inside items.
+TASK:
+Produce a single scannable "Sales Pitch Intelligence Sheet" that a rep can
+read in under a minute before dialing. Label every claim as one of:
+  [CRM data]      -- pulled directly from CRM fields
+  [Page data]     -- observed directly on the site/PDP
+  [Email summary] -- derived from synced Gmail thread
+  [AI inference]  -- your reasoning, not a verified fact
 
-Return ONLY valid JSON, no code fences, exactly this shape:
-{
-  "companyOverview": [{ "text": "...", "basis": "fact" }],
-  "contactOverview": [{ "text": "...", "basis": "fact" }],
-  "potentialBusinessNeeds": [{ "text": "...", "basis": "inference" }],
-  "potentialOpportunities": [{ "text": "...", "basis": "inference" }],
-  "recommendedApproach": [{ "text": "...", "basis": "inference" }],
-  "talkingPoints": [{ "text": "...", "basis": "inference" }]
-}
+------------------------------------------------
+1. COMPANY SNAPSHOT & ORIGIN
+------------------------------------------------
+Company name, HQ/location, year founded or "years in business" if
+  discoverable, primary vertical/niche
+Company origin story cue if available (family business, franchise,
+  distributor-of-record for a brand, etc.) -- useful as rapport-building
+  detail on the call
+Estimated catalog scale (SKU depth, number of categories)
 
-Section meanings:
-- companyOverview: what the company is/does and its business area.
-- contactOverview: the stored contact person(s) and their likely role/professional context.
-- potentialBusinessNeeds: what they may need, based on the available data.
-- potentialOpportunities: where the agency's services could help them.
-- recommendedApproach: how the salesperson should approach this customer.
-- talkingPoints: concrete topics/questions for a call or email.`
+------------------------------------------------
+2. CMS / PLATFORM IDENTIFIED
+------------------------------------------------
+Detected platform: Shopify / WooCommerce / Magento / BigCommerce /
+  custom-built / other
+Any visible plugins, storefront builder, or hosting signals that hint at
+  technical maturity or in-house dev capability
+Note if platform limits enrichment options Altisunxt should flag (e.g.,
+  bulk import method varies by CMS)
+
+------------------------------------------------
+3. WHAT ALTISUNXT CAN ENRICH FOR THIS LEAD
+------------------------------------------------
+Map observed gaps directly to Altisunxt's service lines. Only list services
+relevant to what was actually observed on PDP_URL/DOMAIN:
+Technical specification enrichment (dimensions, materials, compliance,
+  compatibility data)
+Product documentation sourcing/structuring (spec sheets, manuals, CAD,
+  safety data sheets)
+Product imagery enhancement (multi-angle, lifestyle, technical diagrams)
+SEO-optimized product copy and structured attribute/taxonomy building
+Bulk catalog migration/enrichment support suited to their specific CMS
+
+------------------------------------------------
+4. CUSTOMER BENEFITS IF THEY TAKE ALTISUNXT'S SERVICES
+------------------------------------------------
+Frame as outcomes the prospect cares about, not features:
+Higher on-site conversion from complete, trustworthy product data
+Fewer inbound support calls/emails asking for specs already on the page
+Improved organic search visibility from richer, keyword-structured
+  content
+Faster time-to-publish for new SKUs/catalog updates
+Reduced buyer hesitation and cart abandonment for technical B2B purchases
+
+------------------------------------------------
+5. RELATIONSHIP CONTEXT (from synced email)
+------------------------------------------------
+Last contact date and channel [Email summary]
+Summary of most recent thread(s): topics discussed, objections raised,
+  interest signals, next steps promised
+Sentiment read: cold / warm / engaged
+Any commitments the rep should honor or reference
+
+------------------------------------------------
+6. ROLE-BASED CALL / EMAIL TALKING POINTS
+------------------------------------------------
+Generate a tailored icebreaker + value angle + discovery question for
+WHICHEVER decision-maker role is set in CRM_DATA (contact job title). If
+multiple stakeholders are relevant, provide a short block for each of the
+following that applies:
+
+  CEO / Owner
+    - Angle: revenue growth, competitive positioning, ROI of enrichment
+    - Discovery Q: "How is online revenue trending vs. your in-store or
+      trade channel right now?"
+
+  Category Manager
+    - Angle: catalog completeness, SKU-level performance, supplier data
+      quality
+    - Discovery Q: "How much of your current catalog has full specs vs.
+      pages you know are still thin?"
+
+  General Manager
+    - Angle: operational efficiency, reduced manual catalog work, team
+      bandwidth
+    - Discovery Q: "Who on your team currently owns writing and updating
+      product descriptions?"
+
+  Digital Marketing Manager
+    - Angle: SEO performance, content quality driving traffic and
+      conversion, campaign-ready assets
+    - Discovery Q: "Are you seeing thin product pages hurt your organic
+      search rankings against competitors?"
+
+  IT Manager
+    - Angle: clean integration with existing CMS/PIM, low-lift data feed
+      or bulk import process, minimal engineering burden
+    - Discovery Q: "What's your current process for pushing product data
+      updates live -- manual entry or feed-based?"
+
+For each applicable role, output:
+  Icebreaker: one natural, non-salesy opening line
+  The Hook: one specific, data-driven observation tied to PDP_URL/DOMAIN
+  Value Pitch: 1-2 sentences on what Altisunxt does and why it matters to
+    that role specifically
+  Discovery Question: the role-specific question above (or a close variant)
+
+------------------------------------------------
+OUTPUT RULES:
+------------------------------------------------
+Keep the full sheet to one page equivalent; role-based section may run
+  slightly longer if multiple contacts are involved
+Never fabricate company history, financials, or contact details --
+  mark uncertain items [AI inference] and keep them brief
+If CRM_DATA has no job title for the contact, default to Category
+  Manager and General Manager blocks (most common CMS/catalog owners)
+End with a timestamp and model/source disclosure line, matching the
+existing CRM AI-inference footer convention.`
 
 function line(label, value) {
   const v = Array.isArray(value) ? value.filter(Boolean).join(', ') : value
   return `${label}: ${v && String(v).trim() ? String(v).trim() : 'Not available'}`
 }
+
+// ── Input block builders — one per named input in the prompt ───────────────
 
 export function buildCompanyDataBlock(company, extraContext = {}) {
   const emails = valueList(company.email, company.emails)
@@ -90,24 +195,26 @@ export function buildCompanyDataBlock(company, extraContext = {}) {
   const profiles = Array.isArray(company.linkedProfiles) ? company.linkedProfiles.filter(Boolean) : []
 
   const lines = [
-    'CRM DATA FOR THIS COMPANY (anything marked "Not available" is genuinely not stored — do not guess it):',
+    'CRM_DATA (anything marked "Not available" is genuinely not stored — do not guess it):',
     line('Company name', company.name),
     line('Company website / domain', company.domain),
     line('Industry', company.industry),
     line('Country', company.country),
     line('Lead status', company.leadStatus),
-    line('Contact person(s)', contacts),
+    // The prompt's role logic keys off the contact's job title. Titles are
+    // stored inline in the contact string when known ("Gary Harte - Shop
+    // Manager"), so they are passed through verbatim rather than being parsed
+    // out — the model reads them better than a brittle splitter would.
+    line('Contact person(s) (job title follows the name where known)', contacts),
     line('Contact email(s)', emails),
     line('Contact phone(s)', phones),
     line('LinkedIn / linked profile(s)', profiles),
-    line('Product detail page URL', company.endPdpUrl),
-    line('CMS / platform', company.cms),
+    line('CMS / platform (as logged in CRM)', company.cms),
+    line('Lead owner', company.owner?.name),
     line('Remarks (notes by sales team)', company.remarks),
     line('Notes', company.notes),
   ]
 
-  // Future hook: call summaries, email history, meetings etc. can be passed
-  // in as extraContext without changing the callers' shape.
   for (const [label, value] of Object.entries(extraContext)) {
     lines.push(line(label, value))
   }
@@ -115,31 +222,74 @@ export function buildCompanyDataBlock(company, extraContext = {}) {
   return lines.join('\n')
 }
 
-// Strips code fences / stray prose and parses the JSON object out of a model
-// response — Gemini is asked for pure JSON (and responseMimeType is set), but
-// this stays robust if a model wraps it anyway.
-function parseInsightsJson(text) {
-  let raw = (text || '').trim()
-  if (raw.startsWith('```')) raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
-  const start = raw.indexOf('{')
-  const end = raw.lastIndexOf('}')
-  if (start === -1 || end === -1 || end <= start) throw new Error('AI returned an unexpected format. Try again.')
-  const parsed = JSON.parse(raw.slice(start, end + 1))
-
-  const insights = {}
-  for (const key of SECTION_KEYS) {
-    const items = Array.isArray(parsed[key]) ? parsed[key] : []
-    insights[key] = items
-      .map(it => (typeof it === 'string' ? { text: it, basis: 'inference' } : it))
-      .filter(it => it && typeof it.text === 'string' && it.text.trim())
-      .map(it => ({ text: it.text.trim(), basis: it.basis === 'fact' ? 'fact' : 'inference' }))
+// PAGE_SOURCE — fetched server-side (a browser cannot fetch a third-party
+// site because of CORS). Reduced to text + platform signals by the server.
+function buildPageSourceBlock(page) {
+  if (!page || !page.ok) {
+    return `PAGE_SOURCE: Not available${page?.reason ? ` — ${page.reason}` : ''}. Work from DOMAIN and CRM_DATA only; do not invent page observations.`
   }
-  return insights
+  const s = page.signals || {}
+  return [
+    `PAGE_SOURCE (fetched live from ${page.finalUrl}):`,
+    line('Page title', s.title),
+    line('Meta description', s.metaDescription),
+    line('Platform signatures detected in markup', s.platforms),
+    line('Generator meta tag', s.generator),
+    `Structured data present: ${s.hasStructuredData ? 'yes' : 'no'}; Product schema present: ${s.productSchema ? 'yes' : 'no'}`,
+    `Rough page composition: ${s.imageCount} images, ${s.tableCount} tables, ${s.pdfLinks} PDF links`,
+    '',
+    'Extracted page text:',
+    page.text || '(no text extracted)',
+  ].join('\n')
+}
+
+// GMAIL_THREAD_SUMMARIES — rolled up server-side from Gmail activity already
+// synced against this company.
+function buildEmailBlock(mail) {
+  if (!mail || !mail.ok || !mail.threadCount) {
+    return 'GMAIL_THREAD_SUMMARIES: Not available — no synced email is stored against this company. Say so plainly in section 5 rather than inferring a relationship.'
+  }
+  const parts = [
+    `GMAIL_THREAD_SUMMARIES (${mail.messageCount} message(s) across ${mail.threadCount} thread(s); last contact ${mail.lastContactAt || 'unknown'}):`,
+  ]
+  for (const t of mail.threads || []) {
+    parts.push('')
+    parts.push(`Thread: ${t.subject}`)
+    parts.push(`  Messages: ${t.messageCount}; first ${t.firstAt}; last ${t.lastAt} (${t.lastDirection})`)
+    if (t.participants?.length) parts.push(`  Participants: ${t.participants.join(', ')}`)
+    for (const e of t.excerpts || []) {
+      parts.push(`  [${e.direction} @ ${e.at}] ${e.text}`)
+    }
+  }
+  return parts.join('\n')
+}
+
+// ── Context gathering ──────────────────────────────────────────────────────
+// Both calls are best-effort: the prompt explicitly allows working without
+// PDP_URL, and a prospect site being unreachable or a company having no synced
+// email must not block generation.
+async function gatherContext(company) {
+  const pdpUrl = (company.endPdpUrl || '').trim()
+  const domain = (company.domain || '').trim()
+  const target = pdpUrl || domain
+
+  const [page, mail] = await Promise.all([
+    target
+      ? api.get('/intelligence/page-source', { params: { url: target } })
+          .then(r => r.data)
+          .catch(() => ({ ok: false, reason: 'The page could not be fetched.' }))
+      : Promise.resolve({ ok: false, reason: 'No PDP URL or domain is stored for this company.' }),
+    api.get(`/intelligence/email-summaries/${company.id}`)
+      .then(r => r.data)
+      .catch(() => ({ ok: false })),
+  ])
+
+  return { page, mail, pdpUrl, domain }
 }
 
 // ── Main entry point ───────────────────────────────────────────────────────
 // Throws with a user-presentable message on any failure; on success returns
-// { insights, generatedAt, model } and caches it for this session.
+// { sheet, generatedAt, model, sources } and caches it for this session.
 export async function generateCompanyInsights(company, extraContext = {}) {
   const { provider, key, model } = getAiSettings()
 
@@ -150,17 +300,45 @@ export async function generateCompanyInsights(company, extraContext = {}) {
     throw new Error(`Customer Intelligence currently supports the Gemini API (your AI provider is set to "${provider}"). Switch the provider to Gemini in Marketing → Email → Settings.`)
   }
 
-  const dataBlock = buildCompanyDataBlock(company, extraContext)
+  const { page, mail, pdpUrl, domain } = await gatherContext(company)
+
+  const userBlock = [
+    `PDP_URL: ${pdpUrl || 'Not available'}`,
+    `DOMAIN: ${domain || 'Not available'}`,
+    '',
+    buildCompanyDataBlock(company, extraContext),
+    '',
+    buildEmailBlock(mail),
+    '',
+    buildPageSourceBlock(page),
+  ].join('\n')
+
+  // No responseMimeType/JSON constraint any more — the prompt asks for a
+  // readable sheet, and forcing application/json would fight it.
   const d = await callGeminiWithFallback(key, model, {
     systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents: [{ parts: [{ text: dataBlock }] }],
-    generationConfig: { responseMimeType: 'application/json', temperature: 0.4 },
+    contents: [{ parts: [{ text: userBlock }] }],
+    generationConfig: { temperature: 0.4 },
   }, { feature: AI_FEATURES.CUSTOMER_INTELLIGENCE })
 
-  const text = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
-  const insights = parseInsightsJson(text)
+  const sheet = (d.candidates?.[0]?.content?.parts?.[0]?.text || '').trim()
+  if (!sheet) throw new Error('The AI returned an empty response. Try again.')
 
-  const result = { insights, generatedAt: new Date().toISOString(), model: d.modelVersion || model }
+  const result = {
+    sheet,
+    generatedAt: new Date().toISOString(),
+    model: d.modelVersion || model,
+    // Shown in the UI so the rep can see which inputs actually reached the
+    // model — an empty section 5 is then obviously "no synced email", not a
+    // silent failure.
+    sources: {
+      pageFetched: !!page?.ok,
+      pageUrl: page?.ok ? page.finalUrl : null,
+      pageReason: page?.ok ? null : (page?.reason || null),
+      emailThreads: mail?.ok ? (mail.threadCount || 0) : 0,
+      emailMessages: mail?.ok ? (mail.messageCount || 0) : 0,
+    },
+  }
   insightsCache.set(company.id, result)
   return result
 }
