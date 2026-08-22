@@ -57,6 +57,26 @@ const DEAL_MONTH_NAMES = [
 const DEAL_CURRENT_YEAR = new Date().getFullYear()
 const DEAL_YEAR_OPTIONS = Array.from({ length: 7 }, (_, i) => DEAL_CURRENT_YEAR - 5 + i)
 
+// Deal Open Date is a CALENDAR date, not a moment in time. It is entered via
+// <input type="date"> ("2025-02-10") and stored by `new Date(...)` as UTC
+// midnight, so it arrives here as "2025-02-10T00:00:00.000Z".
+//
+// Reading that back with new Date(...).getFullYear()/.getMonth() applies the
+// VIEWER'S timezone, which silently shifts the date for anyone west of UTC:
+// 2025-02-01T00:00:00Z reads as 31 January in New York, so a deal opened on
+// the 1st vanishes from its own month. Parsing the ISO date portion textually
+// returns exactly the stored calendar date in every timezone.
+function dealOpenDateParts(value) {
+  if (!value) return null
+  const s = String(value)
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) return { year: Number(m[1]), month: Number(m[2]) }
+  // Fallback for any non-ISO shape (e.g. a real Date instance): use the UTC
+  // getters, never the local ones, for the same reason as above.
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 }
+}
+
 const FOCUS_FILTERS = {
   active:   { label: 'Active deals',    test: d => !/won|lost/i.test(d.stage || '') },
   won:      { label: 'Won deals',       test: d => /won/i.test(d.stage || '') },
@@ -308,16 +328,23 @@ export default function Deals() {
       // excluded while a period filter is active - matching the dashboard.
       let matchesPeriod = true
       if (hasPeriod) {
-        if (!d.openDate) matchesPeriod = false
+        const parts = dealOpenDateParts(d.openDate)
+        if (!parts) matchesPeriod = false
         else {
-          const od = new Date(d.openDate)
-          matchesPeriod = od.getFullYear() === yearParam
-            && (!Number.isFinite(monthParam) || od.getMonth() + 1 === monthParam)
+          matchesPeriod = parts.year === yearParam
+            && (!Number.isFinite(monthParam) || parts.month === monthParam)
         }
       }
       return matchesSearch && matchesCountry && matchesFocus && matchesPeriod
     })
   })()
+
+  // Deal Open Date was added as a new, nullable column with no backfill, so
+  // every deal created before it shipped has none. Those deals cannot belong
+  // to any month and are therefore hidden whenever a period filter is on —
+  // which, without this notice, looks exactly like "the filter is broken"
+  // rather than "these deals have no Open Date set yet".
+  const undatedDealCount = deals.filter(d => !dealOpenDateParts(d.openDate)).length
 
   // All Deals can now show deals owned by any user, so initials must be
   // computed per-deal from its own owner (d.owner.name), not the logged-in
@@ -486,6 +513,18 @@ export default function Deals() {
             <option value="">All months</option>
             {DEAL_MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
           </select>
+          {hasPeriod && (
+            <button
+              onClick={() => {
+                const p = new URLSearchParams(searchParams)
+                p.delete('year'); p.delete('month')
+                setSearchParams(p, { replace: true })
+              }}
+              style={{ border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 11px', fontSize: 12.5, fontWeight: 600, color: '#64748b', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Clear period
+            </button>
+          )}
 
           <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
             <button
@@ -507,6 +546,22 @@ export default function Deals() {
           </div>
         </div>
       </div>
+
+      {/* A period filter can only ever match deals that HAVE a Deal Open Date.
+          Saying so explicitly is the difference between the user reading an
+          empty result as "the filter is broken" and as "these deals need an
+          Open Date" — the latter being what's actually true. */}
+      {hasPeriod && !loading && undatedDealCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '11px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 9, fontSize: 12.8, color: '#92400e', lineHeight: 1.5 }}>
+          <span style={{ fontSize: 14, lineHeight: 1.15 }}>⚠</span>
+          <span>
+            <strong>{undatedDealCount}</strong> of {deals.length} deal{deals.length === 1 ? '' : 's'}{' '}
+            {undatedDealCount === 1 ? 'has' : 'have'} no <strong>Deal Open Date</strong> and {undatedDealCount === 1 ? 'is' : 'are'} hidden
+            while a year/month filter is active. Deal Open Date is a newer field, so deals created before it was
+            added start empty — set it via <em>Edit Deal</em> for those deals to appear here.
+          </span>
+        </div>
+      )}
 
       {viewMode === 'board' ? (
         loading ? (
@@ -537,7 +592,7 @@ export default function Deals() {
             {loading ? (
               <tr><td colSpan={2 + orderedVisibleFields.length} style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13.5 }}>Loading deals…</td></tr>
             ) : filteredDeals.length === 0 ? (
-              <tr><td colSpan={2 + orderedVisibleFields.length} style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13.5 }}>{deals.length === 0 ? (dealsTab === 'mine' ? 'No deals on companies you own yet.' : 'No deals yet.') : 'No deals match your search.'}</td></tr>
+              <tr><td colSpan={2 + orderedVisibleFields.length} style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13.5 }}>{deals.length === 0 ? (dealsTab === 'mine' ? 'No deals on companies you own yet.' : 'No deals yet.') : hasPeriod ? `No deals have a Deal Open Date in ${Number.isFinite(monthParam) ? DEAL_MONTH_NAMES[monthParam - 1] + ' ' : ''}${yearParam}.` : 'No deals match your search.'}</td></tr>
             ) : filteredDeals.map((d, i) => (
               <tr key={d.id} style={{ borderBottom: i < filteredDeals.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                 <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenDeal(d)}><div style={cellClamp}>{d.title}</div></td>

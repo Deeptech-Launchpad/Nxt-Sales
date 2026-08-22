@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Chart, registerables } from 'chart.js'
 import {
   BarChart3, RefreshCw, Loader2, AlertCircle, Coins,
-  ArrowDownToLine, ArrowUpFromLine, Layers, Sparkles,
+  ArrowDownToLine, ArrowUpFromLine, Layers, Sparkles, Users,
 } from 'lucide-react'
 import { fetchAiUsageSummary, featureLabel } from '../utils/aiUsage'
 import '../styles/ai-usage.css'
@@ -158,7 +158,7 @@ export default function AiUsage() {
       <div className="aiu-header">
         <div>
           <div className="aiu-title">AI Usage</div>
-          <div className="aiu-sub">Your AI token consumption and estimated cost across every AI feature.</div>
+          <div className="aiu-sub">Company-wide AI token consumption and estimated cost across all users and every AI feature.</div>
         </div>
         <div className="aiu-header-actions">
           <div className="aiu-range">
@@ -308,6 +308,39 @@ export default function AiUsage() {
             )}
           </div>
 
+          {/* ── Usage by user ── */}
+          {/* This CRM shares one AI configuration across everyone, so the
+              dashboard reports the whole company's consumption; this panel is
+              what breaks that shared total back down per person. */}
+          <div className="aiu-panel">
+            <div className="aiu-panel-title"><Users size={14} color="#F472B6" /> Usage by User</div>
+            {(data.byUser || []).length === 0 ? <div className="aiu-empty">No AI usage recorded yet.</div> : (
+              <div className="aiu-table-wrap">
+                <table className="aiu-table">
+                  <thead><tr>
+                    <th>User</th><th className="aiu-num">Requests</th><th className="aiu-num">Input</th>
+                    <th className="aiu-num">Output</th><th className="aiu-num">Total</th><th className="aiu-num">Estimated Cost</th>
+                  </tr></thead>
+                  <tbody>
+                    {data.byUser.map(u => (
+                      <tr key={u.userId}>
+                        <td>
+                          {u.name}
+                          {u.email && <span className="aiu-dim" style={{ marginLeft: 6, fontSize: 11.5 }}>{u.email}</span>}
+                        </td>
+                        <td className="aiu-num aiu-dim">{n(u.requests)}</td>
+                        <td className="aiu-num aiu-dim">{n(u.promptTokens)}</td>
+                        <td className="aiu-num aiu-dim">{n(u.outputTokens)}</td>
+                        <td className="aiu-num aiu-strong">{n(u.totalTokens)}</td>
+                        <td className="aiu-num"><CostCell priced={u.priced} value={u.totalCost} pricingComplete={u.pricingComplete} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* ── Recent requests ── */}
           <div className="aiu-panel">
             <div className="aiu-panel-title"><BarChart3 size={14} color="#2DD4BF" /> Usage Summary — Recent Requests</div>
@@ -315,7 +348,7 @@ export default function AiUsage() {
               <div className="aiu-table-wrap">
                 <table className="aiu-table">
                   <thead><tr>
-                    <th>Date / Time</th><th>Feature</th><th>Provider</th><th>Model</th>
+                    <th>Date / Time</th><th>User</th><th>Feature</th><th>Provider</th><th>Model</th>
                     <th className="aiu-num">Input</th><th className="aiu-num">Output</th>
                     <th className="aiu-num">Total</th><th className="aiu-num">Estimated Cost</th>
                   </tr></thead>
@@ -323,6 +356,7 @@ export default function AiUsage() {
                     {data.recent.map(r => (
                       <tr key={r.id}>
                         <td className="aiu-dim">{fmtDateTime(r.createdAt)}</td>
+                        <td title={r.userEmail || undefined}>{r.userName}</td>
                         <td>{featureLabel(r.feature)}</td>
                         <td className="aiu-dim">{r.provider}</td>
                         <td className="aiu-dim">{r.model}</td>
@@ -343,8 +377,9 @@ export default function AiUsage() {
           </div>
 
           <div className="aiu-note">
-            Token counts are reported by the AI provider itself and stored per user on the server — you only ever see
-            your own usage. Costs are <strong>estimates</strong> calculated from the providers' published per-model
+            Token counts are reported by the AI provider itself. This CRM uses one shared AI configuration for
+            everyone, so these figures cover <strong>all users</strong> — the totals above are the whole
+            application's consumption, not just yours. Costs are <strong>estimates</strong> calculated from the providers' published per-model
             rates; they exclude tiered/long-context, audio, batch and cache-discount pricing, and a model with no
             known rate is shown as “Pricing unavailable” rather than being guessed at.
           </div>

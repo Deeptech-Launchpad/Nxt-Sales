@@ -9,6 +9,7 @@ import api from '../api/client'
 import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import FilterDropdown from '../components/filters/FilterDropdown'
 import AddFilterMenu from '../components/filters/AddFilterMenu'
+import DateFilterDropdown from '../components/filters/DateFilterDropdown'
 import CreateCompanyModal from '../components/modals/CreateCompanyModal'
 import ImportModal from '../components/modals/ImportModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
@@ -484,12 +485,14 @@ export default function Companies({ recentsMode = false }) {
             selected={ownerFilter}
             onChange={v => { setOwnerFilter(v); setPage(1) }}
           />
-          <FilterDropdown
+          {/* Create date — presets plus an explicit day / month / year / range
+              calendar. Same single filter (one token in the `created` param),
+              so the list, the record count and Export all stay in step. */}
+          <DateFilterDropdown
             label="Create date"
-            options={DATE_OPTIONS}
-            selected={createDateFilter}
+            presets={DATE_OPTIONS}
+            value={createDateFilter[0] || ''}
             onChange={v => { setCreateDateFilter(v); setPage(1) }}
-            searchable={false}
           />
           <FilterDropdown
             label="Lead status"
