@@ -170,7 +170,15 @@ model Activity {
   autoCompleteOverdue Boolean @default(false)
   assignedToId  String?
   meetLink      String?
-  messageId     String?
+  // Gmail's internal message id. Unique per MAILBOX, not globally — the same
+  // real-world email living in two connected mailboxes carries two different
+  // values here. Used for Gmail API calls and as a per-mailbox dedup key.
+  messageId     String?   @unique
+  // The RFC 5322 Message-ID header ("<abc123@mail.gmail.com>"). Globally
+  // unique across every mailbox and provider, so this — not messageId — is
+  // what stops the SAME email being stored twice once several users' mailboxes
+  // are synced into one company (see companyEmailMatcher.js / Decision A).
+  rfcMessageId  String?   @unique
   threadId      String?
   companyId     String?
   trackingId    String?   @unique
@@ -185,6 +193,19 @@ model Activity {
   // non-email activities and for emails whose matched address was later removed.
   matchedCompanyEmail String?
   ccEmail       String?
+  // Stored for completeness of the canonical email record. Bcc is NOT a
+  // matching field — the header only exists in the sender's own copy, so
+  // matching on it would associate a thread for the sender and nobody else.
+  bccEmail      String?
+  // Which connected mailbox this message was synced from. Company association
+  // is deliberately mailbox-agnostic (the CRM is company-centric), so this is
+  // what still tells you whose Gmail account a given message came out of.
+  mailboxEmail  String?
+  // How the company link was decided: 'address' (an explicitly saved company
+  // address matched) or 'domain' (secondary fallback). Kept so a domain-derived
+  // association is always distinguishable from — and reversible independently
+  // of — an explicit one.
+  matchBasis    String?
   attachments   Json?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
