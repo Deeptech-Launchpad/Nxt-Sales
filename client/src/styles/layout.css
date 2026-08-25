@@ -1,0 +1,22 @@
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f8fafc;
+}
+
+.app-content {
+  width: 100%;
+  flex: 1;
+  padding: 14px clamp(16px, 2.4vw, 36px) 28px;
+  overflow-x: hidden;
+}
+
+.app-content > * {
+  width: min(100%, 1440px);
+  margin-inline: auto;
+}
+
+@media (max-width: 720px) {
+  .app-content { padding: 12px 12px 24px; }
+}

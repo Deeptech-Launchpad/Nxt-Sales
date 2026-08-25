@@ -1,0 +1,423 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String         @id @default(cuid())
+  email            String         @unique
+  name             String
+  companyName      String?
+  passwordHash     String?
+  googleId         String?        @unique
+  avatar           String?
+  role             String         @default("member")
+  status           String         @default("active")
+  inviteToken      String?        @unique
+  inviteExpires    DateTime?
+  signature        String?
+  signatureImage   String?
+  settings         Json?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  activities       Activity[]     @relation("ActivityCreator")
+  assignedActivities Activity[]   @relation("ActivityAssignee")
+  companies        Company[]
+  deals            Deal[]
+  emailAccounts    EmailAccount[]
+  sentMessages     ChatMessage[]  @relation("SentMessages")
+  receivedMessages ChatMessage[]  @relation("ReceivedMessages")
+  createdConversations Conversation[]
+  conversationMemberships ConversationMember[]
+  chatMentions ChatMention[]
+  chatMessageReceipts ChatMessageReceipt[]
+  aiUsage          AiUsage[]
+}
+
+// One row per AI/LLM request made from the CRM, recorded from whatever usage
+// metadata the provider itself returned — never estimated. Rows are written by
+// the single shared tracking helper (client/src/utils/aiUsage.js), so every
+// current and future AI feature is captured without per-feature counting logic.
+model AiUsage {
+  id           String   @id @default(cuid())
+  userId       String
+  feature      String
+  provider     String
+  model        String
+  promptTokens Int      @default(0)
+  outputTokens Int      @default(0)
+  totalTokens  Int      @default(0)
+  hasUsageData Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, feature])
+  @@index([userId, model])
+}
+
+model Company {
+  id             String     @id @default(cuid())
+  name           String
+  email          String?
+  phone          String?
+  industry       String?
+  leadStatus     String?
+  status         String     @default("Lead")
+  notes          String?
+  ownerId        String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  domain                String?
+  country               String?
+  emails                Json?
+  phones                Json?
+  endPdpUrl             String?
+  cms                   String?
+  remarks               String?
+  contactPersons        Json?
+  linkedProfiles        Json?
+  isPinned              Boolean    @default(false)
+  isFavorite            Boolean    @default(false)
+  deletedAt             DateTime?
+  activities     Activity[]
+  deals          Deal[]
+  callLogs       CallLog[]
+  owner          User?      @relation(fields: [ownerId], references: [id])
+
+  @@index([email])
+  @@index([deletedAt])
+  @@index([ownerId])
+  @@index([createdAt])
+  @@index([leadStatus])
+  @@index([name])
+  @@index([isPinned])
+}
+
+model Deal {
+  id        String    @id @default(cuid())
+  title     String
+  value     Float     @default(0)
+  currency  String    @default("USD")
+  stage     String    @default("Discussion")
+  companyId String?
+  ownerId   String
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  country             String?
+  companyName         String?
+  domainName          String?
+  clientType          String?
+  contactPerson       String?
+  contactPhone        String?
+  contactEmail        String?
+  serviceRequirement  String?
+  clientWebsiteUrl    String?
+  opportunityType     String?
+  strategicImportance String?
+  expectedOutcome     String?
+  // Independent of stage — a deal can be flagged POC and/or Proposal Shared
+  // regardless of which pipeline stage it's currently in. Non-nullable with
+  // a false default, same convention as Company.isPinned.
+  poc            Boolean @default(false)
+  proposalShared Boolean @default(false)
+  // Nullable, no default — existing deals simply have both empty until set.
+  pocReceivedDate  DateTime?
+  pocDeliveredDate DateTime?
+  openDate         DateTime?
+  company   Company?  @relation(fields: [companyId], references: [id])
+  owner     User      @relation(fields: [ownerId], references: [id])
+
+  @@index([ownerId])
+  @@index([companyId])
+}
+
+model Activity {
+  id            String    @id @default(cuid())
+  type          String
+  userId        String
+  title         String?
+  body          String?
+  toEmail       String?
+  fromEmail     String?
+  subject       String?
+  emailStatus   String?
+  direction     String?
+  duration      Int?
+  outcome       String?
+  startTime     DateTime?
+  endTime       DateTime?
+  meetingStatus String?
+  location      String?
+  participants  String?
+  dueDate       DateTime?
+  priority      String?
+  taskStatus    String?
+  // Opt-in per-task: when true, a background sweep marks this task
+  // completed once its dueDate has passed. Off by default — a task is
+  // never auto-completed unless this was explicitly turned on for it.
+  autoCompleteOverdue Boolean @default(false)
+  assignedToId  String?
+  meetLink      String?
+  messageId     String?
+  threadId      String?
+  companyId     String?
+  trackingId    String?   @unique
+  openCount     Int       @default(0)
+  firstOpenedAt DateTime?
+  lastOpenedAt  DateTime?
+  openHistory   Json?
+  recordingUrl  String?
+  callLogId     String?   @unique
+  // Which of the company's saved email addresses this conversation belongs to.
+  // Drives the Company → Email Address → Thread → Messages grouping; null for
+  // non-email activities and for emails whose matched address was later removed.
+  matchedCompanyEmail String?
+  ccEmail       String?
+  attachments   Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  company       Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user          User      @relation("ActivityCreator", fields: [userId], references: [id])
+  assignedTo    User?     @relation("ActivityAssignee", fields: [assignedToId], references: [id])
+
+  @@index([companyId])
+  @@index([messageId])
+  @@index([type])
+  @@index([userId])
+  @@index([threadId])
+  @@index([matchedCompanyEmail])
+  @@index([assignedToId])
+  @@index([dueDate])
+}
+
+model CallLog {
+  id              String    @id @default(cuid())
+  callhippoId     String    @unique
+  callDate        DateTime
+  fromNumber      String?
+  toNumber        String?
+  direction       String?
+  status          String?
+  duration        Int?
+  recordingUrl    String?
+  agentName       String?
+  agentId         String?
+  analysisStatus  String?
+  analysisResult  Json?
+  analysisError   String?
+  companyId       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  company         Company?  @relation(fields: [companyId], references: [id])
+
+  @@index([callDate])
+  @@index([analysisStatus])
+  @@index([companyId])
+}
+
+// Team Chat (Update 3). Group chat + real-time layer built as an evolution of
+// the original 1:1-only design — fromUserId/toUserId/isRead are the pre-E2
+// columns, kept (nullable-compatible) until the E2 backfill script has moved
+// every row onto conversationId and a separate follow-up migration drops them.
+model Conversation {
+  id            String    @id @default(cuid())
+  isGroup       Boolean   @default(false)
+  name          String?   // group name; null for 1:1 (UI derives the display name from the other member)
+  createdById   String
+  lastMessageAt DateTime?
+  lastMessageId String?   // denormalized for fast sidebar sort/preview
+  createdAt     DateTime  @default(now())
+  createdBy     User      @relation(fields: [createdById], references: [id])
+  members       ConversationMember[]
+  messages      ChatMessage[]
+
+  @@index([lastMessageAt])
+}
+
+model ConversationMember {
+  id             String    @id @default(cuid())
+  conversationId String
+  userId         String
+  joinedAt       DateTime  @default(now())
+  lastReadAt     DateTime? // per-member read cursor — avoids scanning every message for unread counts
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  fromUserId     String
+  toUserId       String?  // null for group messages — no single recipient; superseded by conversationId + ConversationMember for both 1:1 and group
+  body           String
+  isRead         Boolean  @default(false)
+  conversationId String?
+  replyToId      String?
+  editedAt       DateTime?
+  deletedAt      DateTime?
+  pinnedAt       DateTime?
+  attachments    Json?     // [{filename, mimeType, size, url}] — same shape as Activity.attachments (E5)
+  attachedRecord Json?     // {type: 'company'|'deal', id, label} snapshot at send time (E6) — no polymorphic FK
+  createdAt      DateTime @default(now())
+  fromUser       User     @relation("SentMessages",     fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser         User?    @relation("ReceivedMessages", fields: [toUserId],   references: [id], onDelete: Cascade)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo        ChatMessage?  @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies        ChatMessage[] @relation("MessageReplies")
+  mentions       ChatMention[]
+  receipts       ChatMessageReceipt[]
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@index([createdAt])
+  @@index([conversationId])
+}
+
+// Read receipts (E6) — per-recipient, since a group message has one status
+// PER MEMBER, not a single global flag. deliveredAt is set only when the
+// message was actually pushed to that member's live socket (E1's presence
+// layer); readAt is set when their client marks the conversation read.
+model ChatMessageReceipt {
+  id          String    @id @default(cuid())
+  messageId   String
+  userId      String
+  deliveredAt DateTime?
+  readAt      DateTime?
+  message     ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+// @Mentions (Update 3 / E4) — a join table rather than a JSON array on
+// ChatMessage so "messages mentioning me" is an indexed query, not a scan.
+model ChatMention {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  createdAt DateTime @default(now())
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId])
+  @@index([userId])
+}
+
+// Centralized, admin-managed values for dropdown fields (Update 2) — replaces
+// hardcoded arrays scattered across Company/Deal forms, filters, and Bulk
+// Import so a value can be added/renamed/reordered/disabled without a code
+// change. `value` is what's stored on Company/Deal records and is immutable
+// once created; `label` is the editable display text.
+model DropdownOption {
+  id        String   @id @default(cuid())
+  fieldKey  String
+  value     String
+  label     String
+  order     Int      @default(0)
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([fieldKey, value])
+  @@index([fieldKey])
+}
+
+// User-defined fields on Company/Deal (Dynamic Custom Fields) — metadata-driven,
+// not a JSON blob and not one table per field. `key` is generated once from
+// `label` at creation and is permanently immutable afterward (never re-derived
+// on rename) — it's the identifier Import/Export/filters/API/DropdownOption's
+// fieldKey convention all key off, so renaming the display label can never
+// orphan stored data. Built-in Company/Deal columns are never rows here —
+// this table only ever describes fields that don't already exist as a real
+// Prisma column (enforced at the route layer via DMMF introspection), so
+// built-in and custom fields can never be confused with one another.
+model CustomFieldDefinition {
+  id          String    @id @default(cuid())
+  entity      String    // "Company" | "Deal"
+  key         String    // machine key, e.g. "gstNumber" — immutable after creation
+  label       String    // display label — freely editable, never affects `key`
+  type        String    // "text" | "textarea" | "number" | "email" | "phone" | "date" | "checkbox" | "dropdown" | "multiselect" | "url" | "currency" | "percentage"
+  required    Boolean   @default(false)
+  order       Int       @default(0)
+  enabled     Boolean   @default(true)
+  helpText    String?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  values      CustomFieldValue[]
+
+  @@unique([entity, key])
+  @@index([entity, enabled, order])
+}
+
+// One row per (field, record). `recordId` is a Company.id or Deal.id per
+// field.entity — intentionally polymorphic (Prisma can't FK one column to two
+// different parent tables), so it carries no @relation to Company/Deal.
+// Orphan prevention for that gap lives in purgeRecycleBin.js (explicit cleanup
+// at both real hard-delete points, in the same transaction as the parent
+// delete, plus a periodic anti-join sweep) — see that file for the other half
+// of this contract. Only the ONE typed column matching the field's declared
+// type is ever populated per row; the rest stay null.
+model CustomFieldValue {
+  id          String    @id @default(cuid())
+  fieldId     String
+  field       CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  recordId    String
+  textValue   String?
+  numberValue Decimal?
+  dateValue   DateTime?
+  boolValue   Boolean?
+  listValue   Json?     // multiselect — array of strings, same convention as Company.contactPersons/linkedProfiles
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([fieldId, recordId])
+  @@index([recordId])
+  @@index([fieldId, textValue])
+  @@index([fieldId, numberValue])
+  @@index([fieldId, dateValue])
+  @@index([fieldId, boolValue])
+}
+
+model EmailAccount {
+  id           String    @id @default(cuid())
+  userId       String
+  provider     String
+  email        String
+  accessToken  String
+  refreshToken String?
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+model PromptTemplate {
+  id          String   @id @default(cuid())
+  clientType  String
+  templateKey String
+  label       String
+  kind        String   @default("content")
+  subject     String?
+  content     String   @db.Text
+  enabled     Boolean  @default(true)
+  isSystem    Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([clientType, templateKey])
+  @@index([clientType, enabled])
+}

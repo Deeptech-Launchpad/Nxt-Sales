@@ -1,0 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap');
+
+:root {
+  /* NXT Sales global brand system */
+  --color-brand-navy: #071B52;
+  --color-cta: #EF1B16;
+  --color-cta-hover: #D91512;
+  --color-text: #111827;
+  --color-text-secondary: #667085;
+  --color-text-muted: #98A2B3;
+  --color-page: #FFFFFF;
+  --color-section: #F8FAFC;
+  --color-input: #FFFFFF;
+  --color-border: #E4E7EC;
+  --color-focus: #071B52;
+  --color-navy-soft: #F3F6FC;
+  --color-success: #65B900;
+  --color-info: #0AAFE6;
+  --color-error: #D92D20;
+
+  /* Backwards-compatible aliases used by existing modules. */
+  --red: var(--color-cta);
+  --red-dark: var(--color-cta-hover);
+  --navy: var(--color-brand-navy);
+  --font: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body { font-family: var(--font); font-size:13px; -webkit-font-smoothing: antialiased; color: var(--color-text); background: var(--color-section); }
+button { font-family: var(--font); }
+a { text-decoration: none; }

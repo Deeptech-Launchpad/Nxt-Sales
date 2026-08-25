@@ -1,0 +1,20 @@
+{
+  "name": "emotion-sense-gateway",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Node.js API Gateway — receives uploads from React, forwards to Python AI service",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "form-data": "^4.0.0",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1"
+  }
+}

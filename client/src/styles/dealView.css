@@ -1,0 +1,141 @@
+/* Scoped to ViewDealModal only — class names below aren't used anywhere
+   else in the app, so this file can't affect any other component's styling. */
+
+.dv-hero {
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border: 1px solid #eef1f5;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 22px;
+}
+
+.dv-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dv-hero-company {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #334155;
+  min-width: 0;
+}
+.dv-hero-company span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-hero-company svg { color: #94a3b8; flex-shrink: 0; }
+
+.dv-stage-pill {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ef1b16;
+  background: #fff1f0;
+  border: 1px solid #fecaca;
+  border-radius: 20px;
+  padding: 3px 10px;
+  text-transform: uppercase;
+  letter-spacing: .3px;
+  white-space: nowrap;
+}
+
+.dv-hero-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-top: 10px;
+  letter-spacing: -.3px;
+}
+
+.dv-hero-flags {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.dv-flag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 20px;
+  padding: 4px 10px;
+}
+.dv-flag-pill.is-yes { color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; }
+.dv-flag-pill.is-no  { color: #94a3b8; background: #f8fafc; border: 1px solid #e2e8f0; }
+
+.dv-section { margin-bottom: 22px; }
+.dv-section:last-child { margin-bottom: 4px; }
+
+.dv-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #1e293b;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.dv-section-title svg { color: #64748b; }
+
+.dv-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+}
+
+.dv-field { min-width: 0; }
+.dv-field.dv-full { grid-column: 1 / -1; }
+
+.dv-field-label {
+  display: flex;
+  align-items: center;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 4px;
+  position: relative;
+  padding-left: 17px;
+}
+.dv-field-label svg { position: absolute; left: 0; color: #cbd5e1; flex-shrink: 0; }
+
+.dv-field-value {
+  padding-left: 17px;
+  font-size: 14px;
+  color: #0f172a;
+  font-weight: 500;
+  line-height: 1.5;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.dv-field-value.is-empty { color: #cbd5e1; font-weight: 400; }
+
+.dv-field-value a {
+  color: #3b82f6;
+  text-decoration: none;
+  font-weight: 500;
+}
+.dv-field-value a:hover { text-decoration: underline; }
+
+.dv-notes-box {
+  background: #f8fafc;
+  border: 1px solid #eef1f5;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  color: #334155;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.dv-notes-box.is-empty { color: #cbd5e1; }

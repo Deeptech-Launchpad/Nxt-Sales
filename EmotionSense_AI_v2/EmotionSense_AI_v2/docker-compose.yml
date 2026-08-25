@@ -1,0 +1,52 @@
+version: "3.9"
+
+# ── EmotionSense AI — Full-Stack Docker Compose ─────────────────────────────
+#
+# Services:
+#   frontend   → React/Vite dev server    (port 5173)
+#   backend    → Node.js API Gateway      (port 4000)
+#   ai-service → Python FastAPI ML server (port 8000)
+#
+# Data flow: Browser → frontend → backend → ai-service → back
+#
+# Usage:
+#   cp .env.example .env          # fill in HF_TOKEN
+#   docker compose up --build
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_BACKEND_URL=http://localhost:4000
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "4000:4000"
+    environment:
+      - AI_SERVICE_URL=http://ai-service:8000
+      - FRONTEND_URL=http://localhost:5173
+      - PORT=4000
+    volumes:
+      - ./backend/uploads:/app/uploads   # temp audio staging area
+    depends_on:
+      - ai-service
+
+  ai-service:
+    build:
+      context: ./ai-service
+    ports:
+      - "8000:8000"
+    environment:
+      - HF_TOKEN=${HF_TOKEN}             # required for PyAnnote diarization
+    volumes:
+      - ai-models:/app/models            # persist downloaded HF model weights
+
+volumes:
+  ai-models:

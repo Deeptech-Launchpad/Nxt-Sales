@@ -1,0 +1,429 @@
+/* Modern Sidebar */
+.sidebar-modern {
+  width: 280px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #071B52 0%, #04133b 100%);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+  overflow-y: auto;
+  z-index: 100;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Header */
+.sidebar-header-modern {
+  padding: 20px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.sidebar-collapse-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sidebar-collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.logo-section-modern {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+}
+
+.sidebar-logo-crop {
+  display: flex;
+  align-items: center;
+  width: 174px;
+  height: 42px;
+  border-radius: 7px;
+  background: #fff;
+  padding: 4px 7px;
+}
+
+.logo-img-modern {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.app-name-modern {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+/* Search */
+.search-section-modern {
+  padding: 12px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.search-input-modern {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 10px;
+  transition: all 0.2s;
+}
+
+.search-input-modern:focus-within {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(10, 175, 230, 0.55);
+  box-shadow: 0 0 0 3px rgba(10, 175, 230, 0.12);
+}
+
+.search-input-modern input {
+  border: none;
+  background: transparent;
+  outline: none;
+  color: #fff;
+  font-size: 13px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  width: 100%;
+}
+
+.search-input-modern input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Navigation */
+.nav-modern {
+  flex: 1;
+  padding: 12px 8px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.section-modern {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.section-button-modern {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: none;
+  border: 1px solid transparent;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  width: 100%;
+  text-align: left;
+}
+
+.section-button-modern:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.section-button-modern.active {
+  background: rgba(10, 175, 230, 0.13);
+  color: #6dd8f7;
+  border-color: rgba(10, 175, 230, 0.28);
+}
+
+.section-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.section-button-modern.active .section-icon-wrapper {
+  background: rgba(10, 175, 230, 0.18);
+  color: #6dd8f7;
+}
+
+.section-label-modern {
+  flex: 1;
+}
+
+/* Items List */
+.items-list-modern {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 8px;
+  margin-top: 2px;
+  padding: 4px 4px 4px 8px;
+  border-left: 2px solid rgba(10, 175, 230, 0.24);
+}
+
+.item-link-modern {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+.item-link-modern:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.item-link-modern.active {
+  background: rgba(10, 175, 230, 0.15);
+  color: #83dff8;
+  font-weight: 600;
+}
+
+/* Footer */
+.sidebar-footer-modern {
+  padding: 12px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.settings-link-modern {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+.settings-link-modern:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.settings-link-modern.active {
+  background: rgba(10, 175, 230, 0.15);
+  color: #83dff8;
+}
+
+/* User Card */
+.user-card-modern {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.user-card-modern:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.user-avatar-modern {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0AAFE6, #071B52);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.user-info-modern {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.user-name-modern {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-email-modern {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.35);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Logout Button */
+.logout-btn-modern {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12.5px;
+  font-weight: 500;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.15s;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+.logout-btn-modern:hover {
+  background: rgba(230, 51, 41, 0.15);
+  border-color: rgba(230, 51, 41, 0.3);
+  color: #ff6b6b;
+}
+
+/* Scrollbar Styling */
+.sidebar-modern::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-modern::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-modern::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.sidebar-modern::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Collapsed state (desktop sidebar toggle) — width shrinks to icon-only;
+   all nav logic (accordion sections, active-link highlighting, search
+   filtering) stays exactly as-is underneath, this only hides text labels
+   and re-centers icons via CSS. Higher specificity than the width rules in
+   the responsive breakpoints below, so collapse wins at any viewport width. */
+.sidebar-modern.collapsed {
+  width: 68px;
+}
+
+.sidebar-modern.collapsed .nav-label {
+  display: none;
+}
+
+.sidebar-modern.collapsed .search-section-modern {
+  display: none;
+}
+
+/* The logo image itself doesn't shrink below its intrinsic size just
+   because its flex parent has minWidth:0, so at 68px wide the header row
+   (padding + logo + toggle button) doesn't fit and pushes the toggle button
+   out of view/unclickable — hiding the logo when collapsed is what actually
+   fixes that, not just centering it. */
+.sidebar-modern.collapsed .sidebar-header-modern {
+  justify-content: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.sidebar-modern.collapsed .logo-section-modern {
+  display: none;
+}
+
+.sidebar-modern.collapsed .item-link-modern,
+.sidebar-modern.collapsed .settings-link-modern {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: 4px;
+  margin-right: 4px;
+}
+
+.sidebar-modern.collapsed .section-button-modern {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.sidebar-modern.collapsed .section-icon-wrapper {
+  flex-shrink: 0;
+}
+
+.sidebar-modern.collapsed .items-list-modern {
+  border-left: none;
+  padding-left: 0;
+  align-items: center;
+}
+
+.sidebar-modern.collapsed .items-list-modern .item-link-modern {
+  width: 40px;
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .sidebar-modern {
+    width: 260px;
+  }
+
+  .app-name-modern {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar-modern {
+    width: 240px;
+  }
+
+  .search-section-modern {
+    display: none;
+  }
+}
