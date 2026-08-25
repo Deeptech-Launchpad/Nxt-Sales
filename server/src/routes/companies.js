@@ -215,7 +215,7 @@ async function companyIdsWithCustomFieldMatch(customFiltersJson) {
 async function buildCompanyWhere(query, userId) {
   const {
     search, view, owners, leadStatuses, createDate, customFilters, industries, countries, hasDeal,
-    cms, cmsValues, remarks, website, phone, email, updatedDate, lastActivity,
+    cms, cmsValues, remarks, remarksValues, website, phone, email, updatedDate, lastActivity,
   } = query
   // Companies in the Recycle Bin are archived — excluded from every normal
   // list/search/export view. Only the dedicated Recycle Bin routes look past this.
@@ -273,7 +273,12 @@ async function buildCompanyWhere(query, userId) {
     const values = String(cmsValues).split(',').map(value => value.trim()).filter(Boolean)
     if (values.length) advancedAnd.push({ OR: values.map(value => ({ cms: { equals: value, mode: 'insensitive' } })) })
   } else if (cms) advancedAnd.push({ cms: { contains: cms, mode: 'insensitive' } })
-  if (remarks) advancedAnd.push({ remarks: { contains: remarks, mode: 'insensitive' } })
+  if (remarksValues) {
+    const values = (Array.isArray(remarksValues) ? remarksValues : String(remarksValues).split(','))
+      .map(value => String(value).trim())
+      .filter(Boolean)
+    if (values.length) advancedAnd.push({ OR: values.map(value => ({ remarks: { equals: value, mode: 'insensitive' } })) })
+  } else if (remarks) advancedAnd.push({ remarks: { contains: remarks, mode: 'insensitive' } })
   if (phone)   advancedAnd.push({ phone:   { contains: phone, mode: 'insensitive' } })
   if (email)   advancedAnd.push({ email:   { contains: email, mode: 'insensitive' } })
   if (website) advancedAnd.push({ OR: [
@@ -407,6 +412,30 @@ router.get('/filter-options/cms', auth, async (_req, res) => {
   } catch (err) {
     console.error('CMS filter options error:', err)
     res.status(500).json({ message: 'Unable to load CMS options.' })
+  }
+})
+
+router.get('/filter-options/remarks', auth, async (_req, res) => {
+  try {
+    const rows = await prisma.company.findMany({
+      where: { deletedAt: null, remarks: { not: null } },
+      select: { remarks: true },
+      distinct: ['remarks'],
+      orderBy: { remarks: 'asc' },
+    })
+    const seen = new Set()
+    const options = rows.flatMap(row => {
+      const value = String(row.remarks || '').trim()
+      const key = value.toLowerCase()
+      const placeholder = /^(--|n\/?a|none|null)$/i.test(value)
+      if (!value || value.length > 80 || placeholder || seen.has(key)) return []
+      seen.add(key)
+      return [{ value, label: value }]
+    })
+    res.json({ options })
+  } catch (err) {
+    console.error('Remarks filter options error:', err)
+    res.status(500).json({ message: 'Unable to load remarks options.' })
   }
 })
 

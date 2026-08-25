@@ -212,7 +212,8 @@ export default function Companies({ recentsMode = false }) {
   const [hasDealFilter,    setHasDealFilter]    = useState([])
   const [cmsFilter,        setCmsFilter]        = useState([])
   const [cmsOptions,       setCmsOptions]       = useState([])
-  const [remarksFilter,    setRemarksFilter]    = useState('')
+  const [remarksFilter,    setRemarksFilter]    = useState([])
+  const [remarksOptions,   setRemarksOptions]   = useState([])
   const [websiteFilter,    setWebsiteFilter]    = useState('')
   const [phoneFilter,      setPhoneFilter]      = useState('')
   const [emailFilter,      setEmailFilter]      = useState('')
@@ -225,9 +226,16 @@ export default function Companies({ recentsMode = false }) {
   const countryOptions  = countryValues.map(o => ({ value: o.value, label: o.label }))
 
   useEffect(() => {
-    api.get('/companies/filter-options/cms')
-      .then(response => setCmsOptions(response.data?.options || []))
-      .catch(() => setCmsOptions([]))
+    Promise.all([
+      api.get('/companies/filter-options/cms'),
+      api.get('/companies/filter-options/remarks'),
+    ]).then(([cmsResponse, remarksResponse]) => {
+      setCmsOptions(cmsResponse.data?.options || [])
+      setRemarksOptions(remarksResponse.data?.options || [])
+    }).catch(() => {
+      setCmsOptions([])
+      setRemarksOptions([])
+    })
   }, [])
 
   // Which OPTIONAL filters (Industry/Country) are currently shown in the
@@ -331,7 +339,7 @@ export default function Companies({ recentsMode = false }) {
         ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
         ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
         ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter.join(',') }),
-        ...(remarksFilter.trim()    && { remarks:      remarksFilter.trim() }),
+        ...(remarksFilter.length > 0 && { remarksValues: remarksFilter }),
         ...(websiteFilter.trim()    && { website:      websiteFilter.trim() }),
         ...(phoneFilter.trim()      && { phone:        phoneFilter.trim() }),
         ...(emailFilter.trim()      && { email:        emailFilter.trim() }),
@@ -365,7 +373,7 @@ export default function Companies({ recentsMode = false }) {
     ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
     ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
     ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter.join(',') }),
-    ...(remarksFilter.trim()    && { remarks:      remarksFilter.trim() }),
+    ...(remarksFilter.length > 0 && { remarksValues: remarksFilter }),
     ...(websiteFilter.trim()    && { website:      websiteFilter.trim() }),
     ...(phoneFilter.trim()      && { phone:        phoneFilter.trim() }),
     ...(emailFilter.trim()      && { email:        emailFilter.trim() }),
@@ -389,7 +397,7 @@ export default function Companies({ recentsMode = false }) {
       ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
       ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
       ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter.join(',') }),
-      ...(remarksFilter.trim()    && { remarks:      remarksFilter.trim() }),
+      ...(remarksFilter.length > 0 && { remarksValues: remarksFilter }),
       ...(websiteFilter.trim()    && { website:      websiteFilter.trim() }),
       ...(phoneFilter.trim()      && { phone:        phoneFilter.trim() }),
       ...(emailFilter.trim()      && { email:        emailFilter.trim() }),
@@ -439,13 +447,13 @@ export default function Companies({ recentsMode = false }) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const hasFilters = ownerFilter.length > 0 || createDateFilter.length > 0 || leadStatusFilter.length > 0
     || industryFilter.length > 0 || countryFilter.length > 0 || hasDealFilter.length > 0
-    || cmsFilter.length > 0 || remarksFilter || websiteFilter || phoneFilter || emailFilter
+    || cmsFilter.length > 0 || remarksFilter.length > 0 || websiteFilter || phoneFilter || emailFilter
     || updatedDateFilter.length > 0 || lastActivityFilter.length > 0
 
   const clearAllFilters = () => {
     setOwnerFilter([]); setCreateDateFilter([]); setLeadStatusFilter([])
     setIndustryFilter([]); setCountryFilter([]); setHasDealFilter([])
-    setCmsFilter([]); setRemarksFilter(''); setWebsiteFilter(''); setPhoneFilter(''); setEmailFilter('')
+    setCmsFilter([]); setRemarksFilter([]); setWebsiteFilter(''); setPhoneFilter(''); setEmailFilter('')
     setUpdatedDateFilter([]); setLastActivityFilter([]); setPage(1)
   }
   const clearOneFilter = (setter, emptyValue) => { setter(emptyValue); setPage(1) }
@@ -630,6 +638,12 @@ export default function Companies({ recentsMode = false }) {
             selected={cmsFilter}
             onChange={v => { setCmsFilter(v); setPage(1) }}
           />
+          <FilterDropdown
+            label="Remarks"
+            options={remarksOptions}
+            selected={remarksFilter}
+            onChange={v => { setRemarksFilter(v); setPage(1) }}
+          />
           <DateFilterDropdown
             label="Created date"
             presets={DATE_OPTIONS}
@@ -711,7 +725,6 @@ export default function Companies({ recentsMode = false }) {
             {!activeOptionalFilters.includes('industry') && <FilterDropdown label="Industry" options={industryOptions} selected={industryFilter} onChange={v => { setIndustryFilter(v); setPage(1) }} />}
             {!activeOptionalFilters.includes('country') && <FilterDropdown label="Country" options={countryOptions} selected={countryFilter} onChange={v => { setCountryFilter(v); setPage(1) }} />}
             {!activeOptionalFilters.includes('hasDeal') && <FilterDropdown label="Deals Created" options={HAS_DEAL_OPTIONS} selected={hasDealFilter} onChange={v => { setHasDealFilter(v); setPage(1) }} searchable={false} singleSelect />}
-            <AdvancedTextFilter label="Remarks" value={remarksFilter} onChange={v => { setRemarksFilter(v); setPage(1) }} placeholder="Contains text" />
             <AdvancedTextFilter label="Website" value={websiteFilter} onChange={v => { setWebsiteFilter(v); setPage(1) }} placeholder="Domain or URL" />
             <AdvancedTextFilter label="Phone" value={phoneFilter} onChange={v => { setPhoneFilter(v); setPage(1) }} placeholder="Contains number" />
             <AdvancedTextFilter label="Email" value={emailFilter} onChange={v => { setEmailFilter(v); setPage(1) }} placeholder="Contains email" />
@@ -735,7 +748,7 @@ export default function Companies({ recentsMode = false }) {
           {countryFilter.length > 0 && <button onClick={() => clearOneFilter(setCountryFilter, [])}>Country · {countryFilter.length}<X size={10} /></button>}
           {hasDealFilter.length > 0 && <button onClick={() => clearOneFilter(setHasDealFilter, [])}>Deals Created<X size={10} /></button>}
           {cmsFilter.length > 0 && <button onClick={() => clearOneFilter(setCmsFilter, [])}>CMS · {cmsFilter.length === 1 ? cmsFilter[0] : `${cmsFilter.length} selected`}<X size={10} /></button>}
-          {remarksFilter && <button onClick={() => clearOneFilter(setRemarksFilter, '')}>Remarks<X size={10} /></button>}
+          {remarksFilter.length > 0 && <button onClick={() => clearOneFilter(setRemarksFilter, [])}>Remarks · {remarksFilter.length === 1 ? remarksFilter[0] : `${remarksFilter.length} selected`}<X size={10} /></button>}
           {websiteFilter && <button onClick={() => clearOneFilter(setWebsiteFilter, '')}>Website<X size={10} /></button>}
           {phoneFilter && <button onClick={() => clearOneFilter(setPhoneFilter, '')}>Phone<X size={10} /></button>}
           {emailFilter && <button onClick={() => clearOneFilter(setEmailFilter, '')}>Email<X size={10} /></button>}
