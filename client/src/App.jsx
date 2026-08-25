@@ -16,6 +16,7 @@ import CompanyDetail from './pages/companies/CompanyDetail'
 import CompanyRecycleBin from './pages/companies/CompanyRecycleBin'
 import Inbox from './pages/Inbox'
 import Calls from './pages/Calls'
+import CallAnalysisDetail from './pages/CallAnalysisDetail'
 import Meetings from './pages/Meetings'
 import Tasks from './pages/Tasks'
 import Chat from './pages/Chat'
@@ -59,6 +60,7 @@ export default function App() {
             <Route path="deals-dashboard" element={<DealsDashboard />} />
             <Route path="inbox" element={<Inbox />} />
             <Route path="calls" element={<Calls />} />
+            <Route path="calls/:id/analysis" element={<CallAnalysisDetail />} />
             <Route path="meetings" element={<Meetings />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="chat" element={<Chat />} />

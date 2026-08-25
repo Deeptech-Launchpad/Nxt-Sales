@@ -63,7 +63,7 @@ function dealDateRange(token) {
 }
 
 function buildDealWhere(query, userId) {
-  const { companyId, view, search, country, clientType, stage, opportunityType, strategicImportance, expectedOutcome, openDate } = query
+  const { companyId, view, search, country, clientType, stage, opportunityType, strategicImportance, expectedOutcome, openDate, remarksValues } = query
   const where = {}
 
   if (companyId) {
@@ -98,6 +98,12 @@ function buildDealWhere(query, userId) {
   if (expectedOutcome) {
     const list = Array.isArray(expectedOutcome) ? expectedOutcome : expectedOutcome.split(',')
     where.expectedOutcome = { in: list }
+  }
+  if (remarksValues) {
+    const list = (Array.isArray(remarksValues) ? remarksValues : String(remarksValues).split(','))
+      .map(value => String(value).trim())
+      .filter(Boolean)
+    if (list.length) where.company = { remarks: { in: list, mode: 'insensitive' }, deletedAt: null }
   }
   const dateRange = dealDateRange(openDate)
   if (dateRange) {
@@ -146,7 +152,7 @@ router.get('/export', auth, async (req, res) => {
     const deals = await prisma.deal.findMany({
       where,
       include: {
-        company: { select: { id: true, name: true, ownerId: true } },
+        company: { select: { id: true, name: true, ownerId: true, remarks: true } },
         owner:   { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -322,16 +328,11 @@ router.post('/bulk', auth, async (req, res) => {
 // ?companyId=… → all deals for that company (Company details page).
 router.get('/', auth, async (req, res) => {
   try {
-    const { companyId, view } = req.query
+    const { companyId } = req.query
     // Dashboard listing (no explicit companyId) hides deals whose linked
     // company is in the Recycle Bin — it should behave as if that company no
     // longer exists. Deals with no company at all (companyId: null) are unaffected.
-    const where = companyId
-      ? { companyId }
-      : {
-          ...(view === 'mine' && { ownerId: req.user.id }),
-          OR: [{ companyId: null }, { company: { deletedAt: null } }],
-        }
+    const where = buildDealWhere(req.query, req.user.id)
     const deals = await prisma.deal.findMany({
       where,
       include: {
@@ -341,7 +342,7 @@ router.get('/', auth, async (req, res) => {
         // owner (the Deal's own owner) is now included so the client can
         // show the correct owner initials per row — All Deals can show
         // deals belonging to any user, not just the one viewing the page.
-        company: { select: { id: true, name: true, ownerId: true } },
+        company: { select: { id: true, name: true, ownerId: true, remarks: true } },
         owner:   { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },

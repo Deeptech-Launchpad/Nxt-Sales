@@ -5,6 +5,7 @@ const axios     = require('axios')
 const FormData  = require('form-data')
 const crypto    = require('crypto')
 const prisma    = new PrismaClient()
+const { analyzeCallRecording } = require('../services/geminiCallAnalyzer')
 
 // web.callhippo.com resolves correctly — api.callhippo.com has no DNS record
 const CALLHIPPO_BASE = 'https://web.callhippo.com/v1'
@@ -194,16 +195,52 @@ function callDateRangeFor(key) {
     last_30:   [new Date(now.getTime() - 30 * 86400000), now],
     last_90:   [new Date(now.getTime() - 90 * 86400000), now],
   }
-  return map[key] || null
+  if (map[key]) return map[key]
+
+  const day = String(key || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (day) {
+    const start = new Date(`${day[1]}-${day[2]}-${day[3]}T00:00:00`)
+    return Number.isNaN(start.getTime()) ? null : [start, new Date(start.getTime() + 86400000 - 1)]
+  }
+  const month = String(key || '').match(/^(\d{4})-(\d{2})$/)
+  if (month) {
+    const start = new Date(Number(month[1]), Number(month[2]) - 1, 1)
+    const end = new Date(Number(month[1]), Number(month[2]), 1)
+    return [start, new Date(end.getTime() - 1)]
+  }
+  if (/^\d{4}$/.test(String(key || ''))) {
+    const year = Number(key)
+    return [new Date(year, 0, 1), new Date(new Date(year + 1, 0, 1).getTime() - 1)]
+  }
+  const explicitRange = String(key || '').match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/)
+  if (explicitRange) {
+    const start = new Date(`${explicitRange[1]}T00:00:00`)
+    const endStart = new Date(`${explicitRange[2]}T00:00:00`)
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(endStart.getTime()) && start <= endStart) {
+      return [start, new Date(endStart.getTime() + 86400000 - 1)]
+    }
+  }
+  return null
 }
+
+router.get('/agents', auth, async (req, res) => {
+  try {
+    const rows = await prisma.callLog.findMany({
+      where: { agentName: { not: null } },
+      select: { agentName: true },
+      distinct: ['agentName'],
+    })
+    const agents = rows.map(r => r.agentName).filter(Boolean).sort()
+    res.json({ agents })
+  } catch (err) {
+    res.status(500).json({ agents: [] })
+  }
+})
 
 router.get('/logs', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 50, search, direction, status, callDate } = req.query
+    const { page = 1, limit = 50, search, direction, status, callDate, analysisStatus, sentiment, scoreFilter, agent } = req.query
     const skip = (Number(page) - 1) * Number(limit)
-    // Hide call logs whose linked company is in the Recycle Bin — it should
-    // behave as if that company no longer exists. Logs with no company at all
-    // (companyId: null) are unaffected.
     const hideBinnedCompany = { OR: [{ companyId: null }, { company: { deletedAt: null } }] }
     const and = [hideBinnedCompany]
     if (search) {
@@ -218,8 +255,17 @@ router.get('/logs', auth, async (req, res) => {
       const range = callDateRangeFor(callDate)
       if (range) and.push({ callDate: { gte: range[0], lte: range[1] } })
     }
+    if (agent) {
+      and.push({ agentName: { contains: agent, mode: 'insensitive' } })
+    }
+    if (analysisStatus === 'analysed') {
+      and.push({ analysisStatus: 'completed' })
+    } else if (analysisStatus === 'not_analysed') {
+      and.push({ OR: [{ analysisStatus: null }, { analysisStatus: { not: 'completed' } }] })
+    }
+
     const where = and.length > 1 ? { AND: and } : and[0]
-    const [rows, total] = await Promise.all([
+    let [rows, total] = await Promise.all([
       prisma.callLog.findMany({
         where,
         orderBy: { callDate: 'desc' },
@@ -229,6 +275,23 @@ router.get('/logs', auth, async (req, res) => {
       }),
       prisma.callLog.count({ where }),
     ])
+
+    if (sentiment && sentiment !== 'all') {
+      rows = rows.filter(r => {
+        const cs = String(r.analysisResult?.customerSentiment || '').toLowerCase()
+        const as = String(r.analysisResult?.agentSentiment || '').toLowerCase()
+        const target = sentiment.toLowerCase()
+        return cs.includes(target) || as.includes(target)
+      })
+    }
+    if (scoreFilter && scoreFilter !== 'all') {
+      rows = rows.filter(r => {
+        const score = r.analysisResult?.overallScore
+        if (score === undefined || score === null) return false
+        return scoreFilter === 'high' ? score >= 75 : score < 75
+      })
+    }
+
     const logs = await attachContactHistory(rows)
     res.json({ logs, total, page: Number(page), limit: Number(limit) })
   } catch (err) {
@@ -615,27 +678,91 @@ router.post('/sync', auth, async (req, res) => {
   }
 })
 
-// ── POST /api/callhippo/analyze/:id — queue EmotionSense analysis ────────────
-// Enqueues onto the shared FIFO queue rather than starting immediately, so a
-// manual Analyze/Retry click can never collide with another in-flight analysis.
+async function runDirectAnalysis(id) {
+  const log = await prisma.callLog.findUnique({ where: { id } })
+  if (!log) throw new Error('Call log not found.')
+  if (!log.recordingUrl) throw new Error('No recording URL for this call.')
+
+  await prisma.callLog.update({
+    where: { id },
+    data: { analysisStatus: 'analyzing', analysisError: null },
+  })
+
+  try {
+    const result = await analyzeCallRecording(log.recordingUrl)
+    const updated = await prisma.callLog.update({
+      where: { id },
+      data: {
+        analysisStatus: 'completed',
+        analysisResult: result,
+        analysisError: null,
+      },
+    })
+    return updated
+  } catch (err) {
+    console.error(`[CallAnalysis] Analysis failed for call ${id}:`, err.message)
+    await prisma.callLog.update({
+      where: { id },
+      data: {
+        analysisStatus: 'failed',
+        analysisError: err.message.slice(0, 500),
+      },
+    }).catch(() => {})
+    throw err
+  }
+}
+
 router.post('/analyze/:id', auth, async (req, res) => {
   const { id } = req.params
   const log = await prisma.callLog.findUnique({ where: { id } })
   if (!log) return res.status(404).json({ message: 'Call log not found.' })
   if (!log.recordingUrl) return res.status(400).json({ message: 'No recording URL for this call.' })
 
-  await enqueueAnalysis(id, log.recordingUrl)
-  res.json({ message: 'Analysis queued.', analysisStatus: 'pending' })
+  try {
+    const updated = await runDirectAnalysis(id)
+    res.json({ message: 'Analysis completed.', analysisStatus: 'completed', analysisResult: updated.analysisResult })
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Analysis failed.' })
+  }
 })
 
-// ── GET /api/callhippo/analysis/:id — get analysis result ────────────────────
+router.post('/reanalyze/:id', auth, async (req, res) => {
+  const { id } = req.params
+  const log = await prisma.callLog.findUnique({ where: { id } })
+  if (!log) return res.status(404).json({ message: 'Call log not found.' })
+  if (!log.recordingUrl) return res.status(400).json({ message: 'No recording URL for this call.' })
+
+  try {
+    const updated = await runDirectAnalysis(id)
+    res.json({ message: 'Re-analysis completed.', analysisStatus: 'completed', analysisResult: updated.analysisResult })
+  } catch (err) {
+    res.status(500).json({ message: err.message || 'Re-analysis failed.' })
+  }
+})
+
 router.get('/analysis/:id', auth, async (req, res) => {
   try {
-    const log = await prisma.callLog.findUnique({ where: { id: req.params.id } })
-    if (!log) return res.status(404).json({ message: 'Not found.' })
+    const log = await prisma.callLog.findUnique({
+      where: { id: req.params.id },
+      include: { company: { select: { id: true, name: true } } },
+    })
+    if (!log) return res.status(404).json({ message: 'Call log not found.' })
     res.json({
+      id: log.id,
+      callhippoId: log.callhippoId,
+      callDate: log.callDate,
+      fromNumber: log.fromNumber,
+      toNumber: log.toNumber,
+      direction: log.direction,
+      status: log.status,
+      duration: log.duration,
+      recordingUrl: log.recordingUrl,
+      agentName: log.agentName,
+      agentId: log.agentId,
+      company: log.company,
       analysisStatus: log.analysisStatus || null,
       analysisResult: log.analysisResult || null,
+      analysisError: log.analysisError || null,
     })
   } catch (err) {
     res.status(500).json({ message: 'Failed to fetch analysis.' })

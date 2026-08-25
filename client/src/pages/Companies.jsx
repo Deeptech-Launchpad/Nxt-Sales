@@ -597,7 +597,22 @@ export default function Companies({ recentsMode = false }) {
 
         <section className="company-summary-grid" aria-label="Company overview">
           <article className="company-summary-card total"><span><Building2 size={17} /></span><div><small>Total companies</small><strong>{Number(companySummary.total || total).toLocaleString()}</strong><p>Your complete account database</p></div></article>
-          <article className="company-summary-card deals"><span><Briefcase size={17} /></span><div><small>With active context</small><strong>{Number(companySummary.withDeals || 0).toLocaleString()}</strong><p>Companies linked to deals</p></div></article>
+          <article
+            className="company-summary-card deals"
+            onClick={() => {
+              setHasDealFilter(['yes'])
+              if (!activeOptionalFilters.includes('hasDeal')) {
+                const next = [...activeOptionalFilters, 'hasDeal']
+                setActiveOptionalFilters(next)
+                localStorage.setItem(OPTIONAL_FILTERS_STORAGE_KEY, JSON.stringify(next))
+              }
+              setPage(1)
+            }}
+            style={{ cursor: 'pointer' }}
+            title="Click to filter companies linked to deals"
+          >
+            <span><Briefcase size={17} /></span><div><small>With active context</small><strong>{Number(companySummary.withDeals || 0).toLocaleString()}</strong><p>Companies linked to deals</p></div>
+          </article>
           <article className="company-summary-card owner"><span><UserX size={17} /></span><div><small>Needs an owner</small><strong>{Number(companySummary.unassigned || 0).toLocaleString()}</strong><p>Ready for team assignment</p></div></article>
           <article className="company-summary-card cms"><span><Layers size={17} /></span><div><small>CMS identified</small><strong>{Number(companySummary.withCms || 0).toLocaleString()}</strong><p>Technology data available</p></div></article>
         </section>

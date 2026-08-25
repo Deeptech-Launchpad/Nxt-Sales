@@ -522,3 +522,184 @@
   white-space: nowrap;
 }
 .btn-af-action:hover { border-color: #94a3b8; background: #f8fafc; }
+
+/* ── Redesigned Meeting Modal (mm-*) ───────────────────────── */
+.mm-popup {
+  border-radius: 14px !important;
+  overflow: hidden;
+}
+
+.mm-meet-banner {
+  padding: 10px 20px;
+  background: #f0f7ff;
+  border-bottom: 1px solid #dbeafe;
+}
+
+.mm-meet-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.mm-meet-text {
+  font-weight: 600;
+  color: #1e40af;
+}
+
+.mm-meet-sub {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mm-body {
+  padding: 8px 0 !important;
+}
+
+.mm-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 20px;
+}
+
+.mm-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 0 20px;
+}
+
+.mm-field-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.mm-field-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mm-row {
+  flex-direction: row !important;
+  gap: 12px;
+}
+
+.mm-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.mm-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mm-optional-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  background: #f1f5f9;
+  color: #94a3b8;
+  padding: 1px 6px;
+  border-radius: 99px;
+  border: 1px solid #e2e8f0;
+}
+
+.mm-title-input {
+  width: 100%;
+  border: none !important;
+  border-bottom: 2px solid #e2e8f0 !important;
+  border-radius: 0 !important;
+  padding: 6px 2px !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #0f172a !important;
+  outline: none !important;
+  background: transparent !important;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  transition: border-color .15s;
+  box-sizing: border-box;
+}
+.mm-title-input:focus {
+  border-bottom-color: #0d9488 !important;
+}
+.mm-title-input::placeholder {
+  font-weight: 400;
+  color: #94a3b8;
+}
+
+.mm-input {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 8px 11px;
+  font-size: 13px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+.mm-input:focus {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+.mm-input::placeholder { color: #94a3b8; }
+
+.mm-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px !important;
+  cursor: pointer;
+}
+
+.mm-textarea {
+  resize: vertical;
+  min-height: 76px;
+  line-height: 1.6;
+}
+
+.mm-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  border-radius: 7px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  margin: 8px 20px 4px;
+}
+
+.mm-save-btn {
+  background: linear-gradient(135deg, #0d9488 0%, #0891b2 100%) !important;
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.3);
+}
+.mm-save-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0f766e 0%, #0e7490 100%) !important;
+}
+

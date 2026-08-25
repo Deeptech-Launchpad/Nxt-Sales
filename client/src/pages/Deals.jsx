@@ -139,6 +139,9 @@ export default function Deals() {
   const [pocFilter, setPocFilter] = useState([])
   const [proposalFilter, setProposalFilter] = useState([])
   const [openDateFilter, setOpenDateFilter] = useState([])
+  const [remarksFilter, setRemarksFilter] = useState([])
+  const [noCompanyFilter, setNoCompanyFilter] = useState(false)
+  const [remarksOptions, setRemarksOptions] = useState([])
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false)
   const moreFiltersRef = useRef(null)
   const [dealsTab, setDealsTab]   = useState('all') // 'all' | 'mine'
@@ -190,6 +193,9 @@ export default function Deals() {
 
   useEffect(() => {
     api.get('/deals/import-fields').then(r => setDealFields(r.data.fields || [])).catch(() => {})
+    api.get('/companies/filter-options/remarks')
+      .then(r => setRemarksOptions(r.data?.options || []))
+      .catch(() => setRemarksOptions([]))
   }, [])
 
   const fetchDeals = useCallback(() => {
@@ -218,6 +224,7 @@ export default function Deals() {
     }
     else if (focus === 'poc') setPocFilter(['yes'])
     else if (focus === 'proposal') setProposalFilter(['yes'])
+    else if (focus === 'no_company') setNoCompanyFilter(true)
     navigate('/deals', { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search, stageValues])
@@ -289,13 +296,17 @@ export default function Deals() {
       const matchesOutcome = outcomeFilter.length === 0 || outcomeFilter.includes(d.expectedOutcome)
       const matchesPoc = pocFilter.length === 0 || pocFilter[0] === (d.poc ? 'yes' : 'no')
       const matchesProposal = proposalFilter.length === 0 || proposalFilter[0] === (d.proposalShared ? 'yes' : 'no')
+      const matchesRemarks = remarksFilter.length === 0 || remarksFilter.some(value =>
+        String(d.company?.remarks || '').toLowerCase() === String(value).toLowerCase()
+      )
       const dateRange = dateRangeForToken(openDateFilter[0])
       // Older imported deals may not have an explicit Open Date. Falling back
       // to their Created Date keeps the filter useful without rewriting data;
       // newly created/edited deals always prefer the real Open Date.
       const dealDate = d.openDate ? new Date(d.openDate) : (d.createdAt ? new Date(d.createdAt) : null)
       const matchesOpenDate = !dateRange || (dealDate && dealDate >= dateRange[0] && dealDate < dateRange[1])
-      return matchesSearch && matchesCountry && matchesClientType && matchesStage && matchesOpportunity && matchesStrategic && matchesOutcome && matchesPoc && matchesProposal && matchesOpenDate
+      const matchesNoCompany = !noCompanyFilter || (!d.companyId && !d.companyName)
+      return matchesSearch && matchesCountry && matchesClientType && matchesStage && matchesOpportunity && matchesStrategic && matchesOutcome && matchesPoc && matchesProposal && matchesRemarks && matchesOpenDate && matchesNoCompany
     })
   })()
 
@@ -303,15 +314,16 @@ export default function Deals() {
     { label: 'Country', values: countryFilter, set: setCountryFilter, options: countryOptions },
     { label: 'Client Type', values: clientTypeFilter, set: setClientTypeFilter, options: clientTypeValues },
     { label: 'Stage', values: stageFilter, set: setStageFilter, options: stageValues },
+    { label: 'Remarks', values: remarksFilter, set: setRemarksFilter, options: remarksOptions },
     { label: 'Opportunity Type', values: opportunityFilter, set: setOpportunityFilter, options: opportunityValues },
     { label: 'Strategic Importance', values: strategicFilter, set: setStrategicFilter, options: strategicValues },
     { label: 'Expected Outcome', values: outcomeFilter, set: setOutcomeFilter, options: outcomeValues },
     { label: 'POC', values: pocFilter, set: setPocFilter, options: POC_OPTIONS },
     { label: 'Proposal Shared', values: proposalFilter, set: setProposalFilter, options: PROPOSAL_OPTIONS },
   ]
-  const hasActiveFilters = Boolean(search.trim()) || openDateFilter.length > 0 || filterConfigs.some(f => f.values.length)
+  const hasActiveFilters = Boolean(search.trim()) || openDateFilter.length > 0 || noCompanyFilter || filterConfigs.some(f => f.values.length)
   const clearFilters = () => {
-    setSearch(''); setOpenDateFilter([]); filterConfigs.forEach(f => f.set([])); setMoreFiltersOpen(false)
+    setSearch(''); setOpenDateFilter([]); setNoCompanyFilter(false); filterConfigs.forEach(f => f.set([])); setMoreFiltersOpen(false)
   }
 
   // All Deals can now show deals owned by any user, so initials must be
@@ -370,6 +382,7 @@ export default function Deals() {
       opportunityType: opportunityFilter.length ? opportunityFilter.join(',') : undefined,
       strategicImportance: strategicFilter.length ? strategicFilter.join(',') : undefined,
       expectedOutcome: outcomeFilter.length ? outcomeFilter.join(',') : undefined,
+      remarksValues: remarksFilter.length ? remarksFilter : undefined,
       openDate: openDateFilter[0] || undefined,
     }
     const r = await api.get('/deals/export', { params })
@@ -441,6 +454,7 @@ export default function Deals() {
           <FilterDropdown label="Country" options={countryOptions} selected={countryFilter} onChange={setCountryFilter} />
           <FilterDropdown label="Client Type" options={clientTypeValues} selected={clientTypeFilter} onChange={setClientTypeFilter} />
           <FilterDropdown label="Stage" options={stageValues} selected={stageFilter} onChange={setStageFilter} />
+          <FilterDropdown label="Remarks" options={remarksOptions} selected={remarksFilter} onChange={setRemarksFilter} />
           <DateFilterDropdown
             label="Deal date"
             dayLabel="Deal dated"
@@ -469,8 +483,9 @@ export default function Deals() {
           {hasActiveFilters && <button className="clear-filters-btn" onClick={clearFilters}>Clear all</button>}
         </div>
 
-        {(openDateFilter.length > 0 || filterConfigs.some(f => f.values.length)) && (
+        {(openDateFilter.length > 0 || noCompanyFilter || filterConfigs.some(f => f.values.length)) && (
           <div className="active-filter-chips">
+            {noCompanyFilter && <button onClick={() => setNoCompanyFilter(false)} style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626' }}><span>Filter:</span> No company linked <MaterialIcon>close</MaterialIcon></button>}
             {openDateFilter.length > 0 && <button onClick={() => setOpenDateFilter([])}><span>Deal date:</span> {describeDateToken(openDateFilter[0], DATE_OPTIONS)} <MaterialIcon>close</MaterialIcon></button>}
             {filterConfigs.flatMap(f => f.values.map(value => {
               const label = f.options.find(o => o.value === value)?.label || value

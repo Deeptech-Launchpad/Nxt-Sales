@@ -10,6 +10,7 @@ import api from '../api/client'
 import EditColumnsMenu from '../components/EditColumnsMenu'
 import DataImportModal from '../components/modals/DataImportModal'
 import FilterDropdown from '../components/filters/FilterDropdown'
+import DateFilterDropdown from '../components/filters/DateFilterDropdown'
 import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUtils'
 import '../styles/contacts.css'
 
@@ -34,6 +35,22 @@ const CALL_DATE_OPTIONS = [
   { value: 'last_7',    label: 'Last 7 Days'  },
   { value: 'last_30',   label: 'Last 30 Days' },
   { value: 'last_90',   label: 'Last 90 Days' },
+]
+const ANALYSIS_STATUS_OPTIONS = [
+  { value: 'all',          label: 'All Calls'     },
+  { value: 'analysed',     label: 'Analysed'     },
+  { value: 'not_analysed', label: 'Not Analysed' },
+]
+const SENTIMENT_OPTIONS = [
+  { value: 'all',       label: 'All Sentiments' },
+  { value: 'positive',  label: 'Positive'       },
+  { value: 'neutral',   label: 'Neutral'        },
+  { value: 'negative',  label: 'Negative'       },
+]
+const SCORE_OPTIONS = [
+  { value: 'all',  label: 'All Scores'       },
+  { value: 'high', label: 'High Score (≥75)' },
+  { value: 'low',  label: 'Low Score (<75)'  },
 ]
 
 const CALLS_EXPORT_COLUMNS = [
@@ -218,19 +235,30 @@ function ContactHistoryBadge({ value }) {
   )
 }
 
-function AnalysisBadge({ status, title }) {
-  if (!status) return null
+function AnalysisBadge({ status, score, title }) {
+  if (!status || status === 'not_analysed') {
+    return (
+      <span style={{ fontSize: 10.5, fontWeight: 600, color: '#94a3b8', whiteSpace: 'nowrap', background: '#f8fafc', padding: '2px 8px', borderRadius: 99, border: '1px solid #e2e8f0' }}>
+        Not Analysed
+      </span>
+    )
+  }
   const map = {
-    pending:   { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#64748b', label: 'Queued'      },
-    analyzing: { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#2563eb', label: 'Processing…' },
-    completed: { icon: <CheckCircle size={11} />,  color: '#16a34a', label: 'Analyzed'   },
-    failed:    { icon: <XCircle size={11} />,      color: '#dc2626', label: 'Failed'     },
+    pending:   { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#64748b', label: 'Queued' },
+    analyzing: { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#2563eb', label: 'Analysing…' },
+    completed: { icon: <CheckCircle size={11} />, color: '#16a34a', label: score ? `${score} / 100` : 'Completed' },
+    failed:    { icon: <XCircle size={11} />, color: '#dc2626', label: 'Failed' },
   }
   const c = map[status] || map.pending
   return (
     <span
       title={title || undefined}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 600, color: c.color, cursor: title ? 'help' : 'default', whiteSpace: 'nowrap' }}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700,
+        color: c.color, cursor: title ? 'help' : 'default', whiteSpace: 'nowrap',
+        background: status === 'completed' ? '#f0fdf4' : (status === 'failed' ? '#fef2f2' : '#f0f7ff'),
+        padding: '2px 8px', borderRadius: 99, border: `1px solid ${status === 'completed' ? '#bbf7d0' : (status === 'failed' ? '#fecaca' : '#bfdbfe')}`,
+      }}
     >
       {c.icon} {c.label}
     </span>
@@ -624,6 +652,19 @@ function CallsInner() {
   const [directionFilter,  setDirectionFilter]   = useState([])
   const [statusFilter,     setStatusFilter]      = useState([])
   const [dateFilter,       setDateFilter]        = useState([])
+  const [analysisFilter,   setAnalysisFilter]    = useState([])
+  const [sentimentFilter,  setSentimentFilter]   = useState([])
+  const [scoreFilter,      setScoreFilter]       = useState([])
+  const [agentFilter,      setAgentFilter]       = useState([])
+  const [agentOptions,     setAgentOptions]      = useState([])
+
+  useEffect(() => {
+    api.get('/callhippo/agents').then(r => {
+      if (Array.isArray(r.data?.agents)) {
+        setAgentOptions(r.data.agents.map(a => ({ value: a, label: a })))
+      }
+    }).catch(() => {})
+  }, [])
 
   const [visibleColumns, setVisibleColumns] = useState(() => {
     try {
@@ -649,12 +690,16 @@ function CallsInner() {
       ...(directionFilter.length > 0 && { direction: directionFilter.join(',') }),
       ...(statusFilter.length    > 0 && { status:    statusFilter.join(',') }),
       ...(dateFilter.length      > 0 && { callDate:  dateFilter[0] }),
+      ...(analysisFilter.length  > 0 && { analysisStatus: analysisFilter[0] }),
+      ...(sentimentFilter.length > 0 && { sentiment: sentimentFilter[0] }),
+      ...(scoreFilter.length     > 0 && { scoreFilter: scoreFilter[0] }),
+      ...(agentFilter.length     > 0 && { agent: agentFilter[0] }),
     }
     api.get('/callhippo/logs', { params })
       .then(r => { setLogs(r.data.logs || []); setTotal(r.data.total || 0) })
       .catch(() => setLogs([]))
       .finally(() => setLoading(false))
-  }, [debouncedSearch, directionFilter, statusFilter, dateFilter])
+  }, [debouncedSearch, directionFilter, statusFilter, dateFilter, analysisFilter, sentimentFilter, scoreFilter, agentFilter])
 
   // Debounce phone-number search so we don't fire a request per keystroke.
   useEffect(() => {
@@ -662,7 +707,7 @@ function CallsInner() {
     return () => clearTimeout(timer)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [debouncedSearch, directionFilter, statusFilter, dateFilter])
+  useEffect(() => { setPage(1) }, [debouncedSearch, directionFilter, statusFilter, dateFilter, analysisFilter, sentimentFilter, scoreFilter, agentFilter])
 
   useEffect(() => { fetchLogs(page) }, [fetchLogs, page])
 
@@ -709,9 +754,6 @@ function CallsInner() {
     }
   }
 
-  // Export: /callhippo/logs takes no server-side cap on `limit`, unlike the
-  // Inbox endpoint — one request with a high limit covers every matching
-  // call, no pagination loop needed.
   const fetchAllForExport = useCallback(async () => {
     const { data } = await api.get('/callhippo/logs', {
       params: {
@@ -720,10 +762,14 @@ function CallsInner() {
         ...(directionFilter.length > 0 && { direction: directionFilter.join(',') }),
         ...(statusFilter.length    > 0 && { status:    statusFilter.join(',') }),
         ...(dateFilter.length      > 0 && { callDate:  dateFilter[0] }),
+        ...(analysisFilter.length  > 0 && { analysisStatus: analysisFilter[0] }),
+        ...(sentimentFilter.length > 0 && { sentiment: sentimentFilter[0] }),
+        ...(scoreFilter.length     > 0 && { scoreFilter: scoreFilter[0] }),
+        ...(agentFilter.length     > 0 && { agent: agentFilter[0] }),
       },
     })
     return (data.logs || []).map(l => ({ ...l, companyName: l.company?.name || null }))
-  }, [debouncedSearch, directionFilter, statusFilter, dateFilter])
+  }, [debouncedSearch, directionFilter, statusFilter, dateFilter, analysisFilter, sentimentFilter, scoreFilter, agentFilter])
 
   const syncNow = async () => {
     setSyncing(true); setSyncMsg('')
@@ -741,12 +787,35 @@ function CallsInner() {
 
   const handleAnalyze = async (log) => {
     setAnalyzingIds(prev => new Set([...prev, log.id]))
+    setLogs(prev => prev.map(l => l.id === log.id ? { ...l, analysisStatus: 'analyzing' } : l))
     try {
-      await api.post(`/callhippo/analyze/${log.id}`)
-      // optimistically update status
-      setLogs(prev => prev.map(l => l.id === log.id ? { ...l, analysisStatus: 'analyzing' } : l))
+      const res = await api.post(`/callhippo/analyze/${log.id}`)
+      setLogs(prev => prev.map(l => l.id === log.id ? {
+        ...l,
+        analysisStatus: 'completed',
+        analysisResult: res.data.analysisResult,
+      } : l))
     } catch (err) {
-      alert(err?.response?.data?.message || 'Failed to start analysis.')
+      alert(err?.response?.data?.message || 'Failed to analyze call.')
+      setLogs(prev => prev.map(l => l.id === log.id ? { ...l, analysisStatus: 'failed' } : l))
+    } finally {
+      setAnalyzingIds(prev => { const s = new Set(prev); s.delete(log.id); return s })
+    }
+  }
+
+  const handleReanalyze = async (log) => {
+    setAnalyzingIds(prev => new Set([...prev, log.id]))
+    setLogs(prev => prev.map(l => l.id === log.id ? { ...l, analysisStatus: 'analyzing' } : l))
+    try {
+      const res = await api.post(`/callhippo/reanalyze/${log.id}`)
+      setLogs(prev => prev.map(l => l.id === log.id ? {
+        ...l,
+        analysisStatus: 'completed',
+        analysisResult: res.data.analysisResult,
+      } : l))
+    } catch (err) {
+      alert(err?.response?.data?.message || 'Failed to re-analyze call.')
+      setLogs(prev => prev.map(l => l.id === log.id ? { ...l, analysisStatus: 'failed' } : l))
     } finally {
       setAnalyzingIds(prev => { const s = new Set(prev); s.delete(log.id); return s })
     }
@@ -815,10 +884,16 @@ function CallsInner() {
         )
       case 'analysis':
         return log.recordingUrl ? (
-          <AnalysisBadge
-            status={log.analysisStatus}
-            title={log.analysisStatus === 'failed' ? log.analysisError : undefined}
-          />
+          <span
+            onClick={() => log.analysisStatus === 'completed' && navigate(`/calls/${log.id}/analysis`)}
+            style={{ cursor: log.analysisStatus === 'completed' ? 'pointer' : 'default' }}
+          >
+            <AnalysisBadge
+              status={log.analysisStatus}
+              score={log.analysisResult?.overallScore}
+              title={log.analysisStatus === 'failed' ? log.analysisError : undefined}
+            />
+          </span>
         ) : (
           <span style={{ fontSize: 11, color: '#94a3b8' }}>—</span>
         )
@@ -900,11 +975,17 @@ function CallsInner() {
                 style={{ border: 'none', outline: 'none', fontSize: 11, fontFamily: 'inherit', width: 160 }}
               />
             </div>
+            <FilterDropdown label="Analysis" options={ANALYSIS_STATUS_OPTIONS} selected={analysisFilter} onChange={setAnalysisFilter} searchable={false} singleSelect />
+            <FilterDropdown label="Sentiment" options={SENTIMENT_OPTIONS} selected={sentimentFilter} onChange={setSentimentFilter} searchable={false} singleSelect />
+            <FilterDropdown label="Score" options={SCORE_OPTIONS} selected={scoreFilter} onChange={setScoreFilter} searchable={false} singleSelect />
+            {agentOptions.length > 0 && (
+              <FilterDropdown label="Agent" options={agentOptions} selected={agentFilter} onChange={setAgentFilter} searchable={true} singleSelect />
+            )}
             <FilterDropdown label="Direction" options={DIRECTION_OPTIONS} selected={directionFilter} onChange={setDirectionFilter} searchable={false} />
             <FilterDropdown label="Status" options={STATUS_OPTIONS} selected={statusFilter} onChange={setStatusFilter} searchable={false} />
-            <FilterDropdown label="Call Date" options={CALL_DATE_OPTIONS} selected={dateFilter} onChange={setDateFilter} searchable={false} singleSelect />
-            {(directionFilter.length > 0 || statusFilter.length > 0 || dateFilter.length > 0) && (
-              <button className="filter-chip clear-filter-btn" onClick={() => { setDirectionFilter([]); setStatusFilter([]); setDateFilter([]) }}>
+            <DateFilterDropdown label="Call Date" presets={CALL_DATE_OPTIONS} value={dateFilter[0] || ''} onChange={setDateFilter} dayLabel="Called on" yearLabel="Called during" />
+            {(directionFilter.length > 0 || statusFilter.length > 0 || dateFilter.length > 0 || analysisFilter.length > 0 || sentimentFilter.length > 0 || scoreFilter.length > 0 || agentFilter.length > 0) && (
+              <button className="filter-chip clear-filter-btn" onClick={() => { setDirectionFilter([]); setStatusFilter([]); setDateFilter([]); setAnalysisFilter([]); setSentimentFilter([]); setScoreFilter([]); setAgentFilter([]) }}>
                 Clear all
               </button>
             )}
@@ -964,35 +1045,41 @@ function CallsInner() {
                         <td key={f.key} style={CALL_TD_STYLE[f.key]}>{renderCallCell(f, log)}</td>
                       ))}
                       <td>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          {/* Analyze button — only if recording exists and not yet analyzed */}
-                          {log.recordingUrl && !log.analysisStatus && (
-                            <button
-                              className="ch-btn ch-btn-analyze"
-                              onClick={() => handleAnalyze(log)}
-                              disabled={analyzingIds.has(log.id)}
-                            >
-                              <Brain size={11} /> Analyze
-                            </button>
-                          )}
-                          {/* Retry if failed */}
-                          {log.analysisStatus === 'failed' && (
-                            <button
-                              className="ch-btn ch-btn-analyze"
-                              onClick={() => handleAnalyze(log)}
-                              disabled={analyzingIds.has(log.id)}
-                            >
-                              <Brain size={11} /> Retry
-                            </button>
-                          )}
-                          {/* View Details — only when analysis is done */}
-                          {log.analysisStatus === 'completed' && log.analysisResult && (
-                            <button
-                              className="ch-btn ch-btn-details"
-                              onClick={() => setViewLog(log)}
-                            >
-                              <BarChart2 size={11} /> View Details
-                            </button>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          {log.recordingUrl ? (
+                            !log.analysisStatus || log.analysisStatus === 'not_analysed' || log.analysisStatus === 'failed' ? (
+                              <button
+                                className="ch-btn ch-btn-analyze"
+                                onClick={() => handleAnalyze(log)}
+                                disabled={analyzingIds.has(log.id)}
+                              >
+                                <Brain size={11} /> {analyzingIds.has(log.id) ? 'Analysing...' : (log.analysisStatus === 'failed' ? 'Retry Analysis' : 'Analyse Call')}
+                              </button>
+                            ) : log.analysisStatus === 'analyzing' ? (
+                              <button className="ch-btn ch-btn-analyze" disabled>
+                                <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Analysing...
+                              </button>
+                            ) : log.analysisStatus === 'completed' ? (
+                              <>
+                                <button
+                                  className="ch-btn ch-btn-details"
+                                  onClick={() => navigate(`/calls/${log.id}/analysis`)}
+                                >
+                                  <BarChart2 size={11} /> View Analysis
+                                </button>
+                                <button
+                                  className="ch-btn ch-btn-outline"
+                                  onClick={() => handleReanalyze(log)}
+                                  disabled={analyzingIds.has(log.id)}
+                                  title="Re-run AI analysis on this recording"
+                                  style={{ padding: '3px 7px', fontSize: 10 }}
+                                >
+                                  <RefreshCw size={10} style={{ animation: analyzingIds.has(log.id) ? 'spin 1s linear infinite' : 'none' }} /> Re-analyse
+                                </button>
+                              </>
+                            ) : null
+                          ) : (
+                            <span style={{ fontSize: 11, color: '#94a3b8' }}>No recording</span>
                           )}
                         </div>
                       </td>

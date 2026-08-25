@@ -34,6 +34,8 @@ export default function DealsDashboard() {
 
   useEffect(() => {
     let alive = true
+    setLoading(true)
+    setError('')
     api.get('/dashboard/deal-stats')
       .then(response => { if (alive) setStats(response.data) })
       .catch(err => { if (alive) setError(err?.response?.data?.message || 'Could not load deal statistics.') })
@@ -203,7 +205,7 @@ export default function DealsDashboard() {
           </div>
           <div className="dd-unlinked">
             <span><strong>{loading ? '—' : stats?.dealsWithoutCompany || 0}</strong> deals need attention</span>
-            <button type="button" onClick={() => navigate('/deals')}>Review deals <ArrowRight size={14} /></button>
+            <button type="button" onClick={() => navigate('/deals?focus=no_company')}>Review deals <ArrowRight size={14} /></button>
           </div>
         </aside>
       </section>

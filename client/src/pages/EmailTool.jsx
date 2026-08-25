@@ -1592,71 +1592,7 @@ function SettingsSection({ onGmailChange }) {
           </div>
         </div>
 
-        <div className="et-settings-card et-settings-signature">
-          <div className="et-settings-card-head">
-            <div className="et-settings-icon signature"><MaterialIcon name="draw" /></div>
-            <div>
-              <div className="et-settings-title">Email Signature</div>
-              <p>Automatically add a consistent sign-off to every email.</p>
-            </div>
-          </div>
-          <div className="et-form-group">
-            <label className="et-label">Default Signature</label>
-            <textarea
-              className="et-input et-signature-textarea"
-              rows={5}
-              placeholder="e.g. Your Name&#10;Your Title&#10;Company | Phone | Email"
-              value={signature}
-              disabled={loadingSig}
-              onChange={e => setSignature(e.target.value)}
-              style={{ resize: 'vertical', fontFamily: 'Verdana,Arial,sans-serif' }}
-            />
-            <div className="et-help-text">
-              Saved once for your account and automatically added to every outgoing email —
-              from the Email Tool, and from Contact/Company "Log an email" — no need to add it manually each time.
-            </div>
-          </div>
-          <div className="et-form-group">
-            <label className="et-label">Signature Image (optional)</label>
-            {signatureImage && (
-              <div style={{ marginBottom: 8 }}>
-                <img src={signatureImage} alt="Signature" style={{ maxWidth: 280, maxHeight: 120, display: 'block', border: '1px solid #e2e2e2', borderRadius: 4, padding: 4 }} />
-              </div>
-            )}
-            <div className="et-signature-upload-row">
-              <label className="et-signature-upload">
-                <MaterialIcon name="add_photo_alternate" />
-                <span>
-                  <strong>{processingSigImage ? 'Processing image…' : 'Upload signature image'}</strong>
-                  <small>PNG or JPG · automatically compressed</small>
-                </span>
-                <input type="file" accept="image/*" onChange={handleSigImagePick} disabled={processingSigImage || loadingSig} />
-              </label>
-              {signatureImage && (
-                <button type="button" className="et-btn et-btn-secondary" onClick={() => setSignatureImage('')} disabled={processingSigImage}>
-                  <MaterialIcon name="delete" /> Remove
-                </button>
-              )}
-            </div>
-            <div className="et-help-text">
-              e.g. a logo or handwritten-style signature. Shown below your signature text on every outgoing email.
-            </div>
-          </div>
-          <div className="et-signature-preview">
-            <div className="et-settings-divider"><span>Preview</span></div>
-            <div className="et-signature-preview-paper">
-              <div className={!signature ? 'empty' : ''}>
-                {signature || 'Your signature preview will appear here.'}
-              </div>
-              {signatureImage && <img src={signatureImage} alt="Signature preview" />}
-            </div>
-          </div>
-          <div className="et-settings-actions">
-            <button className="et-btn et-btn-primary" style={{ flex: 'none', minWidth: 140 }} onClick={saveSignature} disabled={savingSig || loadingSig}>
-              {savingSig ? 'Saving…' : 'Save Signature'}
-            </button>
-          </div>
-        </div>
+
       </div>
     </div>
   )

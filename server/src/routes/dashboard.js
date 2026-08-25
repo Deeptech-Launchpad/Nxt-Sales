@@ -175,8 +175,16 @@ router.get('/deal-stats', auth, async (req, res) => {
         : new Date(year + 1, 0, 1)
       dateWhere = { openDate: { gte: from, lt: to } }
     }
-    const scoped = (extra = {}) => ({ ...dateWhere, ...extra })
-    const filterActive = Object.keys(dateWhere).length > 0
+    const remarksValues = req.query.remarksValues
+      ? (Array.isArray(req.query.remarksValues) ? req.query.remarksValues : String(req.query.remarksValues).split(','))
+        .map(value => String(value).trim())
+        .filter(Boolean)
+      : []
+    const remarksWhere = remarksValues.length
+      ? { company: { deletedAt: null, remarks: { in: remarksValues, mode: 'insensitive' } } }
+      : {}
+    const scoped = (extra = {}) => ({ ...dateWhere, ...remarksWhere, ...extra })
+    const dateFilterActive = Object.keys(dateWhere).length > 0
 
     const [
       totalDeals,
@@ -214,10 +222,13 @@ router.get('/deal-stats', auth, async (req, res) => {
 
     // Deals with no Deal Open Date - reported so a filtered view can say why
     // the numbers are smaller instead of appearing to lose records.
-    const undatedDeals = filterActive ? await prisma.deal.count({ where: { openDate: null } }) : 0
+    const undatedDeals = dateFilterActive ? await prisma.deal.count({ where: { ...remarksWhere, openDate: null } }) : 0
 
     res.json({
-      filter: filterActive ? { year, month: Number.isFinite(month) ? month : null } : null,
+      filter: (dateFilterActive || remarksValues.length) ? {
+        ...(dateFilterActive && { year, month: Number.isFinite(month) ? month : null }),
+        ...(remarksValues.length && { remarks: remarksValues }),
+      } : null,
       undatedDeals,
       totalDeals,
       activeDeals,
