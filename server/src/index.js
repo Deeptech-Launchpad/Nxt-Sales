@@ -25,6 +25,7 @@ const intelligenceRoutes = require('./routes/intelligence')
 const { startRecycleBinPurgeSweep } = require('./jobs/purgeRecycleBin')
 const { startAutoCompleteOverdueTasksSweep } = require('./jobs/autoCompleteOverdueTasks')
 const { startCallHippoAutoSync } = require('./jobs/callHippoAutoSync')
+const { startGmailAutoSync } = require('./jobs/gmailAutoSync')
 const { initSocket } = require('./realtime/socket')
 
 require('./config/passport')
@@ -70,6 +71,7 @@ const server = app.listen(PORT, () => {
   startRecycleBinPurgeSweep()
   startAutoCompleteOverdueTasksSweep()
   startCallHippoAutoSync()
+  startGmailAutoSync()
 })
 
 initSocket(server)
