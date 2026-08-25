@@ -1399,10 +1399,10 @@ router.get('/conversations', auth, async (req, res) => {
 // without it, Postgres's DISTINCT ON would treat every NULL threadId as the
 // same group and collapse all standalone emails into a single row.
 //
-// The CRM-relevance match runs as a real SQL EXISTS condition (not a
-// post-fetch JS filter), so it applies to the COUNT and the paginated query
-// identically — page/total stay accurate instead of pages coming back
-// short after junk rows are filtered out client-side.
+// The company-association filter is applied in SQL (not as a post-fetch JS
+// filter), so it applies to the COUNT and the paginated query identically —
+// page/total stay accurate instead of pages coming back short after
+// non-CRM rows are dropped client-side.
 router.get('/inbox', auth, async (req, res) => {
   try {
     const page  = Math.max(1, parseInt(req.query.page, 10) || 1)
@@ -1428,15 +1428,18 @@ router.get('/inbox', auth, async (req, res) => {
     // Both surfaces now read the same stored association, so Inbox and
     // Company → Activities → Emails cannot disagree.
     //
-    // `?includeUnassigned=1` opts into seeing everything the matcher could not
-    // place — useful for spotting a company whose address list needs a new
-    // entry, and the only way an unassigned email is ever surfaced.
-    if (String(req.query.onlyUnassigned) === '1') {
-      // The Inbox's "Unassigned" tab: everything the matcher could not place.
-      conditions.push(Prisma.sql`"companyId" IS NULL`)
-    } else if (String(req.query.includeUnassigned) !== '1') {
-      conditions.push(Prisma.sql`"companyId" IS NOT NULL`)
-    }
+    // Unassigned mail is STORED but never DISPLAYED. The CRM exists for
+    // customer correspondence, so personal, internal and vendor mail the
+    // matcher could not place against a saved company address is withheld
+    // from this read path unconditionally — there is deliberately no query
+    // parameter to opt back into seeing it, because any such parameter is a
+    // way for that mail to reach the UI again.
+    //
+    // Nothing is deleted and the sync is unchanged: those rows stay in the
+    // database in full for audit and history. The moment a company gains the
+    // matching address, the matcher links them and they appear here on their
+    // own — hiding is a display rule, not a data change.
+    conditions.push(Prisma.sql`"companyId" IS NOT NULL`)
     const whereClause = Prisma.join(conditions, ' AND ')
 
     const countRows = await prisma.$queryRaw`

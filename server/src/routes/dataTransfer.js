@@ -293,7 +293,11 @@ router.get('/inbox/export', auth, async (req, res) => {
   try {
     const { direction } = req.query
     const rows = await prisma.activity.findMany({
-      where: { type: 'email', ...(direction ? { direction } : {}) },
+      // Mirrors GET /api/email/inbox exactly: only company-associated mail is
+      // exportable. An export that included unassigned rows would hand the
+      // user a file full of the personal/internal email the Inbox itself
+      // deliberately hides — the same leak by a different route.
+      where: { type: 'email', companyId: { not: null }, ...(direction ? { direction } : {}) },
       orderBy: { createdAt: 'desc' },
       include: { company: { select: { name: true } } },
     })
