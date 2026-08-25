@@ -4,6 +4,11 @@ const crypto = require('crypto')
 const { PrismaClient, Prisma } = require('@prisma/client')
 const prisma = new PrismaClient()
 
+// THE canonical company↔email matcher. Every decision about which company an
+// email belongs to — on import, on send, and in the Inbox listing — is made
+// here and nowhere else. See server/src/utils/companyEmailMatcher.js.
+const matcher = require('../utils/companyEmailMatcher')
+
 // ── Email open tracking ──────────────────────────────────────────────────────
 // Public base the recipient's mail client can reach. In production this is the
 // app domain (nginx proxies /api to the backend); in dev it falls back to Vite.
@@ -633,23 +638,42 @@ router.post('/send', auth, async (req, res) => {
       })
     }
 
+    // An email sent from the standalone composer carries no companyId, which
+    // is how outbound mail used to end up permanently orphaned. Run it through
+    // the SAME canonical matcher so it is filed on the way in rather than
+    // waiting to be adopted by a later sync of the right company.
+    let sendCompanyId = companyId || null
+    let sendMatchBasis = companyId ? 'address' : null
+    let resolvedMatchedAddress = sendMatchedAddress
+    if (!sendCompanyId) {
+      const m = await matcher.matchEmail({ from: fromEmail, to, cc })
+      if (m) {
+        sendCompanyId = m.companyId
+        sendMatchBasis = m.basis
+        resolvedMatchedAddress = resolvedMatchedAddress || m.matchedEmail
+      }
+    }
+
     const activity = await prisma.activity.create({
       data: {
         type: 'email',
-        companyId,
+        companyId: sendCompanyId,
         userId: req.user.id,
         title: `Email – ${sendSubject}`,
         body: body || (htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ').trim().slice(0, 2000) : null),
         toEmail: to,
         ccEmail: cc || null,
+        bccEmail: bcc || null,
         fromEmail: fromEmail,
+        mailboxEmail: fromEmail,
         subject: sendSubject,
         emailStatus: 'sent',
         direction: 'outbound',
         messageId: sent.data.id,
         threadId: sent.data.threadId,
         trackingId,
-        matchedCompanyEmail: sendMatchedAddress,
+        matchedCompanyEmail: resolvedMatchedAddress,
+        matchBasis: sendMatchBasis,
         attachments: Array.isArray(attachments) && attachments.length
           ? attachments.map(a => ({ filename: a.filename, size: a.content ? Math.round(a.content.length * 0.75) : 0, mimeType: a.mimeType || null }))
           : undefined,
@@ -714,52 +738,36 @@ function extractAttachments(payload, out = []) {
   return out
 }
 
-// ── Conversation matching rules ────────────────────────────────────────────
-// A message ANCHORS a thread to a company only when the connected mailbox and
-// a company address sit on OPPOSITE ends of that message — one sent it, the
-// other received it. Direction is the entire point of the rule: it is what
-// separates "I corresponded with this company" from "somebody else happened to
-// put us both on the same email".
+// ── Conversation matching ──────────────────────────────────────────────────
+// The old `anchorForAddresses` lived here and implemented one of the two
+// competing rules this rewrite removed: exact address, From/To only, and the
+// mailbox and company required on OPPOSITE ends. The global Inbox meanwhile
+// used a different rule (email OR domain, either end), which is precisely how
+// a message could show in the Inbox yet never under its company.
 //
-// This previously pooled From+To together and asked only whether both addresses
-// appeared *somewhere* in that pool. A group email from an outside sender to a
-// distribution list containing both the connected mailbox and a company address
-// satisfied that test, which is how a batch of unrelated internal team email was
-// imported into a company. Requiring opposite ends closes that hole at the root.
+// Both are now gone. Matching is delegated wholly to companyEmailMatcher, so
+// From, To and Cc are all full matching fields and every caller — import,
+// send, Inbox, reconciliation — agrees by construction.
 //
-// Cc/Bcc are excluded on both sides: being copied on someone else's conversation
-// does not make it part of the company relationship.
-//
-// Returns the matched company address (used for address-level grouping), or null.
-// The company's own saved address order is preserved so re-running a sync always
-// resolves the same anchor for the same message.
-//
-// Used by BOTH the Gmail import path and the reconciliation pass — they must
-// never diverge, or rows that could no longer be imported would survive cleanup.
-function anchorForAddresses(fromRaw, toRaw, userEmail, companyAddresses) {
-  const from = extractAddresses(fromRaw)
-  const to   = extractAddresses(toRaw)
-
-  // user → company
-  if (from.includes(userEmail)) {
-    const anchor = companyAddresses.find(a => to.includes(a))
-    if (anchor) return anchor
-  }
-  // company → user
-  if (to.includes(userEmail)) {
-    const anchor = companyAddresses.find(a => from.includes(a))
-    if (anchor) return anchor
-  }
-  return null
+// The opposite-ends requirement is deliberately NOT carried over: it was
+// added to stop a mass-import incident, but the real defect there was that
+// ANY address on a group email could anchor a thread. The matcher closes that
+// differently and more precisely — only an explicitly saved company address
+// (or an unambiguous, non-free company domain) can match at all, so an
+// unrelated distribution list no longer resolves to a company in the first
+// place.
+function getHeaderFrom(headers, name) {
+  return headers.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value || ''
 }
 
-// Once any single message in a thread anchors, the WHOLE thread is imported —
-// including replies where a participant was only Cc'd — so the conversation is
-// never shown with holes in it.
-function anchorForMessage(msg, userEmail, companyAddresses) {
+// Pulls the header trio the matcher needs out of one Gmail message.
+function headerTripleForMessage(msg) {
   const headers = msg.payload?.headers || []
-  const getHeader = (name) => headers.find(h => h.name?.toLowerCase() === name.toLowerCase())?.value || ''
-  return anchorForAddresses(getHeader('From'), getHeader('To'), userEmail, companyAddresses)
+  return {
+    from: getHeaderFrom(headers, 'From'),
+    to:   getHeaderFrom(headers, 'To'),
+    cc:   getHeaderFrom(headers, 'Cc'),
+  }
 }
 
 // In-process single-flight lock: if a sync for the same company is already
@@ -803,7 +811,7 @@ router.post('/sync', auth, async (req, res) => {
     })
   }
 
-  const lockKey = companyId || [...companyAddresses].sort().join(',')
+  const lockKey = `company:${companyId || [...companyAddresses].sort().join(',')}`
   if (syncInFlight.has(lockKey)) {
     try {
       return res.json(await syncInFlight.get(lockKey))
@@ -819,6 +827,40 @@ router.post('/sync', auth, async (req, res) => {
   } catch (err) {
     console.error('Gmail sync error:', err.message)
     res.status(err.status || 500).json({ message: err.message || 'Failed to sync emails.' })
+  } finally {
+    syncInFlight.delete(lockKey)
+  }
+})
+
+// ── POST /api/email/sync-mailbox ───────────────────────────────────────────
+// Mailbox-wide sync for the calling user's connected Gmail account. This is
+// what makes email arrive WITHOUT anyone opening a particular company — the
+// structural gap behind "historical emails missing" and "future emails not
+// associated". Every message is resolved through the same canonical matcher,
+// so it produces exactly the associations a per-company sync would.
+//
+//   ?days=N  — window (default 30). `days=all` sweeps the whole mailbox and is
+//              what to use for the initial historical import.
+router.post('/sync-mailbox', auth, async (req, res) => {
+  const daysRaw = String(req.body?.days ?? req.query?.days ?? '30').toLowerCase()
+  const gmailQuery = daysRaw === 'all'
+    ? 'in:anywhere'
+    : `newer_than:${Math.min(Math.max(parseInt(daysRaw, 10) || 30, 1), 3650)}d`
+
+  const lockKey = `mailbox:${req.user.id}`
+  if (syncInFlight.has(lockKey)) {
+    try { return res.json(await syncInFlight.get(lockKey)) }
+    catch (err) { return res.status(err.status || 500).json({ message: err.message || 'Failed to sync mailbox.' }) }
+  }
+
+  const own = await ownAddressSet(req.user.id)
+  const runPromise = runEmailSync({ userId: req.user.id, own, mode: 'mailbox', gmailQuery })
+  syncInFlight.set(lockKey, runPromise)
+  try {
+    res.json(await runPromise)
+  } catch (err) {
+    console.error('[Email Sync] mailbox sync error:', err.message)
+    res.status(err.status || 500).json({ message: err.message || 'Failed to sync mailbox.' })
   } finally {
     syncInFlight.delete(lockKey)
   }
@@ -840,7 +882,14 @@ async function listAllMessages(gmail, q) {
   return out
 }
 
-async function runEmailSync({ userId, companyId, companyAddresses, own = new Set() }) {
+async function runEmailSync({
+  userId,
+  companyId = null,
+  companyAddresses = [],
+  own = new Set(),
+  mode = 'company',      // 'company' | 'mailbox'
+  gmailQuery = null,     // mailbox mode: the Gmail search window
+}) {
   const account = await prisma.emailAccount.findFirst({
     where: { userId, provider: 'gmail' },
   })
@@ -872,8 +921,8 @@ async function runEmailSync({ userId, companyId, companyAddresses, own = new Set
 
   try {
     const profile = await gmail.users.getProfile({ userId: 'me' })
-    console.log(`[Email Sync] Connected Gmail: ${profile.data.emailAddress}`)
-    console.log(`[Email Sync] Company addresses: ${companyAddresses.join(', ')}`)
+    console.log(`[Email Sync] ${mode} sync on ${profile.data.emailAddress}` +
+      (mode === 'company' ? ` — company addresses: ${companyAddresses.join(', ')}` : ` — window: ${gmailQuery}`))
   } catch (tokenErr) {
     console.error(`[Email Sync] Token invalid:`, tokenErr.message)
     const err = new Error('Gmail token expired. Please disconnect Gmail and reconnect it.')
@@ -881,14 +930,26 @@ async function runEmailSync({ userId, companyId, companyAddresses, own = new Set
     throw err
   }
 
-  // Candidate discovery casts a WIDE net (from/to/cc/bcc, every address) —
-  // relevance is decided by the anchor rules below, not by the search query.
-  // Anything the search over-collects is filtered out; anything it misses can
-  // never be recovered, so breadth here matters more than precision.
-  const clause = (field) => companyAddresses.map(a => `${field}:${a}`).join(' OR ')
-  const queries = [clause('from'), clause('to'), clause('cc'), clause('bcc')]
+  // Candidate discovery casts a WIDE net — relevance is decided by the
+  // canonical matcher below, never by the search query. Anything the search
+  // over-collects is filtered out; anything it misses can never be recovered,
+  // so breadth here matters more than precision.
+  //
+  // Two modes, ONE downstream pipeline:
+  //   'company' — targeted at one company's saved addresses. Cheap, used by
+  //               the manual "Sync emails" button on a company.
+  //   'mailbox' — the whole mailbox over a time window. This is what makes
+  //               historical and future email arrive without anyone opening a
+  //               particular company (the defect this rewrite fixes).
+  let queries
+  if (mode === 'mailbox') {
+    queries = [gmailQuery || 'newer_than:30d']
+  } else {
+    const clause = (field) => companyAddresses.map(a => `${field}:${a}`).join(' OR ')
+    queries = [clause('from'), clause('to'), clause('cc'), clause('bcc')].map(q => `(${q})`)
+  }
 
-  const found = await Promise.all(queries.map(q => listAllMessages(gmail, `(${q})`)))
+  const found = await Promise.all(queries.map(q => listAllMessages(gmail, q)))
 
   // Keep the candidate message ids per thread — used below to skip threads
   // that are already fully synced without paying for a threads.get round-trip.
@@ -902,7 +963,12 @@ async function runEmailSync({ userId, companyId, companyAddresses, own = new Set
     }
   }
   const threadIds = [...candidatesByThread.keys()]
-  console.log(`[Email Sync] ${candidateCount} candidate hit(s) across ${threadIds.size} thread(s)`)
+  // threadIds is an Array, so `.size` was always undefined here — the log line
+  // read "across undefined thread(s)" on every run.
+  console.log(`[Email Sync] ${candidateCount} candidate hit(s) across ${threadIds.length} thread(s)`)
+
+  // The canonical matcher index, built once for the whole run.
+  const index = await matcher.getIndex()
 
   // One lookup for every candidate message instead of one per message later.
   const allCandidateIds = [...new Set([...candidatesByThread.values()].flatMap(s => [...s]))]
@@ -912,16 +978,16 @@ async function runEmailSync({ userId, companyId, companyAddresses, own = new Set
         select: { messageId: true, threadId: true, companyId: true },
       })
     : []
-  // Only messages ALREADY LINKED TO THIS COMPANY count as "nothing left to do".
-  // Using mere presence in the Activity table (regardless of companyId) made the
-  // fast path below skip threads that still contained unlinked messages — a
-  // message sent from the standalone composer is stored with companyId null, so
-  // the thread looked fully synced, was never re-fetched, and that message stayed
-  // orphaned permanently instead of being adopted.
-  const linkedHereIds = new Set(knownRows.filter(r => r.companyId === companyId).map(r => r.messageId))
-  const threadsLinkedHere = new Set(knownRows.filter(r => r.companyId === companyId).map(r => r.threadId))
+  // A message counts as "nothing left to do" only when it is already stored
+  // AND already carries a company. Treating mere presence in the table as done
+  // is what used to strand messages: one sent from the standalone composer is
+  // stored with companyId null, so its thread looked fully synced, was never
+  // re-fetched, and stayed orphaned permanently.
+  const settledIds = new Set(knownRows.filter(r => r.companyId).map(r => r.messageId))
+  const settledThreads = new Set(knownRows.filter(r => r.companyId).map(r => r.threadId))
 
-  let synced = 0, adopted = 0, skippedThreads = 0, failedThreads = 0, unchangedThreads = 0
+  let synced = 0, adopted = 0, duplicates = 0
+  let skippedThreads = 0, failedThreads = 0, unchangedThreads = 0, unassignedThreads = 0
 
   const processThread = async (threadId) => {
     // Fast path: every candidate message of this thread is already stored and
@@ -932,7 +998,7 @@ async function runEmailSync({ userId, companyId, companyAddresses, own = new Set
     // in the table), so a thread holding any unlinked message is still fetched
     // and that message gets adopted rather than stranded.
     const candidates = candidatesByThread.get(threadId)
-    if (threadsLinkedHere.has(threadId) && [...candidates].every(id => linkedHereIds.has(id))) {
+    if (settledThreads.has(threadId) && [...candidates].every(id => settledIds.has(id))) {
       unchangedThreads++
       return
     }
@@ -944,16 +1010,24 @@ async function runEmailSync({ userId, companyId, companyAddresses, own = new Set
       const threadRes = await gmail.users.threads.get({ userId: 'me', id: threadId, format: 'full' })
       const threadMessages = threadRes.data.messages || []
 
-      // Thread-level anchoring: find the first message that qualifies. If none
-      // does, the entire thread is irrelevant (this is what drops Cc-only
-      // conversations). If one does, EVERY message in the thread is imported
-      // so the conversation is complete — replies and forwards included.
-      let anchorAddress = null
-      for (const msg of threadMessages) {
-        const a = anchorForMessage(msg, userEmail, companyAddresses)
-        if (a) { anchorAddress = a; break }
-      }
-      if (!anchorAddress) { skippedThreads++; return }
+      // Thread-level resolution through THE canonical matcher. The first
+      // message that resolves decides for the whole conversation, so replies
+      // and forwards are never dropped and the thread is never shown with
+      // holes. From/To/Cc are all matching fields, so a company Cc'd on
+      // someone else's thread is now correctly associated (spec §6) — the old
+      // rule fetched those messages and then discarded them.
+      //
+      // A thread that resolves to NO company is still stored, with companyId
+      // null: it belongs in the mailbox record as an unassigned email, and
+      // leaving it out is what made history look incomplete. It simply never
+      // surfaces under a company.
+      const resolved = matcher.matchThread(threadMessages.map(headerTripleForMessage), index)
+      if (!resolved && mode === 'company') { skippedThreads++; return }
+
+      const threadCompanyId   = resolved?.companyId || null
+      const threadMatchedAddr = resolved?.matchedEmail || null
+      const threadMatchBasis  = resolved?.basis || null
+      if (!resolved) unassignedThreads++
 
       // One lookup for the whole thread instead of one query per message.
       const threadMsgIds = threadMessages.map(m => m.id)
@@ -969,66 +1043,96 @@ async function runEmailSync({ userId, companyId, companyAddresses, own = new Set
 
         const existing = existingByMsgId.get(msg.id)
 
-        if (existing) {
-          // Never steal a message that is correctly linked to a DIFFERENT
-          // company (its matched address is still one of that company's own).
-          if (existing.companyId && companyId && existing.companyId !== companyId) {
-            const otherOk = existing.matchedCompanyEmail && !own.has(existing.matchedCompanyEmail)
-            if (otherOk) continue
-          }
+        const rfcId = getHeader('Message-ID') || getHeader('Message-Id') || null
 
-          // ADOPT and CORRECT, never skip. An email sent from the standalone
-          // composer is stored with companyId null, and an email linked while
-          // the company had a bad address carries a stale matchedCompanyEmail.
-          // Re-pointing the existing row keeps its id, trackingId and open
-          // history intact — which is why tracking and the Activity view can
-          // no longer disagree.
+        if (existing) {
+          // ADOPT and CORRECT, never skip. Re-pointing the existing row keeps
+          // its id, trackingId and open history intact — which is why tracking
+          // and the Activity view can no longer disagree.
+          //
+          // The matcher is authoritative, so there is no "don't steal from
+          // another company" special case any more: if it resolves this thread
+          // to company X, X is where it belongs. The old guard existed only
+          // because two different rules could disagree about ownership.
           const patch = {}
-          if (existing.companyId !== companyId && companyId) patch.companyId = companyId
-          // Correct the address bucket whenever it is missing OR no longer one
-          // of the company's saved addresses (the stale-link case).
-          if (existing.matchedCompanyEmail !== anchorAddress &&
-              !companyAddresses.includes(existing.matchedCompanyEmail)) {
-            patch.matchedCompanyEmail = anchorAddress
-          }
+          if (existing.companyId !== threadCompanyId) patch.companyId = threadCompanyId
+          if (existing.matchedCompanyEmail !== threadMatchedAddr) patch.matchedCompanyEmail = threadMatchedAddr
+          if (existing.matchBasis !== threadMatchBasis) patch.matchBasis = threadMatchBasis
           if (!existing.threadId) patch.threadId = threadId
           if (existing.ccEmail == null && getHeader('Cc')) patch.ccEmail = getHeader('Cc')
+          if (existing.bccEmail == null && getHeader('Bcc')) patch.bccEmail = getHeader('Bcc')
+          if (!existing.mailboxEmail) patch.mailboxEmail = userEmail
+          if (!existing.rfcMessageId && rfcId) patch.rfcMessageId = rfcId
           if (existing.attachments == null) {
             const atts = extractAttachments(msg.payload)
             if (atts.length) patch.attachments = atts
           }
           if (Object.keys(patch).length) {
-            await prisma.activity.update({ where: { id: existing.id }, data: patch })
-            adopted++
+            try {
+              await prisma.activity.update({ where: { id: existing.id }, data: patch })
+              adopted++
+            } catch (e) {
+              // A unique clash on rfcMessageId means the same real email is
+              // already stored from another mailbox — drop just that field and
+              // keep the rest of the correction.
+              if (e.code === 'P2002') {
+                delete patch.rfcMessageId
+                if (Object.keys(patch).length) {
+                  await prisma.activity.update({ where: { id: existing.id }, data: patch })
+                  adopted++
+                }
+              } else throw e
+            }
           }
           continue
+        }
+
+        // Cross-mailbox duplicate check (spec §11). Gmail's own message id is
+        // unique per MAILBOX, so once several users' mailboxes are synced the
+        // same real email arrives twice under two different ids. The RFC 5322
+        // Message-ID header is globally unique and is what actually identifies
+        // it. Guarded here in application code AND by a unique index.
+        if (rfcId) {
+          const dupe = await prisma.activity.findUnique({ where: { rfcMessageId: rfcId }, select: { id: true } })
+          if (dupe) { duplicates++; continue }
         }
 
         const subjectRaw = getHeader('Subject') || '(no subject)'
         const dateHeader = getHeader('Date')
         const atts       = extractAttachments(msg.payload)
 
-        await prisma.activity.create({
-          data: {
-            type:        'email',
-            companyId:   companyId || null,
-            userId,
-            title:       `Email – ${subjectRaw}`,
-            body:        extractTextBody(msg.payload) || null,
-            toEmail:     getHeader('To'),
-            ccEmail:     getHeader('Cc') || null,
-            fromEmail:   getHeader('From'),
-            subject:     subjectRaw,
-            emailStatus: isOutbound ? 'sent' : 'received',
-            direction:   isOutbound ? 'outbound' : 'inbound',
-            messageId:   msg.id,
-            threadId,
-            matchedCompanyEmail: anchorAddress,
-            attachments: atts.length ? atts : undefined,
-            createdAt:   dateHeader ? new Date(dateHeader) : new Date(),
-          },
-        })
-        synced++
+        try {
+          await prisma.activity.create({
+            data: {
+              type:        'email',
+              companyId:   threadCompanyId,
+              userId,
+              title:       `Email – ${subjectRaw}`,
+              body:        extractTextBody(msg.payload) || null,
+              toEmail:     getHeader('To'),
+              ccEmail:     getHeader('Cc') || null,
+              bccEmail:    getHeader('Bcc') || null,
+              fromEmail:   getHeader('From'),
+              subject:     subjectRaw,
+              emailStatus: isOutbound ? 'sent' : 'received',
+              direction:   isOutbound ? 'outbound' : 'inbound',
+              messageId:   msg.id,
+              rfcMessageId: rfcId,
+              threadId,
+              matchedCompanyEmail: threadMatchedAddr,
+              matchBasis:  threadMatchBasis,
+              mailboxEmail: userEmail,
+              attachments: atts.length ? atts : undefined,
+              createdAt:   dateHeader ? new Date(dateHeader) : new Date(),
+            },
+          })
+          synced++
+        } catch (e) {
+          // Lost a race against a concurrent sync of the same message — the
+          // row exists, which is the outcome we wanted anyway.
+          if (e.code === 'P2002') duplicates++
+          else throw e
+        }
       }
     } catch (threadErr) {
       failedThreads++
@@ -1075,24 +1179,33 @@ async function runEmailSync({ userId, companyId, companyAddresses, own = new Set
     }
     const staleIds = []
     for (const rows of byThread.values()) {
-      // Exactly the rule used on import (anchorForAddresses) — applied to the
-      // stored headers. Keeping these identical is what makes the module
-      // self-healing: if the matching rules tighten, a re-sync releases rows
-      // that would no longer qualify, instead of leaving them linked forever.
-      const threadStillQualifies = rows.some(r => anchorForAddresses(r.fromEmail, r.toEmail, userEmail, companyAddresses))
-      if (!threadStillQualifies) staleIds.push(...rows.map(r => r.id))
+      // Exactly the rule used on import — THE canonical matcher, applied to
+      // the stored headers. Keeping these identical is what makes the module
+      // self-healing: if a company's addresses change, a re-sync releases rows
+      // that no longer qualify instead of leaving them linked forever.
+      const stillOurs = rows.some(r => {
+        const m = matcher.matchHeaders({ from: r.fromEmail, to: r.toEmail, cc: r.ccEmail }, index)
+        return m && m.companyId === companyId
+      })
+      if (!stillOurs) staleIds.push(...rows.map(r => r.id))
     }
     if (staleIds.length) {
+      // Wrongly-linked rows are UNLINKED, never deleted: the row, its
+      // trackingId and its open history all survive, and the right company can
+      // claim it on a later sync.
       const r = await prisma.activity.updateMany({
         where: { id: { in: staleIds } },
-        data: { companyId: null, matchedCompanyEmail: null },
+        data: { companyId: null, matchedCompanyEmail: null, matchBasis: null },
       })
       unlinked = r.count
     }
   }
 
-  console.log(`[Email Sync] Done: created=${synced}, adopted=${adopted}, unlinked=${unlinked}, threadsUnchanged=${unchangedThreads}, threadsSkipped=${skippedThreads}, threadsFailed=${failedThreads}`)
-  return { synced, adopted, unlinked, removed: 0, total: candidateCount, unchangedThreads, skippedThreads, failedThreads }
+  console.log(`[Email Sync] Done (${mode}): created=${synced}, adopted=${adopted}, duplicates=${duplicates}, unlinked=${unlinked}, threadsUnchanged=${unchangedThreads}, threadsUnassigned=${unassignedThreads}, threadsSkipped=${skippedThreads}, threadsFailed=${failedThreads}`)
+  return {
+    synced, adopted, duplicates, unlinked, removed: 0, total: candidateCount,
+    unchangedThreads, skippedThreads, failedThreads, unassignedThreads, mode,
+  }
 }
 
 // ── Conversation hierarchy: Company → Email Address → Thread → Messages ─────
@@ -1255,58 +1368,20 @@ router.get('/conversations', auth, async (req, res) => {
   }
 })
 
-// ── CRM-relevance matching (Inbox business rule) ────────────────────────────
-// Inbox must show ONLY conversations involving a CRM company/deal contact —
-// never the connected mailbox's personal mail, newsletters, or notification
-// senders (GitHub, Google, ChatGPT, Adobe, UiPath, etc). This is purely a
-// listing filter: it does not touch how emails are stored or synced, and an
-// Activity row that fails this match still exists untouched in the table —
-// it is simply excluded from this one view.
+// The former `getCrmAddresses()` / `crmAddressCache` lived here. It was the
+// SECOND, competing matcher: company email OR company domain OR deal contact
+// email OR deal domain, in either direction. Because the import path used a
+// stricter, different rule, a message could pass this filter and appear in the
+// Inbox while never being linked to any company — the exact inconsistency this
+// rewrite removes.
 //
-// "Known CRM identifier" = a company's saved email(s)/domain, or a deal's
-// contact email/domain — matched live against current data (not the
-// possibly-stale companyId/matchedCompanyEmail an old sync recorded), so the
-// filter self-heals the same way /sync's reconciliation pass already does:
-// if a company's address changes, Inbox reflects that on the very next call.
-//
-// Cached briefly rather than re-queried on every keystroke/page click — the
-// same large-table-refetch concern noted below (Companies can run 16,000+
-// rows), except here it is ONE lightweight, capped-lifetime query instead of
-// a per-request full fetch.
-let crmAddressCache = { emails: new Set(), domains: new Set(), expiresAt: 0 }
-const CRM_ADDRESS_TTL_MS = 60_000
-
-function addKnownDomain(set, v) {
-  if (typeof v !== 'string' || !v.trim()) return
-  const d = v.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
-  if (d) set.add(d)
-}
-
-async function getCrmAddresses() {
-  if (Date.now() < crmAddressCache.expiresAt) return crmAddressCache
-
-  const [companies, deals] = await Promise.all([
-    prisma.company.findMany({ where: { deletedAt: null }, select: { email: true, emails: true, domain: true } }),
-    prisma.deal.findMany({ select: { contactEmail: true, domainName: true } }),
-  ])
-
-  const emails = new Set()
-  const domains = new Set()
-  const addEmail = (v) => { if (typeof v === 'string' && v.trim()) emails.add(v.trim().toLowerCase()) }
-
-  for (const c of companies) {
-    addEmail(c.email)
-    if (Array.isArray(c.emails)) c.emails.forEach(addEmail)
-    addKnownDomain(domains, c.domain)
-  }
-  for (const d of deals) {
-    addEmail(d.contactEmail)
-    addKnownDomain(domains, d.domainName)
-  }
-
-  crmAddressCache = { emails, domains, expiresAt: Date.now() + CRM_ADDRESS_TTL_MS }
-  return crmAddressCache
-}
+// Inbox relevance is now the stored company association produced by the one
+// canonical matcher (companyEmailMatcher.js), so both surfaces read the same
+// records. Deal-contact-only matching is deliberately not carried over:
+// spec §13 makes the company's explicitly configured addresses the source of
+// truth, and a deal's contact address that matters should be saved on its
+// company — where it now also drives the company association, not just a
+// listing filter.
 
 // GET /api/email/inbox — global, cross-company inbox (Inbox module).
 // Unlike /conversations above (which buckets threads under one company's
@@ -1334,13 +1409,6 @@ router.get('/inbox', auth, async (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50))
     const { search, direction, companyId, dateFrom, dateTo } = req.query
 
-    const { emails: crmEmails, domains: crmDomains } = await getCrmAddresses()
-    // No CRM data at all → nothing can qualify (rather than every message
-    // vacuously "matching" an empty rule set).
-    if (crmEmails.size === 0 && crmDomains.size === 0) {
-      return res.json({ items: [], total: 0, page, pages: 1 })
-    }
-
     const conditions = [Prisma.sql`type = 'email'`]
     if (direction) conditions.push(Prisma.sql`direction = ${direction}`)
     if (companyId) conditions.push(Prisma.sql`"companyId" = ${companyId}`)
@@ -1350,15 +1418,25 @@ router.get('/inbox', auth, async (req, res) => {
     }
     if (dateFrom) conditions.push(Prisma.sql`"createdAt" >= ${new Date(dateFrom)}`)
     if (dateTo) conditions.push(Prisma.sql`"createdAt" <= ${new Date(dateTo)}`)
-    // At least one participant (From or To) must resolve to a known CRM
-    // email or domain. Same address-extraction rule as extractAddresses()
-    // above (identical character class), applied here as SQL so it can run
-    // as one EXISTS per row instead of fetching every row into Node first.
-    conditions.push(Prisma.sql`EXISTS (
-      SELECT 1 FROM regexp_matches(COALESCE("fromEmail", '') || ' ' || COALESCE("toEmail", ''), ${EMAIL_ADDR_RE.source}, 'g') AS addr
-      WHERE lower(addr[1]) = ANY(${[...crmEmails]}::text[])
-         OR lower(split_part(addr[1], '@', 2)) = ANY(${[...crmDomains]}::text[])
-    )`)
+    // CRM relevance is now simply "the canonical matcher associated it with a
+    // company". This replaces the old inline email-OR-domain SQL rule, which
+    // was the SECOND matcher in the system and the direct cause of the
+    // reported inconsistency: it could qualify a message for the Inbox that
+    // the import rule had refused to link to any company, so the same email
+    // appeared here and nowhere else.
+    //
+    // Both surfaces now read the same stored association, so Inbox and
+    // Company → Activities → Emails cannot disagree.
+    //
+    // `?includeUnassigned=1` opts into seeing everything the matcher could not
+    // place — useful for spotting a company whose address list needs a new
+    // entry, and the only way an unassigned email is ever surfaced.
+    if (String(req.query.onlyUnassigned) === '1') {
+      // The Inbox's "Unassigned" tab: everything the matcher could not place.
+      conditions.push(Prisma.sql`"companyId" IS NULL`)
+    } else if (String(req.query.includeUnassigned) !== '1') {
+      conditions.push(Prisma.sql`"companyId" IS NOT NULL`)
+    }
     const whereClause = Prisma.join(conditions, ' AND ')
 
     const countRows = await prisma.$queryRaw`
@@ -1613,3 +1691,8 @@ router.get('/deliverability/check', auth, async (req, res) => {
 })
 
 module.exports = router
+// Exposed for the background mailbox sync job (jobs/gmailAutoSync.js), which
+// must drive the SAME pipeline as the HTTP routes rather than reimplementing
+// any part of it.
+module.exports.runEmailSync = runEmailSync
+module.exports.ownAddressSet = ownAddressSet
