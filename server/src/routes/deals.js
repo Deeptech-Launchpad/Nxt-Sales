@@ -35,11 +35,35 @@ function buildDealData(body) {
   if (body.proposalShared !== undefined) data.proposalShared = !!body.proposalShared
   if (body.pocReceivedDate !== undefined) data.pocReceivedDate = body.pocReceivedDate ? new Date(body.pocReceivedDate) : null
   if (body.pocDeliveredDate !== undefined) data.pocDeliveredDate = body.pocDeliveredDate ? new Date(body.pocDeliveredDate) : null
+  if (body.openDate !== undefined) data.openDate = body.openDate ? new Date(body.openDate) : null
   return data
 }
 
+function dealDateRange(token) {
+  if (!token) return null
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const addDays = (date, days) => new Date(date.getTime() + days * 86400000)
+  if (token === 'today') return [today, addDays(today, 1)]
+  if (token === 'yesterday') return [addDays(today, -1), today]
+  if (token === 'this_week') {
+    const monday = addDays(today, -((today.getDay() + 6) % 7))
+    return [monday, addDays(monday, 7)]
+  }
+  const relative = String(token).match(/^last_(\d+)$/)
+  if (relative) return [new Date(now.getTime() - Number(relative[1]) * 86400000), new Date(now.getTime() + 1)]
+  const range = String(token).match(/^(\d{4})-(\d{2})-(\d{2})\.\.(\d{4})-(\d{2})-(\d{2})$/)
+  if (range) return [new Date(+range[1], +range[2] - 1, +range[3]), addDays(new Date(+range[4], +range[5] - 1, +range[6]), 1)]
+  const day = String(token).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (day) { const start = new Date(+day[1], +day[2] - 1, +day[3]); return [start, addDays(start, 1)] }
+  const month = String(token).match(/^(\d{4})-(\d{2})$/)
+  if (month) return [new Date(+month[1], +month[2] - 1, 1), new Date(+month[1], +month[2], 1)]
+  if (/^\d{4}$/.test(String(token))) return [new Date(+token, 0, 1), new Date(+token + 1, 0, 1)]
+  return null
+}
+
 function buildDealWhere(query, userId) {
-  const { companyId, view, search, country, clientType, stage, opportunityType, strategicImportance, expectedOutcome } = query
+  const { companyId, view, search, country, clientType, stage, opportunityType, strategicImportance, expectedOutcome, openDate } = query
   const where = {}
 
   if (companyId) {
@@ -75,6 +99,16 @@ function buildDealWhere(query, userId) {
     const list = Array.isArray(expectedOutcome) ? expectedOutcome : expectedOutcome.split(',')
     where.expectedOutcome = { in: list }
   }
+  const dateRange = dealDateRange(openDate)
+  if (dateRange) {
+    const dateCondition = {
+      OR: [
+        { openDate: { gte: dateRange[0], lt: dateRange[1] } },
+        { openDate: null, createdAt: { gte: dateRange[0], lt: dateRange[1] } },
+      ],
+    }
+    where.AND = [...(where.AND || []), dateCondition]
+  }
 
   if (search && search.trim()) {
     const q = search.trim()
@@ -86,7 +120,7 @@ function buildDealWhere(query, userId) {
       { domainName: { contains: q, mode: 'insensitive' } },
     ]
     if (where.OR) {
-      where.AND = [{ OR: searchCondition }]
+      where.AND = [...(where.AND || []), { OR: searchCondition }]
     } else {
       where.OR = searchCondition
     }

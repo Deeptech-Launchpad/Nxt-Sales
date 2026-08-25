@@ -77,7 +77,7 @@ export function describeDateToken(v, presets = []) {
   return v
 }
 
-export default function DateFilterDropdown({ label = 'Create date', presets = [], value = '', onChange }) {
+export default function DateFilterDropdown({ label = 'Create date', presets = [], value = '', onChange, dayLabel = 'Created on', yearLabel = 'Created during' }) {
   const [open, setOpen] = useState(false)
   const [tab, setTab]   = useState(() => tabForValue(value))
   const ref = useRef(null)
@@ -162,7 +162,7 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
 
             {tab === 'day' && (
               <div>
-                <label style={fieldLabel}>Created on</label>
+                <label style={fieldLabel}>{dayLabel}</label>
                 <input
                   type="date"
                   value={dayValue}
@@ -207,7 +207,7 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
 
             {tab === 'year' && (
               <div>
-                <label style={fieldLabel}>Created during</label>
+                <label style={fieldLabel}>{yearLabel}</label>
                 <select value={yearValue} onChange={e => apply(e.target.value)} style={inputStyle}>
                   <option value="">Year…</option>
                   {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}

@@ -8,6 +8,7 @@ import DealImportModal from '../components/modals/DealImportModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
 import DealBoard from '../components/DealBoard'
 import FilterDropdown from '../components/filters/FilterDropdown'
+import DateFilterDropdown, { describeDateToken } from '../components/filters/DateFilterDropdown'
 import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import { renderCustomCell } from '../utils/customFieldRender'
 import { formatCurrency } from '../utils/formatCurrency'
@@ -31,6 +32,40 @@ const DEAL_OWNER_COLUMN = { key: 'ownerId', label: 'Deal Owner' }
 const DEAL_FLAGS_COLUMN = { key: '_flags', label: 'POC / Proposal Shared' }
 const POC_OPTIONS      = [{ value: 'yes', label: 'POC done' }, { value: 'no', label: 'No POC' }]
 const PROPOSAL_OPTIONS = [{ value: 'yes', label: 'Proposal shared' }, { value: 'no', label: 'Not shared' }]
+const DATE_OPTIONS = [
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'this_week', label: 'This Week' },
+  { value: 'last_7', label: 'Last 7 Days' },
+  { value: 'last_14', label: 'Last 14 Days' },
+  { value: 'last_30', label: 'Last 30 Days' },
+  { value: 'last_90', label: 'Last 90 Days' },
+  { value: 'last_365', label: 'Last 12 Months' },
+]
+
+function dateRangeForToken(token) {
+  if (!token) return null
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const plusDays = (date, days) => new Date(date.getTime() + days * 86400000)
+  if (token === 'today') return [today, plusDays(today, 1)]
+  if (token === 'yesterday') return [plusDays(today, -1), today]
+  if (token === 'this_week') {
+    const mondayOffset = (today.getDay() + 6) % 7
+    const monday = plusDays(today, -mondayOffset)
+    return [monday, plusDays(monday, 7)]
+  }
+  const relative = token.match(/^last_(\d+)$/)
+  if (relative) return [new Date(now.getTime() - Number(relative[1]) * 86400000), new Date(now.getTime() + 1)]
+  const range = token.match(/^(\d{4})-(\d{2})-(\d{2})\.\.(\d{4})-(\d{2})-(\d{2})$/)
+  if (range) return [new Date(+range[1], +range[2] - 1, +range[3]), plusDays(new Date(+range[4], +range[5] - 1, +range[6]), 1)]
+  const day = token.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (day) { const start = new Date(+day[1], +day[2] - 1, +day[3]); return [start, plusDays(start, 1)] }
+  const month = token.match(/^(\d{4})-(\d{2})$/)
+  if (month) return [new Date(+month[1], +month[2] - 1, 1), new Date(+month[1], +month[2], 1)]
+  if (/^\d{4}$/.test(token)) return [new Date(+token, 0, 1), new Date(+token + 1, 0, 1)]
+  return null
+}
 const MaterialIcon = ({ children }) => <span className="material-symbols-rounded" aria-hidden="true">{children}</span>
 
 function DealExportMenu({ fetchAllForExport, columns }) {
@@ -103,6 +138,7 @@ export default function Deals() {
   const [outcomeFilter, setOutcomeFilter] = useState([])
   const [pocFilter, setPocFilter] = useState([])
   const [proposalFilter, setProposalFilter] = useState([])
+  const [openDateFilter, setOpenDateFilter] = useState([])
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false)
   const moreFiltersRef = useRef(null)
   const [dealsTab, setDealsTab]   = useState('all') // 'all' | 'mine'
@@ -253,7 +289,13 @@ export default function Deals() {
       const matchesOutcome = outcomeFilter.length === 0 || outcomeFilter.includes(d.expectedOutcome)
       const matchesPoc = pocFilter.length === 0 || pocFilter[0] === (d.poc ? 'yes' : 'no')
       const matchesProposal = proposalFilter.length === 0 || proposalFilter[0] === (d.proposalShared ? 'yes' : 'no')
-      return matchesSearch && matchesCountry && matchesClientType && matchesStage && matchesOpportunity && matchesStrategic && matchesOutcome && matchesPoc && matchesProposal
+      const dateRange = dateRangeForToken(openDateFilter[0])
+      // Older imported deals may not have an explicit Open Date. Falling back
+      // to their Created Date keeps the filter useful without rewriting data;
+      // newly created/edited deals always prefer the real Open Date.
+      const dealDate = d.openDate ? new Date(d.openDate) : (d.createdAt ? new Date(d.createdAt) : null)
+      const matchesOpenDate = !dateRange || (dealDate && dealDate >= dateRange[0] && dealDate < dateRange[1])
+      return matchesSearch && matchesCountry && matchesClientType && matchesStage && matchesOpportunity && matchesStrategic && matchesOutcome && matchesPoc && matchesProposal && matchesOpenDate
     })
   })()
 
@@ -267,9 +309,9 @@ export default function Deals() {
     { label: 'POC', values: pocFilter, set: setPocFilter, options: POC_OPTIONS },
     { label: 'Proposal Shared', values: proposalFilter, set: setProposalFilter, options: PROPOSAL_OPTIONS },
   ]
-  const hasActiveFilters = Boolean(search.trim()) || filterConfigs.some(f => f.values.length)
+  const hasActiveFilters = Boolean(search.trim()) || openDateFilter.length > 0 || filterConfigs.some(f => f.values.length)
   const clearFilters = () => {
-    setSearch(''); filterConfigs.forEach(f => f.set([])); setMoreFiltersOpen(false)
+    setSearch(''); setOpenDateFilter([]); filterConfigs.forEach(f => f.set([])); setMoreFiltersOpen(false)
   }
 
   // All Deals can now show deals owned by any user, so initials must be
@@ -328,6 +370,7 @@ export default function Deals() {
       opportunityType: opportunityFilter.length ? opportunityFilter.join(',') : undefined,
       strategicImportance: strategicFilter.length ? strategicFilter.join(',') : undefined,
       expectedOutcome: outcomeFilter.length ? outcomeFilter.join(',') : undefined,
+      openDate: openDateFilter[0] || undefined,
     }
     const r = await api.get('/deals/export', { params })
     return r.data.deals || []
@@ -398,6 +441,14 @@ export default function Deals() {
           <FilterDropdown label="Country" options={countryOptions} selected={countryFilter} onChange={setCountryFilter} />
           <FilterDropdown label="Client Type" options={clientTypeValues} selected={clientTypeFilter} onChange={setClientTypeFilter} />
           <FilterDropdown label="Stage" options={stageValues} selected={stageFilter} onChange={setStageFilter} />
+          <DateFilterDropdown
+            label="Deal date"
+            dayLabel="Deal dated"
+            yearLabel="Deal dated during"
+            presets={DATE_OPTIONS}
+            value={openDateFilter[0] || ''}
+            onChange={setOpenDateFilter}
+          />
 
           <div className="more-filters-wrap" ref={moreFiltersRef}>
             <button className={`more-filters-btn${moreFiltersOpen ? ' active' : ''}`} onClick={() => setMoreFiltersOpen(v => !v)}><MaterialIcon>tune</MaterialIcon> More filters <MaterialIcon>keyboard_arrow_down</MaterialIcon></button>
@@ -418,8 +469,9 @@ export default function Deals() {
           {hasActiveFilters && <button className="clear-filters-btn" onClick={clearFilters}>Clear all</button>}
         </div>
 
-        {filterConfigs.some(f => f.values.length) && (
+        {(openDateFilter.length > 0 || filterConfigs.some(f => f.values.length)) && (
           <div className="active-filter-chips">
+            {openDateFilter.length > 0 && <button onClick={() => setOpenDateFilter([])}><span>Deal date:</span> {describeDateToken(openDateFilter[0], DATE_OPTIONS)} <MaterialIcon>close</MaterialIcon></button>}
             {filterConfigs.flatMap(f => f.values.map(value => {
               const label = f.options.find(o => o.value === value)?.label || value
               return <button key={`${f.label}-${value}`} onClick={() => f.set(f.values.filter(v => v !== value))}><span>{f.label}:</span> {label} <MaterialIcon>close</MaterialIcon></button>
