@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  AlertTriangle, ArrowRight, Briefcase, Building2, CalendarCheck, Check,
-  CheckCircle, ChevronRight, Clock3, Mail, PhoneCall, Plus, Sparkles,
-  Quote, RefreshCw, Target, TrendingUp, Trophy,
+  AlertTriangle, ArrowRight, Briefcase, Building2, CalendarCheck,
+  CheckCircle, ChevronRight, Mail, PhoneCall, Plus, Sparkles,
+  Quote, RefreshCw, Target, TrendingUp, Trophy, Flame, Play, Zap,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
@@ -66,6 +66,10 @@ export default function Dashboard() {
   const [kpisLoading, setKpisLoading] = useState(true)
   const [profileStyle, setProfileStyle] = useState({ avatar: '', coverQuote: '' })
   const [motivation, setMotivation] = useState(() => getMotivationQuote())
+  const [nextActions, setNextActions] = useState([])
+  const [actionsLoading, setActionsLoading] = useState(true)
+  const [actionBusy, setActionBusy] = useState('')
+  const [actionNotice, setActionNotice] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -75,6 +79,34 @@ export default function Dashboard() {
       .finally(() => { if (alive) setDealsLoading(false) })
     return () => { alive = false }
   }, [])
+
+  const loadNextActions = () => {
+    setActionsLoading(true)
+    return api.get('/dashboard/next-actions')
+      .then(response => setNextActions(response.data?.actions || []))
+      .catch(() => setNextActions([]))
+      .finally(() => setActionsLoading(false))
+  }
+
+  useEffect(() => { loadNextActions() }, [])
+
+  const startFollowUp = async (item) => {
+    if (item.sequence) {
+      navigate('/tasks')
+      return
+    }
+    setActionBusy(item.company.id)
+    setActionNotice('')
+    try {
+      const response = await api.post('/dashboard/follow-up-sequences', { companyId: item.company.id })
+      setActionNotice(response.data?.message || 'Follow-up plan started.')
+      await loadNextActions()
+    } catch (error) {
+      setActionNotice(error.response?.data?.message || 'Could not start the follow-up plan.')
+    } finally {
+      setActionBusy('')
+    }
+  }
 
   useEffect(() => {
     let alive = true
@@ -169,29 +201,38 @@ export default function Dashboard() {
       </section>
 
       <section className="md-dashboard-grid md-reveal md-delay-2">
-        <article className="md-card md-tasks-card">
+        <article className="md-card md-tasks-card md-best-actions-card">
           <header className="md-card-head">
             <div>
-              <span className="md-section-kicker">Priority queue</span>
-              <h2>Today’s tasks <em>{!kpisLoading && todayTasks.length}</em></h2>
-              <p>Stay focused on the next best actions.</p>
+              <span className="md-section-kicker"><Zap size={10} /> Smart priority queue</span>
+              <h2>Today’s best actions <em>{!actionsLoading && nextActions.length}</em></h2>
+              <p>Ranked using live engagement, pipeline progress and urgency.</p>
             </div>
-            <button type="button" className="md-text-action" onClick={() => navigate('/tasks')}>View all <ArrowRight size={14} /></button>
+            <button type="button" className="md-text-action" onClick={loadNextActions}><RefreshCw size={13} /> Refresh</button>
           </header>
 
-          <div className="md-task-list">
-            {kpisLoading ? <ListSkeleton /> : todayTasks.length ? todayTasks.map((task, index) => (
-              <button type="button" className="md-task-row" key={task.id} onClick={() => task.company?.id ? navigate(`/companies/${task.company.id}`) : navigate('/tasks')}>
-                <span className="md-task-check"><Check size={14} /></span>
-                <span className="md-task-copy">
-                  <strong>{task.title || 'Untitled task'}</strong>
-                  <small>{task.company?.name || 'General task'}{task.assignedTo?.name ? ` · ${task.assignedTo.name}` : ''}</small>
-                </span>
-                <span className="md-task-time"><Clock3 size={13} /> {new Date(task.dueDate).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-                <span className="md-task-order">{String(index + 1).padStart(2, '0')}</span>
-              </button>
+          {actionNotice && <div className="md-action-notice"><CheckCircle size={14} /> {actionNotice}</div>}
+          <div className="md-best-action-list">
+            {actionsLoading ? <ListSkeleton /> : nextActions.length ? nextActions.slice(0, 6).map((item, index) => (
+              <div className="md-best-action" key={item.company.id}>
+                <button type="button" className="md-best-action-main" onClick={() => navigate(item.action.path)}>
+                  <span className={`md-lead-score md-lead-score--${item.temperature.toLowerCase()}`}>
+                    {item.temperature === 'Hot' ? <Flame size={13} /> : <TrendingUp size={13} />}
+                    <strong>{item.score}</strong><small>{item.temperature}</small>
+                  </span>
+                  <span className="md-best-action-copy">
+                    <span><b>{String(index + 1).padStart(2, '0')}</b>{item.company.name}</span>
+                    <strong>{item.action.title}</strong>
+                    <small>{item.action.reason}</small>
+                    <em>{item.signals.slice(0, 2).map(signal => signal.label).join(' · ')}</em>
+                  </span>
+                </button>
+                <button type="button" className={`md-sequence-action${item.sequence ? ' is-active' : ''}`} disabled={actionBusy === item.company.id} onClick={() => startFollowUp(item)}>
+                  {item.sequence ? <><CheckCircle size={13} /> Step {item.sequence.currentStep}/{item.sequence.totalSteps}</> : <><Play size={13} /> Start follow-up</>}
+                </button>
+              </div>
             )) : (
-              <div className="md-empty-state"><span><CheckCircle size={21} /></span><div><strong>You’re all caught up</strong><p>No tasks are due today.</p></div></div>
+              <div className="md-empty-state"><span><CheckCircle size={21} /></span><div><strong>Priority queue is clear</strong><p>New activity will create fresh recommendations.</p></div></div>
             )}
           </div>
         </article>

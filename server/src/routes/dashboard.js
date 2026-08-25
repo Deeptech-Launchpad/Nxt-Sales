@@ -1,8 +1,90 @@
 const router = require('express').Router()
 const auth   = require('../middleware/authMiddleware')
 const { PrismaClient } = require('@prisma/client')
+const { scoreCompany } = require('../utils/leadScoring')
+const { processFollowUpEnrollment, STEPS } = require('../jobs/followUpSequences')
 
 const prisma = new PrismaClient()
+
+// GET /api/dashboard/next-actions — a compact, explainable priority queue.
+// Scores are derived from CRM facts (pipeline progress, engagement, overdue
+// work and data readiness), so every recommendation can show why it ranked.
+router.get('/next-actions', auth, async (req, res) => {
+  try {
+    const recentCutoff = new Date(Date.now() - 45 * 86400000)
+    const companies = await prisma.company.findMany({
+      where: {
+        deletedAt: null,
+        OR: [
+          { deals: { some: { stage: { notIn: ['Won', 'Lost'] } } } },
+          { activities: { some: { createdAt: { gte: recentCutoff } } } },
+          { activities: { some: { type: 'task', taskStatus: { not: 'completed' }, dueDate: { lte: new Date() } } } },
+          { createdAt: { gte: recentCutoff } },
+        ],
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 160,
+      include: {
+        deals: { where: { stage: { notIn: ['Won', 'Lost'] } }, orderBy: { updatedAt: 'desc' } },
+        activities: { orderBy: { createdAt: 'desc' }, take: 20 },
+        followUpEnrollments: { where: { userId: req.user.id, status: 'active' }, take: 1 },
+      },
+    })
+
+    const actions = companies
+      .map(company => {
+        const result = scoreCompany(company)
+        const enrollment = company.followUpEnrollments[0]
+        return {
+          company: { id: company.id, name: company.name, email: company.email, industry: company.industry },
+          score: result.score,
+          temperature: result.temperature,
+          signals: result.signals,
+          action: result.action,
+          deal: result.bestDeal ? { id: result.bestDeal.id, title: result.bestDeal.title, stage: result.bestDeal.stage, value: result.bestDeal.value, currency: result.bestDeal.currency } : null,
+          sequence: enrollment ? { id: enrollment.id, currentStep: enrollment.currentStep, totalSteps: STEPS.length, nextRunAt: enrollment.nextRunAt } : null,
+        }
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+
+    res.json({ actions, generatedAt: new Date(), methodology: 'CRM activity, engagement, pipeline progress and urgency' })
+  } catch (err) {
+    console.error('[Dashboard] next-actions error:', err.message)
+    res.status(500).json({ message: 'Unable to build the priority queue.' })
+  }
+})
+
+router.post('/follow-up-sequences', auth, async (req, res) => {
+  try {
+    const { companyId } = req.body
+    const company = await prisma.company.findFirst({ where: { id: companyId, deletedAt: null }, select: { id: true } })
+    if (!company) return res.status(404).json({ message: 'Company not found.' })
+
+    const existing = await prisma.followUpEnrollment.findFirst({ where: { companyId, userId: req.user.id, status: 'active' } })
+    if (existing) return res.status(409).json({ message: 'A follow-up sequence is already active for this company.', sequence: existing })
+
+    const enrollment = await prisma.followUpEnrollment.create({
+      data: { companyId, userId: req.user.id, nextRunAt: new Date() },
+    })
+    const processed = await processFollowUpEnrollment(enrollment.id)
+    res.status(201).json({ sequence: processed, message: 'Follow-up plan started. The first action is in your task list.' })
+  } catch (err) {
+    console.error('[Dashboard] follow-up start error:', err.message)
+    res.status(500).json({ message: 'Unable to start the follow-up plan.' })
+  }
+})
+
+router.patch('/follow-up-sequences/:id/cancel', auth, async (req, res) => {
+  try {
+    const existing = await prisma.followUpEnrollment.findFirst({ where: { id: req.params.id, userId: req.user.id, status: 'active' } })
+    if (!existing) return res.status(404).json({ message: 'Active follow-up plan not found.' })
+    const sequence = await prisma.followUpEnrollment.update({ where: { id: existing.id }, data: { status: 'cancelled', completedAt: new Date() } })
+    res.json({ sequence })
+  } catch (err) {
+    res.status(500).json({ message: 'Unable to cancel the follow-up plan.' })
+  }
+})
 
 // GET /api/dashboard/stats — the 6 KPI widgets (Update 6). Every number is a
 // DB-side count, never a full-table fetch — the old Dashboard computed its 3

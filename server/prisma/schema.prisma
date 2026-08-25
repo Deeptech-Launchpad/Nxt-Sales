@@ -36,6 +36,7 @@ model User {
   chatMentions ChatMention[]
   chatMessageReceipts ChatMessageReceipt[]
   aiUsage          AiUsage[]
+  followUpEnrollments FollowUpEnrollment[]
 }
 
 // One row per AI/LLM request made from the CRM, recorded from whatever usage
@@ -88,6 +89,7 @@ model Company {
   deals          Deal[]
   callLogs       CallLog[]
   owner          User?      @relation(fields: [ownerId], references: [id])
+  followUpEnrollments FollowUpEnrollment[]
 
   @@index([email])
   @@index([deletedAt])
@@ -96,6 +98,25 @@ model Company {
   @@index([leadStatus])
   @@index([name])
   @@index([isPinned])
+}
+
+model FollowUpEnrollment {
+  id          String    @id @default(cuid())
+  companyId   String
+  userId      String
+  status      String    @default("active")
+  currentStep Int       @default(0)
+  nextRunAt   DateTime
+  lastRunAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRunAt])
+  @@index([companyId, status])
+  @@index([userId, status])
 }
 
 model Deal {

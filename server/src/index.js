@@ -26,6 +26,7 @@ const settingsRoutes = require('./routes/settings')
 const { startRecycleBinPurgeSweep } = require('./jobs/purgeRecycleBin')
 const { startAutoCompleteOverdueTasksSweep } = require('./jobs/autoCompleteOverdueTasks')
 const { startCallHippoAutoSync } = require('./jobs/callHippoAutoSync')
+const { startFollowUpSequenceSweep } = require('./jobs/followUpSequences')
 const { initSocket } = require('./realtime/socket')
 
 require('./config/passport')
@@ -72,6 +73,7 @@ const server = app.listen(PORT, () => {
   startRecycleBinPurgeSweep()
   startAutoCompleteOverdueTasksSweep()
   startCallHippoAutoSync()
+  startFollowUpSequenceSweep()
 })
 
 initSocket(server)
