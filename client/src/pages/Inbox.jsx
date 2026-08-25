@@ -63,7 +63,10 @@ export default function Inbox() {
         page,
         limit: PAGE_SIZE,
         ...(search.trim() && { search: search.trim() }),
-        ...(directionTab !== 'all' && { direction: directionTab }),
+        // 'unassigned' is a company-association filter, not a direction —
+        // it must never be sent as ?direction.
+        ...(directionTab !== 'all' && directionTab !== 'unassigned' && { direction: directionTab }),
+        ...(directionTab === 'unassigned' && { onlyUnassigned: 1 }),
       },
     })
       .then(r => { setItems(r.data.items || []); setTotal(r.data.total || 0) })
@@ -127,11 +130,19 @@ export default function Inbox() {
         </div>
       </div>
 
+      {/* Inbox now lists exactly the emails the canonical matcher associated
+          with a company — the same records Company → Activities → Emails
+          shows, which is the point of the rewrite. "Unassigned" surfaces the
+          rest: mail the matcher could not place against any saved company
+          address. Without this tab an unmatched mailbox would simply look
+          empty, which reads as a broken Inbox rather than as "no company
+          addresses matched yet". */}
       <div style={{ display: 'flex', gap: 20, alignItems: 'center', paddingBottom: 2, borderBottom: '1px solid #eef1f5' }}>
-        {[['all', 'All'], ['outbound', 'Sent'], ['inbound', 'Received']].map(([v, label]) => (
+        {[['all', 'All'], ['outbound', 'Sent'], ['inbound', 'Received'], ['unassigned', 'Unassigned']].map(([v, label]) => (
           <button
             key={v}
             onClick={() => switchTab(v)}
+            title={v === 'unassigned' ? 'Emails not matched to any company — add the address to a company to file them' : undefined}
             style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
               color: directionTab === v ? '#0f172a' : '#94a3b8', borderBottom: `2px solid ${directionTab === v ? '#e63329' : 'transparent'}`, paddingBottom: 10, transition: 'color .12s, border-color .12s' }}
           >
