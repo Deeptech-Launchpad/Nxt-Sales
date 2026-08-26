@@ -7,6 +7,21 @@ import '../../styles/modal.css'
 
 const STEPS = ['Upload File', 'Preview & Map', 'Import']
 
+const MaterialIcon = ({ children }) => (
+  <span className="material-symbols-rounded" aria-hidden="true">{children}</span>
+)
+
+// Keep the standard Company columns available immediately. The API-backed
+// list adds dynamic custom fields, but importing a file must not turn every
+// cell blank when that request is still loading (or temporarily fails).
+const FALLBACK_COMPANY_IMPORT_FIELDS = [
+  ['name', 'Company Name'], ['email', 'Email'], ['phone', 'Phone Number'],
+  ['domain', 'Company URL'], ['industry', 'Industry'], ['country', 'Country of Origin'],
+  ['leadStatus', 'Lead Status'], ['notes', 'Notes'], ['endPdpUrl', 'End PDP URL'],
+  ['cms', 'CMS'], ['remarks', 'Remarks'], ['contactPersons', 'Contact Person'],
+  ['linkedProfiles', 'Linked Profile'], ['isPinned', 'Is Pinned'],
+].map(([key, label]) => ({ key, label }))
+
 // Exact-header aliases for the standard Company bulk-import template. The
 // spreadsheet's literal headers ("Co. Phone no.", "Company - Url", etc.) are
 // deliberately different from the friendlier UI labels used for table columns
@@ -32,9 +47,11 @@ const COMPANY_TEMPLATE_HEADER_ALIASES = {
   endpdpurl:        'End PDP URL',
   pdpurl:           'End PDP URL',
   email:            'Email',
+  emails:           'Email',
   cophoneno:        'Phone Number',
   phonenumber:      'Phone Number',
   phone:            'Phone Number',
+  phones:           'Phone Number',
   contactperson:    'Contact Person',
   linkedprofile:    'Linked Profile',
   linkedinprofile:  'Linked Profile',
@@ -43,6 +60,7 @@ const COMPANY_TEMPLATE_HEADER_ALIASES = {
   remark:           'Remarks',
   notes:            'Notes',
   leadstatus:       'Lead Status',
+  ispinned:         'Is Pinned',
 }
 
 // Case-insensitive check against an admin-managed option list. `options` is
@@ -85,7 +103,13 @@ function remapCompanyTemplateHeaders(raw) {
       // substring is unambiguous enough to trust without a full exact match.
       const alias = COMPANY_TEMPLATE_HEADER_ALIASES[normalized]
         || (normalized.includes('remark') ? 'Remarks' : undefined)
-      out[alias || k] = v
+      const target = alias || k
+      // Files exported from other CRMs often contain both Email/Emails and
+      // Phone/Phones. Prefer a populated value instead of allowing a later
+      // empty alias column to erase the earlier primary value.
+      if (out[target] === undefined || out[target] === '' || (v !== undefined && v !== null && String(v).trim() !== '')) {
+        out[target] = v
+      }
     }
     return out
   })
@@ -125,6 +149,8 @@ const COMPANY_IMPORT_TEMPLATE_COLUMNS = [
   { header: 'CMS',                                                key: 'cms' },
   { header: 'Notes',                                             key: 'notes' },
   { header: 'Task',                                              key: 'task' },
+  { header: 'Lead Status',                                       key: 'leadStatus' },
+  { header: 'Is Pinned',                                         key: 'isPinned' },
 ]
 
 // Company bulk-import modal — talks to GET /api/companies/import-fields and
@@ -143,8 +169,8 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
   const [loading, setLoading]   = useState(false)
   const [result, setResult]     = useState(null)
   const [dragging, setDragging] = useState(false)
-  const [fields, setFields]           = useState([])
-  const [requiredKey, setRequiredKey] = useState('email')
+  const [fields, setFields]           = useState(FALLBACK_COMPANY_IMPORT_FIELDS)
+  const [requiredKey, setRequiredKey] = useState('name')
   const inputRef = useRef(null)
 
   // Duplicate preview (Part B). dupInfo is parallel to rows:
@@ -156,8 +182,14 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
   useEffect(() => {
     if (!isOpen) return
     api.get('/companies/import-fields')
-      .then(r => { setFields(r.data.fields || []); setRequiredKey(r.data.requiredKey || 'email') })
-      .catch(() => {})
+      .then(r => {
+        if (r.data.fields?.length) setFields(r.data.fields)
+        setRequiredKey(r.data.requiredKey || 'name')
+      })
+      .catch(() => {
+        // Built-in fields remain usable; only dynamic custom fields are
+        // unavailable until the endpoint recovers.
+      })
   }, [isOpen])
 
   const reset = () => {
@@ -279,52 +311,56 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
   const dropdownMismatchCount = rows.filter(rowHasDropdownMismatch).length
 
   return (
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) { reset(); onClose() } }}>
-      <div className="modal-drawer" style={{ width: step === 1 ? 760 : 520 }}>
+    <div className="modal-overlay import-modal-overlay" onClick={e => { if (e.target === e.currentTarget) { reset(); onClose() } }}>
+      <div className={`modal-drawer import-companies-modal${step === 1 ? ' preview-mode' : ''}`} role="dialog" aria-modal="true" aria-labelledby="import-companies-title">
 
-        <div className="modal-header">
-          <div>
-            <h2 style={{ margin: 0 }}>Import Companies</h2>
-            <div style={{ display: 'flex', gap: 16, marginTop: 6 }}>
-              {STEPS.map((s, i) => (
-                <span key={s} style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4,
-                  color: i === step ? '#fff' : 'rgba(255,255,255,0.55)', fontWeight: i === step ? 700 : 400 }}>
-                  {i < step && <CheckCircle size={12} />}
-                  {i + 1}. {s}
-                  {i < STEPS.length - 1 && <ChevronRight size={11} />}
-                </span>
-              ))}
-            </div>
+        <div className="modal-header import-modal-header">
+          <div className="import-modal-heading">
+            <span className="import-modal-heading-icon"><MaterialIcon>upload_file</MaterialIcon></span>
+            <h2 id="import-companies-title" style={{ margin: 0 }}>Import Companies</h2>
           </div>
-          <button className="modal-close" onClick={() => { reset(); onClose() }}><X size={20} /></button>
+          <div className="import-stepper" style={{ display: 'flex', gap: 16, marginTop: 6 }}>
+            {STEPS.map((s, i) => (
+              <span key={s} className={`${i === step ? 'active' : ''}${i < step ? ' complete' : ''}`} style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4,
+                color: i === step ? '#fff' : 'rgba(255,255,255,0.55)', fontWeight: i === step ? 700 : 400 }}>
+                <b>{i < step ? <MaterialIcon>check</MaterialIcon> : i + 1}</b>{s}
+                {i < STEPS.length - 1 && <MaterialIcon>chevron_right</MaterialIcon>}
+              </span>
+            ))}
+          </div>
+          <button className="modal-close" aria-label="Close" onClick={() => { reset(); onClose() }}><MaterialIcon>close</MaterialIcon></button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body import-modal-body">
 
           {/* ── STEP 0: Upload ── */}
           {step === 0 && (
-            <div>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginBottom: 20 }}>
-                <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>Download a sample template first:</p>
-                <div style={{ display: 'flex', gap: 8 }}>
+            <div className="import-upload-step">
+              <div className="import-template-card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginBottom: 20 }}>
+                <div className="import-template-copy">
+                  <span className="import-template-icon"><MaterialIcon>description</MaterialIcon></span>
+                  <div><p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>Download a sample template first:</p>
+                  <p style={{ margin: '10px 0 0', fontSize: 11, color: '#94a3b8' }}>Template columns are generated from the current company fields.</p></div>
+                </div>
+                <div className="import-template-actions" style={{ display: 'flex', gap: 8 }}>
                   <button onClick={() => buildTemplateFromFields(templateFields, 'csv',  'companies_import_template')} className="btn-modal-secondary" style={{ fontSize: 12, padding: '6px 12px' }} disabled={!templateFields.length}>
-                    <Download size={13} /> CSV Template
+                    <MaterialIcon>download</MaterialIcon> CSV Template
                   </button>
                   <button onClick={() => buildTemplateFromFields(templateFields, 'xlsx', 'companies_import_template')} className="btn-modal-secondary" style={{ fontSize: 12, padding: '6px 12px' }} disabled={!templateFields.length}>
-                    <Download size={13} /> Excel Template
+                    <MaterialIcon>download</MaterialIcon> Excel Template
                   </button>
                 </div>
-                <p style={{ margin: '10px 0 0', fontSize: 11, color: '#94a3b8' }}>Template columns are generated from the current company fields.</p>
               </div>
 
               <div
+                className={`import-dropzone${dragging ? ' dragging' : ''}`}
                 onDragOver={e => { e.preventDefault(); setDragging(true) }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={handleDrop}
                 onClick={() => inputRef.current?.click()}
                 style={{ border: `2px dashed ${dragging ? '#3b82f6' : '#cbd5e1'}`, borderRadius: 8, padding: '40px 20px', textAlign: 'center', cursor: 'pointer', background: dragging ? '#eff6ff' : '#f8fafc', transition: 'all .15s' }}
               >
-                <Upload size={32} color={dragging ? '#3b82f6' : '#94a3b8'} style={{ marginBottom: 12 }} />
+                <span className="import-upload-icon"><MaterialIcon>upload_file</MaterialIcon></span>
                 <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600, color: '#334155' }}>
                   Drag &amp; drop your file here, or <span style={{ color: '#3b82f6' }}>browse</span>
                 </p>
@@ -333,9 +369,9 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
                   onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
               </div>
 
-              {loading && <p style={{ textAlign: 'center', color: '#64748b', fontSize: 13, marginTop: 16 }}>Parsing file...</p>}
+              {loading && <p className="import-loading" style={{ textAlign: 'center', color: '#64748b', fontSize: 13, marginTop: 16 }}>Parsing file...</p>}
               {error && (
-                <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: 12, marginTop: 16 }}>
+                <div className="import-error" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: 12, marginTop: 16 }}>
                   <AlertCircle size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
                   <span style={{ fontSize: 13, color: '#991b1b' }}>{error}</span>
                 </div>
@@ -345,7 +381,7 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
 
           {/* ── STEP 1: Preview ── */}
           {step === 1 && (
-            <div>
+            <div className="import-preview-step">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                 <FileText size={16} color="#64748b" />
                 <span style={{ fontSize: 13, color: '#64748b' }}>
@@ -468,7 +504,7 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
 
           {/* ── STEP 2: Result ── */}
           {step === 2 && result && (
-            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <div className="import-result-step" style={{ textAlign: 'center', padding: '20px 0' }}>
               <CheckCircle size={48} color="#16a34a" style={{ marginBottom: 16 }} />
               <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: '0 0 8px' }}>Import Complete</h3>
               <div style={{ display: 'flex', gap: 20, justifyContent: 'center', marginBottom: 24 }}>
@@ -510,7 +546,7 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
         </div>
 
         {/* Footer */}
-        <div className="modal-footer">
+        <div className="modal-footer import-modal-footer">
           {step === 0 && (
             <button className="btn-modal-cancel" onClick={() => { reset(); onClose() }}>Cancel</button>
           )}

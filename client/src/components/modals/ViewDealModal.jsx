@@ -62,20 +62,26 @@ export default function ViewDealModal({ deal, onClose }) {
 
   return (
     <div
-      className="modal-overlay"
+      className="modal-overlay company-modal-overlay"
       onMouseDown={e => { mouseDownOnOverlay.current = e.target === e.currentTarget }}
       onClick={e => {
         if (mouseDownOnOverlay.current && e.target === e.currentTarget) onClose()
         mouseDownOnOverlay.current = false
       }}
     >
-      <div className="modal-drawer">
-        <div className="modal-header">
-          <h2>{deal.title}</h2>
-          <button className="modal-close" onClick={onClose}><X size={20} /></button>
+      <div className="modal-drawer company-create-modal deal-create-modal" role="dialog" aria-modal="true" aria-labelledby="view-deal-title">
+        <div className="modal-header company-modal-header">
+          <div className="company-modal-title">
+            <span className="company-modal-title-icon"><Briefcase size={17} /></span>
+            <div>
+              <h2 id="view-deal-title">{deal.title}</h2>
+              <p>{deal.companyName || deal.company?.name || 'Deal details'}</p>
+            </div>
+          </div>
+          <button className="modal-close" aria-label="Close" onClick={onClose}><X size={18} /></button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body company-modal-body">
           <div className="dv-hero">
             <div className="dv-hero-top">
               <div className="dv-hero-company">
@@ -138,7 +144,7 @@ export default function ViewDealModal({ deal, onClose }) {
           )}
         </div>
 
-        <div className="modal-footer">
+        <div className="modal-footer company-modal-footer">
           <button className="btn-modal-cancel" onClick={onClose}>Close</button>
         </div>
       </div>

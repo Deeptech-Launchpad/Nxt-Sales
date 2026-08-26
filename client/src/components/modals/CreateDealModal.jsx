@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
-import { X } from 'lucide-react'
 import api from '../../api/client'
 import { useDropdownOptions } from '../../hooks/useDropdownOptions'
+import SearchableSelect from '../SearchableSelect'
 import CustomFieldsSection, { extractCustomFieldValues } from '../CustomFieldsSection'
 import { DEAL_CURRENCIES } from '../../utils/formatCurrency'
 import '../../styles/modal.css'
+
+const MaterialIcon = ({ children }) => (
+  <span className="material-symbols-rounded" aria-hidden="true">{children}</span>
+)
 
 const emptyForm = {
   title: '', country: '', companyName: '', domainName: '', clientType: '',
@@ -134,171 +138,181 @@ export default function CreateDealModal({ companyId, deal, onClose, onSaved }) {
     }
   }
 
+  const withPlaceholder = (label, options) => [{ value: '', label }, ...options.map(o => ({ value: o.value, label: o.label }))]
+  const countryOptions            = withPlaceholder('Select a country', countries)
+  const clientTypeSelectOptions   = withPlaceholder('Select client type', clientTypeOptions)
+  const serviceReqOptions         = withPlaceholder('Select service requirement', serviceRequirements)
+  const opportunityTypeOptions    = withPlaceholder('Select opportunity type', opportunityTypes)
+  const strategicImportanceOptions = withPlaceholder('Select strategic importance', strategicImportances)
+  const expectedOutcomeOptions    = withPlaceholder('Select expected outcome', expectedOutcomes)
+  const stageOptions              = dealStages.map(s => ({ value: s.value, label: s.label }))
+
   return (
     <div
-      className="modal-overlay"
+      className="modal-overlay company-modal-overlay"
       onMouseDown={e => { mouseDownOnOverlay.current = e.target === e.currentTarget }}
       onClick={e => {
         if (mouseDownOnOverlay.current && e.target === e.currentTarget) onClose()
         mouseDownOnOverlay.current = false
       }}
     >
-      <div className="modal-drawer">
-        <div className="modal-header">
-          <h2>{isEdit ? 'Edit Deal' : 'Create Deal'}</h2>
-          <button className="modal-close" onClick={onClose}><X size={20} /></button>
+      <div className="modal-drawer company-create-modal deal-create-modal" role="dialog" aria-modal="true" aria-labelledby="create-deal-title">
+        <div className="modal-header company-modal-header">
+          <div className="company-modal-title">
+            <span className="company-modal-title-icon"><MaterialIcon>handshake</MaterialIcon></span>
+            <div>
+              <h2 id="create-deal-title">{isEdit ? 'Edit Deal' : 'Create Deal'}</h2>
+              <p>{isEdit ? 'Update this deal\'s details' : 'Add a deal to your sales pipeline'}</p>
+            </div>
+          </div>
+          <button className="modal-close" aria-label="Close" onClick={onClose}>
+            <MaterialIcon>close</MaterialIcon>
+          </button>
         </div>
 
-        <div className="modal-body">
-          <div className="form-group required">
-            <label>Deal name</label>
-            <input type="text" value={form.title} onChange={e => { set('title', e.target.value); setError('') }} autoFocus />
-          </div>
-
-          {/* Independent of Deal Stage — either, both, or neither can be
-              checked; never affects which stage the deal is in. */}
-          <div className="form-group" style={{ display: 'flex', gap: 20, flexDirection: 'row', alignItems: 'center' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 400, cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.poc} onChange={e => set('poc', e.target.checked)} style={{ width: 15, height: 15 }} />
-              POC
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 400, cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.proposalShared} onChange={e => set('proposalShared', e.target.checked)} style={{ width: 15, height: 15 }} />
-              Proposal Shared
-            </label>
-          </div>
-
-          {/* Deal Open Date — the business date the deal opened. Kept separate
-              from the record's created date, and it is what the Deals
-              Dashboard month/year filter reports on. */}
-          <div className="form-group">
-            <label>Deal Open Date</label>
-            <input type="date" value={form.openDate} onChange={e => set('openDate', e.target.value)} />
-          </div>
-
-          <div className="form-group" style={{ display: 'flex', gap: 20, flexDirection: 'row' }}>
-            <div style={{ flex: 1 }}>
-              <label>POC Received Date</label>
-              <input type="date" value={form.pocReceivedDate} onChange={e => set('pocReceivedDate', e.target.value)} />
+        <div className="modal-body company-modal-body">
+          <section className="company-form-section">
+            <div className="company-form-section-head">
+              <MaterialIcon>sell</MaterialIcon>
+              <div><h3>Deal Details</h3><p>Core deal and company information</p></div>
             </div>
-            <div style={{ flex: 1 }}>
-              <label>POC Delivered Date</label>
-              <input type="date" value={form.pocDeliveredDate} onChange={e => set('pocDeliveredDate', e.target.value)} />
+            <div className="company-form-grid">
+              <div className="form-group required field-span-2">
+                <label><MaterialIcon>work</MaterialIcon>Deal name</label>
+                <input type="text" value={form.title} onChange={e => { set('title', e.target.value); setError('') }} autoFocus />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>business</MaterialIcon>Company Name</label>
+                <input type="text" value={form.companyName} onChange={e => set('companyName', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>language</MaterialIcon>Domain Name</label>
+                <input type="text" value={form.domainName} onChange={e => set('domainName', e.target.value)} placeholder="example.com" />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>link</MaterialIcon>Client Website URL</label>
+                <input type="text" value={form.clientWebsiteUrl} onChange={e => set('clientWebsiteUrl', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>public</MaterialIcon>Country</label>
+                <SearchableSelect materialIcons value={form.country} onChange={v => set('country', v)} options={countryOptions} placeholder="Select a country" />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>category</MaterialIcon>Client Type</label>
+                <SearchableSelect materialIcons value={form.clientType} onChange={v => set('clientType', v)} options={clientTypeSelectOptions} placeholder="Select client type" />
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div className="form-group">
-            <label>Country</label>
-            <select value={form.country} onChange={e => set('country', e.target.value)}>
-              <option value="">Select a country</option>
-              {countries.map(c => <option key={c.id} value={c.value}>{c.label}</option>)}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Company Name</label>
-            <input type="text" value={form.companyName} onChange={e => set('companyName', e.target.value)} />
-          </div>
-
-          <div className="form-group">
-            <label>Domain Name</label>
-            <input type="text" value={form.domainName} onChange={e => set('domainName', e.target.value)} placeholder="example.com" />
-          </div>
-
-          <div className="form-group">
-            <label>Client Type</label>
-            <select value={form.clientType} onChange={e => set('clientType', e.target.value)}>
-              <option value="">Select client type</option>
-              {clientTypeOptions.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Contact Person</label>
-            <input type="text" value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} />
-          </div>
-
-          <div className="form-group">
-            <label>Contact Phone Number</label>
-            <input type="text" value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} />
-          </div>
-
-          <div className="form-group">
-            <label>Contact Email</label>
-            <input type="email" value={form.contactEmail} onChange={e => set('contactEmail', e.target.value)} />
-          </div>
-
-          <div className="form-group">
-            <label>Service Requirements</label>
-            <select value={form.serviceRequirement} onChange={e => set('serviceRequirement', e.target.value)}>
-              <option value="">Select service requirement</option>
-              {serviceRequirements.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Client Website URL</label>
-            <input type="text" value={form.clientWebsiteUrl} onChange={e => set('clientWebsiteUrl', e.target.value)} />
-          </div>
-
-          <div className="form-group">
-            <label>Opportunity Type</label>
-            <select value={form.opportunityType} onChange={e => set('opportunityType', e.target.value)}>
-              <option value="">Select opportunity type</option>
-              {opportunityTypes.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Estimated Deal Value</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input type="number" min="0" value={form.value} onChange={e => set('value', e.target.value)} placeholder="0" style={{ flex: 2 }} />
-              <select value={form.currency} onChange={e => set('currency', e.target.value)} style={{ flex: 1 }}>
-                {DEAL_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+          <section className="company-form-section">
+            <div className="company-form-section-head">
+              <MaterialIcon>contact_mail</MaterialIcon>
+              <div><h3>Contact Information</h3><p>Primary contact at the client</p></div>
             </div>
-          </div>
+            <div className="company-form-grid">
+              <div className="form-group">
+                <label><MaterialIcon>person</MaterialIcon>Contact Person</label>
+                <input type="text" value={form.contactPerson} onChange={e => set('contactPerson', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>phone</MaterialIcon>Contact Phone Number</label>
+                <input type="text" value={form.contactPhone} onChange={e => set('contactPhone', e.target.value)} />
+              </div>
+              <div className="form-group field-span-2">
+                <label><MaterialIcon>mail</MaterialIcon>Contact Email</label>
+                <input type="email" value={form.contactEmail} onChange={e => set('contactEmail', e.target.value)} />
+              </div>
+            </div>
+          </section>
 
-          <div className="form-group">
-            <label>Strategic Importance</label>
-            <select value={form.strategicImportance} onChange={e => set('strategicImportance', e.target.value)}>
-              <option value="">Select strategic importance</option>
-              {strategicImportances.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
-            </select>
-          </div>
+          <section className="company-form-section">
+            <div className="company-form-section-head">
+              <MaterialIcon>timeline</MaterialIcon>
+              <div><h3>Pipeline &amp; Status</h3><p>Stage, opportunity and deal value</p></div>
+            </div>
+            <div className="company-form-grid">
+              <div className="form-group">
+                <label><MaterialIcon>route</MaterialIcon>Deal Stage</label>
+                <SearchableSelect materialIcons value={form.stage} onChange={v => set('stage', v)} options={stageOptions} placeholder="Select a stage" />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>bolt</MaterialIcon>Opportunity Type</label>
+                <SearchableSelect materialIcons value={form.opportunityType} onChange={v => set('opportunityType', v)} options={opportunityTypeOptions} placeholder="Select opportunity type" />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>handyman</MaterialIcon>Service Requirements</label>
+                <SearchableSelect materialIcons value={form.serviceRequirement} onChange={v => set('serviceRequirement', v)} options={serviceReqOptions} placeholder="Select service requirement" />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>flag</MaterialIcon>Strategic Importance</label>
+                <SearchableSelect materialIcons value={form.strategicImportance} onChange={v => set('strategicImportance', v)} options={strategicImportanceOptions} placeholder="Select strategic importance" />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>insights</MaterialIcon>Expected Outcome</label>
+                <SearchableSelect materialIcons value={form.expectedOutcome} onChange={v => set('expectedOutcome', v)} options={expectedOutcomeOptions} placeholder="Select expected outcome" />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>payments</MaterialIcon>Estimated Deal Value</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input type="number" min="0" value={form.value} onChange={e => set('value', e.target.value)} placeholder="0" style={{ flex: 2 }} />
+                  <select className="deal-currency-select" value={form.currency} onChange={e => set('currency', e.target.value)}>
+                    {DEAL_CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
 
-          <div className="form-group">
-            <label>Expected Outcome</label>
-            <select value={form.expectedOutcome} onChange={e => set('expectedOutcome', e.target.value)}>
-              <option value="">Select expected outcome</option>
-              {expectedOutcomes.map(v => <option key={v.id} value={v.value}>{v.label}</option>)}
-            </select>
-          </div>
+          <section className="company-form-section">
+            <div className="company-form-section-head">
+              <MaterialIcon>fact_check</MaterialIcon>
+              <div><h3>Tracking &amp; Notes</h3><p>POC milestones and internal notes</p></div>
+            </div>
+            <div className="company-form-grid">
+              {/* Independent of Deal Stage — either, both, or neither can be
+                  checked; never affects which stage the deal is in. */}
+              <div className="form-group field-span-2 deal-checkbox-row">
+                <label>
+                  <input type="checkbox" checked={form.poc} onChange={e => set('poc', e.target.checked)} />
+                  POC
+                </label>
+                <label>
+                  <input type="checkbox" checked={form.proposalShared} onChange={e => set('proposalShared', e.target.checked)} />
+                  Proposal Shared
+                </label>
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>event</MaterialIcon>POC Received Date</label>
+                <input type="date" value={form.pocReceivedDate} onChange={e => set('pocReceivedDate', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>event_available</MaterialIcon>POC Delivered Date</label>
+                <input type="date" value={form.pocDeliveredDate} onChange={e => set('pocDeliveredDate', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>calendar_today</MaterialIcon>Deal Open Date</label>
+                <input type="date" value={form.openDate} onChange={e => set('openDate', e.target.value)} />
+              </div>
+              <div className="form-group field-span-2">
+                <label><MaterialIcon>notes</MaterialIcon>Notes</label>
+                <textarea rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} />
+              </div>
+              <div className="company-modal-custom field-span-2">
+                <CustomFieldsSection
+                  entity="Deal"
+                  values={form.customFields}
+                  onChange={(key, value) => setForm(p => ({ ...p, customFields: { ...p.customFields, [key]: value } }))}
+                />
+              </div>
+            </div>
+          </section>
 
-          <div className="form-group">
-            <label>Deal Stage</label>
-            <select value={form.stage} onChange={e => set('stage', e.target.value)}>
-              {dealStages.map(s => <option key={s.id} value={s.value}>{s.label}</option>)}
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Notes</label>
-            <textarea rows={3} value={form.notes} onChange={e => set('notes', e.target.value)} />
-          </div>
-
-          <CustomFieldsSection
-            entity="Deal"
-            values={form.customFields}
-            onChange={(key, value) => setForm(p => ({ ...p, customFields: { ...p.customFields, [key]: value } }))}
-          />
-
-          {error && <p style={{ color: '#ef4444', fontSize: 12, margin: '4px 0 0', fontWeight: 500 }}>{error}</p>}
+          {error && <p className="company-modal-error"><MaterialIcon>error</MaterialIcon>{error}</p>}
         </div>
 
-        <div className="modal-footer">
+        <div className="modal-footer company-modal-footer">
           <button className="btn-modal-primary" onClick={save} disabled={saving}>
-            {saving ? (isEdit ? 'Saving…' : 'Creating…') : (isEdit ? 'Save changes' : 'Create deal')}
+            <MaterialIcon>{isEdit ? 'save' : 'add'}</MaterialIcon>{saving ? (isEdit ? 'Saving…' : 'Creating…') : (isEdit ? 'Save changes' : 'Create deal')}
           </button>
           <button className="btn-modal-cancel" onClick={onClose}>Cancel</button>
         </div>
