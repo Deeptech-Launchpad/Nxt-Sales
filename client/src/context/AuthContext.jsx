@@ -8,6 +8,13 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    try {
+      const appearance = JSON.parse(localStorage.getItem('nxt_appearance') || '{}')
+      const accents = { navy: '#071B52', blue: '#3267E3', red: '#EF1B16' }
+      document.documentElement.dataset.density = appearance.density || 'comfortable'
+      document.documentElement.dataset.theme = appearance.theme || 'light'
+      document.documentElement.style.setProperty('--color-focus', accents[appearance.accent] || accents.navy)
+    } catch { /* use brand defaults */ }
     const stored = localStorage.getItem('mwz_user')
     if (stored) {
       try { setUser(JSON.parse(stored)) } catch { localStorage.removeItem('mwz_user') }
@@ -32,8 +39,16 @@ export function AuthProvider({ children }) {
     disconnectSocket()
   }
 
+  const updateUser = (updates) => {
+    setUser(current => {
+      const next = { ...(current || {}), ...updates }
+      localStorage.setItem('mwz_user', JSON.stringify(next))
+      return next
+    })
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   )
