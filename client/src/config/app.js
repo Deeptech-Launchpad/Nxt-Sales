@@ -1,7 +1,7 @@
 export const APP_CONFIG = {
   appName:  'NXT Sales',
   appShort: 'NXS',
-  appColor: '#e63329',
+  appColor: '#EF1B16',
   tagline:  'Sign in to your workspace',
   features: [
     'Manage companies, leads & deals in one place',
