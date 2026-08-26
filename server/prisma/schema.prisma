@@ -34,6 +34,7 @@ model User {
   chatMentions ChatMention[]
   chatMessageReceipts ChatMessageReceipt[]
   aiUsage          AiUsage[]
+  followUpEnrollments FollowUpEnrollment[]
 }
 
 // One row per AI/LLM request made from the CRM, recorded from whatever usage
@@ -89,6 +90,7 @@ model Company {
   deals          Deal[]
   callLogs       CallLog[]
   owner          User?      @relation(fields: [ownerId], references: [id])
+  followUpEnrollments FollowUpEnrollment[]
 
   @@index([email])
   @@index([deletedAt])
@@ -97,6 +99,30 @@ model Company {
   @@index([leadStatus])
   @@index([name])
   @@index([isPinned])
+}
+
+// Powers the Dashboard's "Start follow-up" action (Smart Priority Queue).
+// One row per user-initiated follow-up plan on a company; the background
+// sweep (jobs/followUpSequences.js) advances currentStep on its own schedule,
+// creating a Task activity for each step, until the customer replies, the
+// company's latest deal closes, or the sequence finishes its 4 steps.
+model FollowUpEnrollment {
+  id          String    @id @default(cuid())
+  companyId   String
+  userId      String
+  status      String    @default("active")
+  currentStep Int       @default(0)
+  nextRunAt   DateTime
+  lastRunAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRunAt])
+  @@index([companyId, status])
+  @@index([userId, status])
 }
 
 model Deal {
