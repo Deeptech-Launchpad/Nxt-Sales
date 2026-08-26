@@ -11,8 +11,18 @@ function normalizeGeneric(records, columns) {
     for (const c of columns) {
       let v = r[c.key]
       if (c.key === 'ownerId') v = r.owner?.name || '--'
-      else if (v instanceof Date || c.key === 'createdAt' || c.key === 'updatedAt') {
-        v = v ? new Date(v).toLocaleString() : '--'
+      else if (c.key === 'companyId') v = r.company?.name || r.companyName || '--'
+      else if (c.key === 'companyName') v = r.companyName || r.company?.name || '--'
+      else if (c.key === '_flags') {
+        const flags = []
+        if (r.poc) flags.push('POC')
+        if (r.proposalShared) flags.push('Proposal Shared')
+        v = flags.length ? flags.join(' / ') : '--'
+      }
+      else if (v instanceof Date || c.key === 'createdAt' || c.key === 'updatedAt' || c.key === 'pocReceivedDate' || c.key === 'pocDeliveredDate') {
+        v = v ? new Date(v).toLocaleDateString() : '--'
+      } else if (typeof v === 'boolean') {
+        v = v ? 'Yes' : 'No'
       } else if (Array.isArray(v)) v = v.join('; ')
       out[c.key] = (v === undefined || v === null || v === '') ? '--' : v
     }

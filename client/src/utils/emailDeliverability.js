@@ -7,7 +7,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import api from '../api/client'
 import { callGeminiWithFallback } from './geminiModel'
-import { recordAiUsage, AI_FEATURES } from './aiUsage'
 
 // Common spam-trigger phrases (kept practical, not exhaustive).
 const SPAM_KEYWORDS = [
@@ -193,9 +192,7 @@ BODY (text): ${text}`
   let raw = ''
   try {
     if (provider === 'gemini') {
-      // Usage is recorded inside callGeminiWithFallback — see utils/aiUsage.js.
-      const d = await callGeminiWithFallback(key, model, { contents: [{ parts: [{ text: instruction }] }] },
-        { feature: AI_FEATURES.EMAIL_DELIVERABILITY })
+      const d = await callGeminiWithFallback(key, model, { contents: [{ parts: [{ text: instruction }] }] })
       raw = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
     } else if (provider === 'openai') {
       const r = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -203,18 +200,14 @@ BODY (text): ${text}`
         body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: instruction }] }),
       })
       if (!r.ok) throw new Error((await r.json()).error?.message || 'OpenAI error')
-      const d = await r.json()
-      recordAiUsage({ provider: 'openai', model: 'gpt-4o', feature: AI_FEATURES.EMAIL_DELIVERABILITY, response: d })
-      raw = d.choices?.[0]?.message?.content || ''
+      raw = (await r.json()).choices?.[0]?.message?.content || ''
     } else if (provider === 'anthropic') {
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST', headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
         body: JSON.stringify({ model: 'claude-3-5-sonnet-20241022', max_tokens: 2000, messages: [{ role: 'user', content: instruction }] }),
       })
       if (!r.ok) throw new Error((await r.json()).error?.message || 'Anthropic error')
-      const d = await r.json()
-      recordAiUsage({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', feature: AI_FEATURES.EMAIL_DELIVERABILITY, response: d })
-      raw = d.content?.[0]?.text || ''
+      raw = (await r.json()).content?.[0]?.text || ''
     } else {
       return { available: false }
     }

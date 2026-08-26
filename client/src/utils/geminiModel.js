@@ -1,5 +1,3 @@
-import { recordAiUsage } from './aiUsage'
-
 // Shared Gemini model discovery + call-with-fallback logic. Single source of
 // truth so every AI call site (Template 3 generation, Deliverability Report's
 // AI review, etc.) auto-detects and self-heals the same way, instead of each
@@ -68,12 +66,7 @@ export async function discoverBestGeminiModel(apiKey) {
 // individually time-bounded (see fetchWithTimeout above) — the fallback
 // breadth and detection rules are unchanged, only a hung attempt is now
 // capped rather than able to stall every model behind it.
-// `options.feature` names the CRM feature spending the tokens (see
-// AI_FEATURES in utils/aiUsage.js). Because every Gemini call in the app goes
-// through this one function, recording usage here means all current AND future
-// Gemini features are tracked automatically, with no per-feature counting code.
-// Tracking is fire-and-forget and can never fail or slow the generation call.
-export async function callGeminiWithFallback(apiKey, preferredModel, requestBody, options = {}) {
+export async function callGeminiWithFallback(apiKey, preferredModel, requestBody) {
   const candidates = [preferredModel, ...GEMINI_MODEL_PRIORITY].filter((v, i, a) => v && a.indexOf(v) === i)
   let lastErr = null
   let attempts = 0
@@ -94,13 +87,7 @@ export async function callGeminiWithFallback(apiKey, preferredModel, requestBody
         : networkErr
       continue
     }
-    if (resp.ok) {
-      const data = await resp.json()
-      // `model` here is the candidate that actually answered, which may differ
-      // from preferredModel when the fallback loop advanced.
-      recordAiUsage({ provider: 'gemini', model, feature: options.feature, response: data })
-      return data
-    }
+    if (resp.ok) return await resp.json()
 
     const e = await resp.json().catch(() => ({}))
     const msg = e.error?.message || `Gemini API error (${resp.status})`
