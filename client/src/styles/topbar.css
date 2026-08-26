@@ -71,8 +71,8 @@
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,.14), 0 2px 8px rgba(0,0,0,.06);
-  min-width: 230px;
+  box-shadow: 0 18px 46px rgba(7,27,82,.14), 0 3px 10px rgba(7,27,82,.05);
+  min-width: 250px;
   z-index: 1000;
   overflow: hidden;
   animation: tpdFadeIn .15s ease-out;
@@ -85,30 +85,30 @@
 
 .tpd-user-info {
   display: flex; align-items: center; gap: 10px;
-  padding: 14px 16px;
-  background: #f8fafc;
+  padding: 13px 14px;
+  background: #f7f9fd;
   border-bottom: 1px solid #e2e8f0;
 }
 
 .tpd-avatar {
-  width: 36px; height: 36px; border-radius: 50%;
+  width: 34px; height: 34px; border-radius: 50%;
   background: linear-gradient(135deg, #e63329, #c0271e);
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 700; color: #fff; flex-shrink: 0;
 }
 
-.tpd-name  { font-size: 13px; font-weight: 600; color: #0f172a; }
-.tpd-email { font-size: 11px; color: #64748b; margin-top: 1px; }
+.tpd-name  { font-size: 11px; font-weight: 700; color: #0f172a; }
+.tpd-email { font-size: 9.5px; color: #667085; margin-top: 3px; }
 
 .tpd-divider { height: 1px; background: #e2e8f0; margin: 3px 0; }
 
 .tpd-item {
   display: flex; align-items: center; gap: 10px;
-  width: 100%; padding: 9px 16px;
+  width: calc(100% - 10px);min-height:34px;margin:0 5px;padding:7px 10px;border-radius:7px;
   background: none; border: none; cursor: pointer;
-  font-size: 13px; color: #334155; text-align: left;
+  font-size: 11px;color:#344054;text-align:left;
   transition: background .1s;
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family:Inter,system-ui,sans-serif;
 }
 .tpd-item:hover  { background: #f8fafc; }
 .tpd-danger      { color: #e11d48; }
@@ -117,12 +117,12 @@
 /* ── Global search results ── */
 .topbar-search-results {
   position: absolute; top: calc(100% + 8px); left: 0;
-  width: 340px; max-height: 420px; overflow-y: auto;
-  background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
-  box-shadow: 0 8px 32px rgba(0,0,0,.14); z-index: 1000;
+  width: 370px;max-height:420px;overflow-y:auto;
+  background:#fff;border:1px solid #e4e7ec;border-radius:12px;
+  box-shadow:0 18px 46px rgba(7,27,82,.14),0 3px 10px rgba(7,27,82,.05);z-index:1000;
   animation: tpdFadeIn .15s ease-out;
 }
-.tsr-empty { padding: 16px; font-size: 13px; color: #94a3b8; text-align: center; }
+.tsr-empty { padding:16px;font-size:11px;color:#98a2b3;text-align:center; }
 .tsr-group { padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
 .tsr-group:last-child { border-bottom: none; }
 .tsr-group-title {
@@ -131,9 +131,9 @@
 }
 .tsr-item {
   display: flex; align-items: center; gap: 9px; width: 100%;
-  padding: 8px 14px; background: none; border: none; cursor: pointer;
-  font-size: 13px; color: #334155; text-align: left;
-  font-family: 'DM Sans', system-ui, sans-serif;
+  min-height:34px;padding:7px 12px;background:none;border:none;cursor:pointer;
+  font-size:11px;color:#344054;text-align:left;
+  font-family:Inter,system-ui,sans-serif;
 }
 .tsr-item:hover { background: #f8fafc; }
 .tsr-item > span:first-of-type { font-weight: 500; color: #0f172a; }
@@ -148,37 +148,37 @@
 }
 .notif-panel {
   position: absolute; top: calc(100% + 10px); right: 0;
-  width: 360px; max-height: 460px; display: flex; flex-direction: column;
+  width:350px;max-height:460px;display:flex;flex-direction:column;
   background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0,0,0,.14); z-index: 1000;
+  box-shadow:0 18px 46px rgba(7,27,82,.14),0 3px 10px rgba(7,27,82,.05);z-index:1000;
   overflow: hidden; animation: tpdFadeIn .15s ease-out;
 }
 .notif-panel-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;
-  font-size: 13px; font-weight: 700; color: #0f172a;
+  padding:11px 13px;border-bottom:1px solid #e4e7ec;background:#fff;
+  font-size:11px;font-weight:700;color:#0f172a;
 }
 .notif-mark-all {
   background: none; border: none; cursor: pointer;
-  font-size: 12px; font-weight: 600; color: #0369a1;
+  font-size:9.5px;font-weight:650;color:#071b52;
 }
 .notif-mark-all:disabled { color: #cbd5e1; cursor: default; }
 .notif-panel-list { overflow-y: auto; }
-.notif-empty { padding: 34px 16px; text-align: center; color: #94a3b8; }
-.notif-empty p { font-size: 13px; margin: 8px 0 0; }
+.notif-empty { padding:28px 16px;text-align:center;color:#98a2b3; }
+.notif-empty p { font-size:10.5px;margin:7px 0 0; }
 .notif-row {
   display: flex; align-items: stretch;
   border-bottom: 1px solid #f1f5f9;
 }
 .notif-row.unread { background: #f5faff; }
 .notif-row-main {
-  display: flex; gap: 10px; flex: 1; padding: 11px 8px 11px 14px;
+  display:flex;gap:9px;flex:1;padding:10px 7px 10px 12px;
   background: none; border: none; cursor: pointer; text-align: left;
-  font-family: 'DM Sans', system-ui, sans-serif;
+  font-family:Inter,system-ui,sans-serif;
 }
 .notif-row-main:hover { background: rgba(0,0,0,.02); }
 .notif-row-icon {
-  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+  width:28px;height:28px;border-radius:7px;flex-shrink:0;
   display: flex; align-items: center; justify-content: center; color: #fff;
 }
 .notif-row-icon.meeting { background: #f59e0b; }
@@ -186,14 +186,14 @@
 .notif-row-body { min-width: 0; }
 .notif-row-title {
   display: flex; align-items: center; gap: 6px;
-  font-size: 13px; font-weight: 600; color: #0f172a;
+  font-size:10.5px;font-weight:650;color:#0f172a;
 }
 .notif-unread-dot { width: 7px; height: 7px; border-radius: 50%; background: #e11d48; }
 .notif-row-desc {
-  font-size: 12px; color: #64748b; margin-top: 2px;
+  font-size:9.5px;color:#667085;margin-top:2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;
 }
-.notif-row-time { font-size: 11px; color: #94a3b8; margin-top: 3px; }
+.notif-row-time { font-size:8.5px;color:#98a2b3;margin-top:3px; }
 .notif-row-clear {
   background: none; border: none; cursor: pointer; color: #cbd5e1;
   padding: 0 10px; display: flex; align-items: center;

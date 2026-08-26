@@ -2,8 +2,16 @@
 .act-popup-overlay {
   position: fixed;
   inset: 0;
-  z-index: 5000;
-  background: rgba(0,0,0,0.18);
+  /* Above every other layer (highest elsewhere in the app is 9999) so no
+     page chrome can paint on top of the blur. */
+  z-index: 10000;
+  /* No dimming layer: the page behind stays its true colour and is only
+     softened, so the popup reads as floating above a live workspace rather
+     than over a greyed-out one. The blur applies to what is BEHIND this
+     element, so .act-popup itself renders perfectly sharp on top. */
+  background: transparent;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -522,3 +530,241 @@
   white-space: nowrap;
 }
 .btn-af-action:hover { border-color: #94a3b8; background: #f8fafc; }
+
+/* ── Redesigned Meeting Modal (mm-*) ───────────────────────── */
+.mm-popup {
+  border-radius: 14px !important;
+  overflow: hidden;
+}
+
+.mm-meet-banner {
+  padding: 10px 20px;
+  background: #f0f7ff;
+  border-bottom: 1px solid #dbeafe;
+}
+
+.mm-meet-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.mm-meet-text {
+  font-weight: 600;
+  color: #1e40af;
+}
+
+.mm-meet-sub {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.mm-body {
+  padding: 8px 0 !important;
+}
+
+.mm-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 20px;
+}
+
+.mm-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 0 20px;
+}
+
+.mm-field-icon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.mm-field-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mm-row {
+  flex-direction: row !important;
+  gap: 12px;
+}
+
+.mm-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.mm-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mm-optional-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  background: #f1f5f9;
+  color: #94a3b8;
+  padding: 1px 6px;
+  border-radius: 99px;
+  border: 1px solid #e2e8f0;
+}
+
+.mm-title-input {
+  width: 100%;
+  border: none !important;
+  border-bottom: 2px solid #e2e8f0 !important;
+  border-radius: 0 !important;
+  padding: 6px 2px !important;
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: #0f172a !important;
+  outline: none !important;
+  background: transparent !important;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  transition: border-color .15s;
+  box-sizing: border-box;
+}
+.mm-title-input:focus {
+  border-bottom-color: #0d9488 !important;
+}
+.mm-title-input::placeholder {
+  font-weight: 400;
+  color: #94a3b8;
+}
+
+.mm-input {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 8px 11px;
+  font-size: 13px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: #0f172a;
+  background: #fff;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+.mm-input:focus {
+  border-color: #0d9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.1);
+}
+.mm-input::placeholder { color: #94a3b8; }
+
+.mm-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px !important;
+  cursor: pointer;
+}
+
+.mm-textarea {
+  resize: vertical;
+  min-height: 76px;
+  line-height: 1.6;
+}
+
+.mm-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  border-radius: 7px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 500;
+  margin: 8px 20px 4px;
+}
+
+.mm-save-btn {
+  background: linear-gradient(135deg, #0d9488 0%, #0891b2 100%) !important;
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.3);
+}
+.mm-save-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0f766e 0%, #0e7490 100%) !important;
+}
+
+
+
+/* -- Responsive: activity popups ---------------------------
+   This stylesheet had no breakpoints at all, yet it backs the
+   Note, Call and Meeting popups reachable from every page.
+   Desktop rendering is unchanged: everything below is either a
+   min-width:0 guard (which only takes effect when content would
+   otherwise overflow) or gated behind a max-width media query. */
+
+/* A flex child defaults to min-width:auto, so it refuses to shrink
+   below its content. One long value - an email address, a company
+   name - then pushes the row wider than the popup and the text
+   spills past the card edge. These are the guards for that. */
+.act-form-group{min-width:0}
+.act-form-group input,
+.act-form-group select,
+.act-form-group textarea{min-width:0;max-width:100%}
+.act-popup-footer-left,
+.act-popup-footer-right{min-width:0}
+
+@media (max-width:640px){
+  /* Paired fields stop competing for a half-width they cannot use
+     and wrap to full width instead. */
+  .act-form-row{flex-wrap:wrap;gap:10px}
+  .act-form-row>.act-form-group{flex:1 1 100%}
+
+  /* The footer holds two button groups; without wrapping they
+     compress until their labels clip. */
+  .act-popup-footer{flex-wrap:wrap;gap:10px;padding:12px 16px}
+  .act-popup-footer-left,
+  .act-popup-footer-right{flex:1 1 auto}
+
+  /* The popup is draggable via an inline transform. On a phone a
+     dragged popup can end up largely off-screen with no way to
+     recover it, so the offset is neutralised at this size and the
+     popup stays centred by its flex parent. */
+  .act-popup{
+    transform:none!important;
+    position:relative;
+    width:100%;
+    max-width:calc(100vw - 24px);
+    max-height:88vh;
+  }
+  .act-popup-body{padding:14px 16px}
+  .act-popup-header{padding:12px 16px}
+}
+
+@media (max-width:420px){
+  .act-popup{max-width:calc(100vw - 16px);max-height:92vh}
+  .act-popup-body{padding:12px 14px}
+  .act-popup-header{padding:11px 14px}
+  .act-popup-footer{padding:11px 14px}
+  /* Stack the two button groups so labels are never truncated. */
+  .act-popup-footer-left,
+  .act-popup-footer-right{flex:1 1 100%;justify-content:flex-start}
+  .act-popup-footer-right{justify-content:flex-end}
+}
