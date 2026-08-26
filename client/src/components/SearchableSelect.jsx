@@ -5,7 +5,7 @@ import { ChevronDown, Search } from 'lucide-react'
 // CreateCompanyModal.jsx (was defined locally there) so Dynamic Custom
 // Fields' dropdown-type inputs can reuse the exact same control instead of
 // duplicating it.
-export default function SearchableSelect({ value, onChange, options, placeholder = 'Select…', showEmail = false }) {
+export default function SearchableSelect({ value, onChange, options, placeholder = 'Select…', showEmail = false, materialIcons = false }) {
   const [open, setOpen]   = useState(false)
   const [query, setQuery] = useState('')
   const ref = useRef(null)
@@ -26,8 +26,9 @@ export default function SearchableSelect({ value, onChange, options, placeholder
   const pick = (val) => { onChange(val); setOpen(false); setQuery('') }
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} className="searchable-select" style={{ position: 'relative' }}>
       <button
+        className="searchable-select-trigger"
         type="button"
         onClick={() => setOpen(o => !o)}
         style={{
@@ -38,18 +39,18 @@ export default function SearchableSelect({ value, onChange, options, placeholder
         }}
       >
         <span>{selected ? selected.label : placeholder}</span>
-        <ChevronDown size={14} color="#64748b" />
+        {materialIcons ? <span className="material-symbols-rounded" aria-hidden="true">keyboard_arrow_down</span> : <ChevronDown size={14} color="#64748b" />}
       </button>
 
       {open && (
-        <div style={{
+        <div className="searchable-select-menu" style={{
           position: 'absolute', top: 'calc(100% + 2px)', left: 0, right: 0, zIndex: 4000,
           background: '#fff', border: '1.5px solid #cbd5e1', borderRadius: 6,
           boxShadow: '0 8px 24px rgba(0,0,0,0.14)', overflow: 'hidden',
         }}>
           {/* Search */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderBottom: '1px solid #f1f5f9' }}>
-            <Search size={14} color="#94a3b8" />
+          <div className="searchable-select-search" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderBottom: '1px solid #f1f5f9' }}>
+            {materialIcons ? <span className="material-symbols-rounded" aria-hidden="true">search</span> : <Search size={14} color="#94a3b8" />}
             <input
               autoFocus
               type="text"
@@ -63,9 +64,10 @@ export default function SearchableSelect({ value, onChange, options, placeholder
           {/* Options */}
           <div style={{ maxHeight: 220, overflowY: 'auto' }}>
             {filtered.length === 0 ? (
-              <div style={{ padding: '12px 14px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No matches</div>
+              <div className="searchable-select-empty" style={{ padding: '12px 14px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No matches</div>
             ) : filtered.map(opt => (
               <div
+                className="searchable-select-option"
                 key={opt.value}
                 onClick={() => pick(opt.value)}
                 style={{
@@ -78,9 +80,9 @@ export default function SearchableSelect({ value, onChange, options, placeholder
                 onMouseEnter={e => { if (opt.value !== value) e.currentTarget.style.background = '#f8fafc' }}
                 onMouseLeave={e => { if (opt.value !== value) e.currentTarget.style.background = 'transparent' }}
               >
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>{opt.label}</div>
+                <div className="searchable-select-option-label" style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>{opt.label}</div>
                 {showEmail && opt.email && (
-                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{opt.email}</div>
+                  <div className="searchable-select-option-meta" style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{opt.email}</div>
                 )}
               </div>
             ))}

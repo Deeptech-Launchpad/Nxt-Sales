@@ -13,6 +13,7 @@ export default function MultiValueInput({
   placeholder = '',
   addLabel = 'Add another',
   inputStyle,
+  materialIcons = false,
 }) {
   const list = values && values.length ? values : ['']
 
@@ -36,9 +37,9 @@ export default function MultiValueInput({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div className="multi-value-input" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {list.map((v, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div key={i} className="multi-value-row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {type === 'tel' ? (
             <PhoneInput
               international
@@ -57,7 +58,7 @@ export default function MultiValueInput({
             />
           )}
           {i === 0 ? (
-            <span style={{
+            <span className="multi-value-primary" style={{
               fontSize: 10, fontWeight: 600, color: '#0d9488',
               background: '#f0fdfa', border: '1px solid #99f6e4',
               borderRadius: 4, padding: '2px 6px', whiteSpace: 'nowrap',
@@ -66,6 +67,7 @@ export default function MultiValueInput({
             </span>
           ) : (
             <button
+              className="multi-value-remove"
               type="button"
               onClick={() => remove(i)}
               title="Remove"
@@ -75,12 +77,13 @@ export default function MultiValueInput({
                 color: '#ef4444', padding: 4, borderRadius: 4,
               }}
             >
-              <Trash2 size={15} />
+              {materialIcons ? <span className="material-symbols-rounded" aria-hidden="true">delete</span> : <Trash2 size={15} />}
             </button>
           )}
         </div>
       ))}
       <button
+        className="multi-value-add"
         type="button"
         onClick={add}
         style={{
@@ -90,7 +93,7 @@ export default function MultiValueInput({
           width: 'fit-content', fontFamily: 'inherit',
         }}
       >
-        <Plus size={13} /> {addLabel}
+        {materialIcons ? <span className="material-symbols-rounded" aria-hidden="true">add</span> : <Plus size={13} />} {addLabel}
       </button>
     </div>
   )
