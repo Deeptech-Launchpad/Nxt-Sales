@@ -264,6 +264,7 @@ async function buildCompanyWhere(query, userId) {
   const where = { deletedAt: null }
 
   if (view === 'mine')       where.ownerId = userId
+  if (view === 'pinned')     where.isPinned = true
   if (view === 'unassigned') {
     // BUG FIX: Prisma's `in` filter REJECTS a literal null in the array
     // (`{ in: [id, null] }` throws PrismaClientValidationError — SQL's own
@@ -438,10 +439,14 @@ router.get('/import-fields', auth, async (req, res) => {
 // so Export always captures the full filtered set, not just the visible page.
 router.get('/export', auth, async (req, res) => {
   try {
+    const { sort } = req.query
     const where = await buildCompanyWhere(req.query, req.user.id)
+    // Mirrors GET / exactly (see its comment) — a Recents export must list
+    // rows in the same most-recently-updated order the page itself shows.
+    const orderBy = sort === 'recent' ? [{ updatedAt: 'desc' }] : { createdAt: 'desc' }
     const companies = await prisma.company.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy,
       include: { owner: { select: { id: true, name: true, email: true } } },
     })
     res.json({ companies, total: companies.length })
