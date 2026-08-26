@@ -28,7 +28,8 @@ export default function FilterDropdown({ label, options = [], selected = [], onC
     )
   }
 
-  const btnLabel = selected.length > 0 ? `${label} (${selected.length})` : label
+  const selectedLabel = selected.length === 1 ? options.find(option => option.value === selected[0])?.label : ''
+  const btnLabel = selected.length === 1 ? `${label}: ${selectedLabel || selected[0]}` : selected.length > 1 ? `${label} (${selected.length})` : label
 
   return (
     <div className="fdd-wrapper" ref={ref}>

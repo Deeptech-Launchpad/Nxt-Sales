@@ -77,7 +77,7 @@ export function describeDateToken(v, presets = []) {
   return v
 }
 
-export default function DateFilterDropdown({ label = 'Create date', presets = [], value = '', onChange }) {
+export default function DateFilterDropdown({ label = 'Create date', presets = [], value = '', onChange, dayLabel = 'Created on', yearLabel = 'Created during' }) {
   const [open, setOpen] = useState(false)
   const [tab, setTab]   = useState(() => tabForValue(value))
   const ref = useRef(null)
@@ -123,8 +123,8 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
   const fieldLabel = { display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, letterSpacing: '.02em' }
 
   return (
-    <div className="fdd-wrapper" ref={ref}>
-      <button className={`fdd-btn ${active ? 'active' : ''}`} onClick={() => setOpen(o => !o)}>
+    <div className="fdd-wrapper date-filter" ref={ref}>
+      <button className={`fdd-btn date-filter-trigger ${active ? 'active' : ''}`} onClick={() => setOpen(o => !o)}>
         <Calendar size={12} style={{ marginRight: 5, flexShrink: 0 }} />
         {btnText}
         {active
@@ -134,27 +134,21 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
       </button>
 
       {open && (
-        <div className="fdd-panel" style={{ width: 268, padding: 0 }}>
+        <div className="fdd-panel date-filter-panel">
           {/* Mode tabs */}
-          <div style={{ display: 'flex', borderBottom: '1px solid #eef1f5', background: '#f8fafc' }}>
+          <div className="date-filter-tabs">
             {TABS.map(t => (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                style={{
-                  flex: 1, padding: '8px 2px', border: 'none', cursor: 'pointer',
-                  fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
-                  background: tab === t.key ? '#fff' : 'transparent',
-                  color: tab === t.key ? '#1d4ed8' : '#64748b',
-                  borderBottom: tab === t.key ? '2px solid #3b82f6' : '2px solid transparent',
-                }}
+                className={tab === t.key ? 'active' : ''}
               >
                 {t.label}
               </button>
             ))}
           </div>
 
-          <div style={{ padding: 12 }}>
+          <div className="date-filter-content">
             {tab === 'preset' && (
               <div className="fdd-options" style={{ maxHeight: 210 }}>
                 {presets.map(p => (
@@ -168,7 +162,7 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
 
             {tab === 'day' && (
               <div>
-                <label style={fieldLabel}>Created on</label>
+                <label style={fieldLabel}>{dayLabel}</label>
                 <input
                   type="date"
                   value={dayValue}
@@ -213,7 +207,7 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
 
             {tab === 'year' && (
               <div>
-                <label style={fieldLabel}>Created during</label>
+                <label style={fieldLabel}>{yearLabel}</label>
                 <select value={yearValue} onChange={e => apply(e.target.value)} style={inputStyle}>
                   <option value="">Year…</option>
                   {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
