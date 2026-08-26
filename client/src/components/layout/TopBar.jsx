@@ -1,25 +1,62 @@
 import { useState, useRef, useEffect } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
 import api from '../../api/client'
 import {
-  Search, Bell, User, Settings, LogOut,
+  Search, Bell, User, Settings, LogOut, FileCode,
   Calendar, Mail, Building2, TrendingUp, X, CheckSquare,
+  LayoutDashboard, Inbox, Phone, MessageSquare, ChevronDown, Menu, Users, BarChart3, History,
 } from 'lucide-react'
 import '../../styles/topbar.css'
+import '../../styles/topnav.css'
 
 const PAGE_TITLES = {
   '/dashboard':  'Dashboard',
   '/companies':  'Companies',
+  '/recents':    'Recents',
   '/deals':      'Deals',
+  '/deals-dashboard': 'Deals Dashboard',
   '/activities': 'Activities',
   '/email':      'Email Tool',
+  '/prompt-templates': 'Prompt Templates',
+  '/ai-usage':   'AI Usage',
   '/settings':   'Settings',
   '/profile':    'My Profile',
   '/chat':       'Team Chat',
   '/users':      'User Management',
 }
+
+const NAV_GROUPS = [
+  {
+    label: 'CRM',
+    items: [
+      { to: '/companies', label: 'Companies', Icon: Building2 },
+      { to: '/recents', label: 'Recents', Icon: History },
+      { to: '/deals', label: 'Deals', Icon: TrendingUp },
+      { to: '/deals-dashboard', label: 'Deals Dashboard', Icon: BarChart3 },
+      { to: '/inbox', label: 'Inbox', Icon: Inbox },
+      { to: '/calls', label: 'Calls', Icon: Phone },
+      { to: '/meetings', label: 'Meetings', Icon: Calendar },
+      { to: '/tasks', label: 'Tasks', Icon: CheckSquare },
+    ],
+  },
+  {
+    label: 'Marketing',
+    items: [
+      { to: '/email', label: 'Email', Icon: Mail },
+      { to: '/prompt-templates', label: 'Prompt Templates', Icon: FileCode },
+      { to: '/ai-usage', label: 'AI Usage', Icon: BarChart3 },
+    ],
+  },
+  {
+    label: 'Manage',
+    items: [
+      { to: '/users', label: 'Users', Icon: Users },
+      { to: '/settings', label: 'Settings', Icon: Settings },
+    ],
+  },
+]
 
 function relTime(iso) {
   if (!iso) return ''
@@ -45,10 +82,14 @@ export default function TopBar() {
   const [showResults, setShowResults] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [notifOpen, setNotifOpen]     = useState(false)
+  const [navMenuOpen, setNavMenuOpen] = useState(null)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [unreadChat, setUnreadChat] = useState(0)
 
   const profileRef = useRef()
   const searchRef  = useRef()
   const notifRef   = useRef()
+  const navRef     = useRef()
   const debounceRef = useRef()
 
   const title = PAGE_TITLES[location.pathname] || 'NXT Sales'
@@ -60,9 +101,17 @@ export default function TopBar() {
       if (profileRef.current && !profileRef.current.contains(e.target)) setProfileOpen(false)
       if (notifRef.current   && !notifRef.current.contains(e.target))   setNotifOpen(false)
       if (searchRef.current  && !searchRef.current.contains(e.target))  setShowResults(false)
+      if (navRef.current     && !navRef.current.contains(e.target))     setNavMenuOpen(null)
     }
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  useEffect(() => {
+    const fetchUnread = () => api.get('/chat/unread').then(r => setUnreadChat(r.data.count || 0)).catch(() => {})
+    fetchUnread()
+    const interval = setInterval(fetchUnread, 10000)
+    return () => clearInterval(interval)
   }, [])
 
   // ── Global search (Companies / Deals) — debounced ──
@@ -76,7 +125,12 @@ export default function TopBar() {
       ])
       const ql = q.toLowerCase()
       const deals = dealsAll.filter(d => (d.title || '').toLowerCase().includes(ql)).slice(0, 5)
-      setResults({ companies: companies.slice(0, 5), deals })
+      const navigation = [
+        { to: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard },
+        { to: '/chat', label: 'Team Chat', Icon: MessageSquare },
+        ...NAV_GROUPS.flatMap(group => group.items),
+      ].filter(item => item.label.toLowerCase().includes(ql)).slice(0, 5)
+      setResults({ navigation, companies: companies.slice(0, 5), deals })
     } finally { setSearching(false) }
   }
 
@@ -93,17 +147,78 @@ export default function TopBar() {
     navigate(path)
   }
 
-  const totalResults = results ? results.companies.length + results.deals.length : 0
+  const totalResults = results ? (results.navigation?.length || 0) + results.companies.length + results.deals.length : 0
 
   const handleLogout = () => { logout(); navigate('/login'); setProfileOpen(false) }
   const goTo = (path) => { navigate(path); setProfileOpen(false) }
+  const closeNav = () => { setNavMenuOpen(null); setMobileNavOpen(false) }
 
   const NOTIF_ICON = { meeting: Calendar, email: Mail, task: CheckSquare }
 
   return (
     <header className="topbar">
-      <span className="topbar-title">{title}</span>
+      <div className="topbar-inner">
+        <button className="topbar-brand" type="button" onClick={() => navigate('/dashboard')} aria-label="NXT Sales dashboard">
+          <img src="/nxt-sales-logo-clean.png" alt="NXT Sales" />
+        </button>
+        <span className="sr-only">{title}</span>
 
+        <button className="topbar-mobile-toggle" type="button" onClick={() => setMobileNavOpen(v => !v)} aria-label="Toggle navigation" aria-expanded={mobileNavOpen}>
+          {mobileNavOpen ? <X size={18} /> : <Menu size={18} />}
+        </button>
+
+        <nav ref={navRef} className={`topbar-nav${mobileNavOpen ? ' is-open' : ''}`} aria-label="Primary navigation">
+          <NavLink to="/dashboard" onClick={closeNav} className={({ isActive }) => `topnav-link${isActive ? ' active' : ''}`}>
+            <LayoutDashboard size={15} /><span>Dashboard</span>
+          </NavLink>
+
+          {NAV_GROUPS.slice(0, 1).map(group => {
+            const active = group.items.some(item => location.pathname.startsWith(item.to))
+            return (
+              <div className={`topnav-group${active ? ' active' : ''}`} key={group.label}>
+                <button type="button" className="topnav-link" onClick={() => setNavMenuOpen(v => v === group.label ? null : group.label)} aria-expanded={navMenuOpen === group.label}>
+                  <span>{group.label}</span><ChevronDown size={13} className={navMenuOpen === group.label ? 'rotated' : ''} />
+                </button>
+                {navMenuOpen === group.label && (
+                  <div className="topnav-dropdown">
+                    {group.items.map(({ to, label, Icon }) => (
+                      <NavLink key={to} to={to} onClick={closeNav} className={({ isActive }) => `topnav-dropdown-item${isActive ? ' active' : ''}`}>
+                        <Icon size={15} /><span>{label}</span>
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          <NavLink to="/chat" onClick={closeNav} className={({ isActive }) => `topnav-link${isActive ? ' active' : ''}`}>
+            <MessageSquare size={15} /><span>Team Chat</span>
+            {unreadChat > 0 && <span className="topnav-badge">{unreadChat > 99 ? '99+' : unreadChat}</span>}
+          </NavLink>
+
+          {NAV_GROUPS.slice(1).map(group => {
+            const active = group.items.some(item => location.pathname.startsWith(item.to))
+            return (
+              <div className={`topnav-group${active ? ' active' : ''}`} key={group.label}>
+                <button type="button" className="topnav-link" onClick={() => setNavMenuOpen(v => v === group.label ? null : group.label)} aria-expanded={navMenuOpen === group.label}>
+                  <span>{group.label}</span><ChevronDown size={13} className={navMenuOpen === group.label ? 'rotated' : ''} />
+                </button>
+                {navMenuOpen === group.label && (
+                  <div className="topnav-dropdown">
+                    {group.items.map(({ to, label, Icon }) => (
+                      <NavLink key={to} to={to} onClick={closeNav} className={({ isActive }) => `topnav-dropdown-item${isActive ? ' active' : ''}`}>
+                        <Icon size={15} /><span>{label}</span>
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </nav>
+
+      <div className="topbar-utilities">
       {/* Global search */}
       <div className="topbar-search" ref={searchRef} style={{ position: 'relative' }}>
         <Search className="search-icon" size={15} />
@@ -118,6 +233,17 @@ export default function TopBar() {
           <div className="topbar-search-results">
             {searching && totalResults === 0 && <div className="tsr-empty">Searching…</div>}
             {!searching && totalResults === 0 && <div className="tsr-empty">No matches found.</div>}
+
+            {results?.navigation?.length > 0 && (
+              <div className="tsr-group">
+                <div className="tsr-group-title">Navigation</div>
+                {results.navigation.map(({ to, label, Icon }) => (
+                  <button key={to} className="tsr-item" onClick={() => goResult(to)}>
+                    <Icon size={14} /> <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {results?.companies?.length > 0 && (
               <div className="tsr-group">
@@ -147,7 +273,7 @@ export default function TopBar() {
       <div className="topbar-actions">
         {/* Notification center */}
         <div className="topbar-notif-wrap" ref={notifRef} style={{ position: 'relative' }}>
-          <button className="icon-btn" title="Notifications" onClick={() => setNotifOpen(o => !o)}>
+          <button className="icon-btn" title="Notifications" aria-label="Notifications" aria-expanded={notifOpen} onClick={() => setNotifOpen(o => !o)}>
             <Bell size={18} />
             {unreadCount > 0 && (
               <span className="notif-count-badge">{unreadCount > 99 ? '99+' : unreadCount}</span>
@@ -191,14 +317,19 @@ export default function TopBar() {
 
         {/* Profile avatar + dropdown */}
         <div className="topbar-profile-wrap" ref={profileRef}>
-          <div className="topbar-avatar" title={user?.name || 'User'} onClick={() => setProfileOpen(p => !p)}>
-            {initials}
-          </div>
+          <button className="topbar-profile-trigger" type="button" title={user?.name || 'User'} onClick={() => setProfileOpen(p => !p)} aria-expanded={profileOpen} aria-label="Open account menu">
+            <span className="topbar-avatar">{user?.avatar ? <img src={user.avatar} alt="" /> : initials}</span>
+            <span className="topbar-profile-copy">
+              <strong>{user?.name || 'User'}</strong>
+              <small>{user?.role || 'Account'}</small>
+            </span>
+            <ChevronDown size={13} className={profileOpen ? 'rotated' : ''} />
+          </button>
 
           {profileOpen && (
             <div className="topbar-profile-dropdown">
               <div className="tpd-user-info">
-                <div className="tpd-avatar">{initials}</div>
+                <div className="tpd-avatar">{user?.avatar ? <img src={user.avatar} alt="" /> : initials}</div>
                 <div>
                   <div className="tpd-name">{user?.name || 'User'}</div>
                   <div className="tpd-email">{user?.email || ''}</div>
@@ -222,6 +353,8 @@ export default function TopBar() {
             </div>
           )}
         </div>
+      </div>
+      </div>
       </div>
     </header>
   )

@@ -77,8 +77,7 @@ export default function Sidebar({ collapsed, onToggleCollapsed }) {
           onClick={() => navigate('/dashboard')}
           style={{ background: 'none', border: 'none', padding: 0, flex: 1, minWidth: 0, cursor: 'pointer' }}
         >
-          <img src="/AltiusNXT_Logo-01.png" alt="AltiusNxt" className="logo-img-modern" />
-          <span className="app-name-modern nav-label">NXT Sales</span>
+          <span className="sidebar-logo-crop nav-label"><img src="/nxt-sales-logo-clean.png" alt="NXT Sales" className="logo-img-modern" /></span>
         </button>
         <button
           type="button"
