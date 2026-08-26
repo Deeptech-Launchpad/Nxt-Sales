@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ChevronDown, ChevronLeft, ChevronRight, FileText, Mail, Phone,
   CheckSquare, Calendar, MoreHorizontal,
@@ -14,7 +14,6 @@ import ActivityFeed      from '../../components/activities/ActivityFeed'
 import EditRecordModal   from '../../components/EditRecordModal'
 import CreateDealModal   from '../../components/modals/CreateDealModal'
 import CompanyIntelligence from '../../components/CompanyIntelligence'
-import CompanyCalls from '../../components/activities/CompanyCalls'
 import { valueList } from '../../utils/multiValue'
 import { normalizeUrl } from '../../utils/url'
 import { invalidateCompanyEmail } from '../../utils/emailCache'
@@ -42,7 +41,74 @@ const LEFT_FIELDS = [
   { label: 'Remarks',         key: 'remarks'                      },
 ]
 
-const CENTER_TABS = ['Overview', 'Activities', 'Calls', 'Intelligence']
+const CENTER_TABS = ['Overview', 'Activities', 'Intelligence']
+
+const PROPERTY_ICONS = {
+  email: 'mail', phone: 'call', domain: 'language', _ownerName: 'person',
+  industry: 'category', leadStatus: 'flag', contactPersons: 'badge',
+  linkedProfiles: 'link', endPdpUrl: 'link', cms: 'web', remarks: 'notes',
+}
+
+function MaterialIcon({ children, filled = false }) {
+  return <span className={`material-symbols-rounded${filled ? ' filled' : ''}`} aria-hidden="true">{children}</span>
+}
+
+function CompanyProperties({ enriched, openComposer }) {
+  return (
+    <div className="company-property-grid">
+      {LEFT_FIELDS.map(f => {
+        let content = '--'
+        if (f.isEmail) {
+          const list = valueList(enriched.email, enriched.emails)
+          content = list.length ? list.map((email, i) => (
+            <span key={email} className="company-property-multi-item">
+              <button className="company-property-link" title="Compose in Marketing → Email" onClick={() => openComposer(email)}>{email}</button>
+              {i === 0 && list.length > 1 && <span className="company-primary-tag">Primary</span>}
+            </span>
+          )) : '--'
+        } else if (f.isPhone) {
+          const list = valueList(enriched.phone, enriched.phones)
+          content = list.length ? list.map((phone, i) => (
+            <span key={phone} className="company-property-multi-item">
+              <span>{phone}</span>
+              <button
+                className="company-inline-icon-btn"
+                title="Open CallHippo dialer"
+                onClick={() => {
+                  navigator.clipboard.writeText(phone).catch(() => {})
+                  window.open(`https://dialer.callhippo.com/dial#/?phone=${encodeURIComponent(phone)}`, '_blank', 'noreferrer')
+                }}
+              ><MaterialIcon>call</MaterialIcon></button>
+              {i === 0 && list.length > 1 && <span className="company-primary-tag">Primary</span>}
+            </span>
+          )) : '--'
+        } else if (f.isMulti) {
+          const list = Array.isArray(enriched[f.key]) ? enriched[f.key].filter(Boolean) : []
+          content = list.length ? list.map((value, i) => {
+            const url = f.key === 'linkedProfiles' ? normalizeUrl(value) : null
+            return (
+              <span key={`${value}-${i}`} className="company-property-multi-item">
+                {url ? <a href={url} target="_blank" rel="noopener noreferrer">{value}</a> : <span>{value}</span>}
+                {i === 0 && list.length > 1 && <span className="company-primary-tag">Primary</span>}
+              </span>
+            )
+          }) : '--'
+        } else {
+          const value = enriched[f.key]
+          const url = (f.key === 'domain' || f.key === 'endPdpUrl') ? normalizeUrl(value) : null
+          content = url ? <a href={url} target="_blank" rel="noopener noreferrer">{value}</a> : (value || '--')
+        }
+
+        return (
+          <div key={f.key} className="company-property-item">
+            <div className="company-property-label"><MaterialIcon>{PROPERTY_ICONS[f.key]}</MaterialIcon>{f.label}</div>
+            <div className="company-property-value">{content}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 // Resizable side panels (drag the handle between panels). Persisted per
 // browser, same localStorage-preference pattern used elsewhere in the app
@@ -178,20 +244,7 @@ export default function CompanyDetail() {
   const [company,    setCompany]    = useState(null)
   const [loading,    setLoading]    = useState(true)
   const [notFound,   setNotFound]   = useState(false)
-  // The active tab lives in the URL (?tab=Calls) so a refresh - automatic or
-  // a real browser reload - returns to the same tab of the same company
-  // instead of resetting to Overview or bouncing back to the Companies list.
-  const [searchParams, setSearchParams] = useSearchParams()
-  const tabFromUrl = searchParams.get('tab')
-  const [centerTab, setCenterTabState] = useState(
-    CENTER_TABS.includes(tabFromUrl) ? tabFromUrl : 'Overview'
-  )
-  const setCenterTab = (tab) => {
-    setCenterTabState(tab)
-    const p = new URLSearchParams(searchParams)
-    tab === 'Overview' ? p.delete('tab') : p.set('tab', tab)
-    setSearchParams(p, { replace: true })
-  }
+  const [centerTab,  setCenterTab]  = useState('Overview')
   const [recentActs, setRecentActs] = useState([])
   const [neighbors,  setNeighbors]  = useState({ prevId: null, nextId: null })
 
@@ -362,266 +415,143 @@ export default function CompanyDetail() {
     <>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      <div className="detail-layout" ref={layoutRef}>
-
-        {/* ── LEFT ── */}
-        <div className="detail-left" style={{ width: panelWidths.left }}>
-          <div className="detail-left-nav">
-            <span className="detail-back-link" onClick={() => navigate('/companies')}>
-              <ChevronLeft size={14} /> Companies
-            </span>
-            <div className="detail-prevnext">
-              <button
-                className="detail-prevnext-btn"
-                disabled={!neighbors.prevId}
-                onClick={() => goToCompany(neighbors.prevId)}
-                title="Previous company"
-              >
-                <ChevronLeft size={14} />
-              </button>
-              <button
-                className="detail-prevnext-btn"
-                disabled={!neighbors.nextId}
-                onClick={() => goToCompany(neighbors.nextId)}
-                title="Next company"
-              >
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-
-          <div className="detail-entity-header">
-            <div className="detail-entity-logo" style={{ borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#06b6d4)' }}>
-              {initials}
-            </div>
-            <h2 className="detail-entity-name">{displayName}</h2>
-            <button
-              onClick={async () => {
-                const { data } = await api.patch(`/companies/${id}/pin`)
-                setCompany(prev => ({ ...prev, isPinned: data.isPinned }))
-              }}
-              title={company.isPinned ? 'Unpin company' : 'Pin company'}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex' }}
-            >
-              <Star size={16} color={company.isPinned ? '#f59e0b' : '#cbd5e1'} fill={company.isPinned ? '#f59e0b' : 'none'} />
-            </button>
-            {company.domain && normalizeUrl(company.domain) && (
-              <a href={normalizeUrl(company.domain)} target="_blank" rel="noopener noreferrer" className="detail-entity-domain">
-                {company.domain} <ExternalLink size={11} />
-              </a>
-            )}
-          </div>
-
-          {/* Action buttons */}
-          <div className="detail-action-icons">
-            {[
-              { Icon: FileText,       label: 'Note',    type: 'note'    },
-              { Icon: Mail,           label: 'Email',   type: 'email'   },
-              { Icon: Phone,          label: 'Call',    type: 'call'    },
-              { Icon: CheckSquare,    label: 'Task',    type: 'task'    },
-              { Icon: Calendar,       label: 'Meeting', type: 'meeting' },
-              { Icon: MoreHorizontal, label: 'More',    type: null      },
-            ].map(({ Icon, label, type }) => (
-              <button
-                key={label}
-                className="action-icon-btn"
-                onClick={() => {
-                  if (type === 'call') {
-                    const phone = company?.phone || ''
-                    const dialUrl = phone
-                      ? `https://dialer.callhippo.com/dial#/?phone=${encodeURIComponent(phone)}`
-                      : 'https://dialer.callhippo.com/dial#/'
-                    if (phone) navigator.clipboard.writeText(phone).catch(() => {})
-                    window.open(dialUrl, '_blank', 'noreferrer')
-                  } else {
-                    type && openModal(type)
-                  }
-                }}
-              >
-                <Icon size={16} />{label}
-              </button>
-            ))}
-          </div>
-
-          <div className="detail-about-header">
-            About this company
-            <button className="detail-actions-btn" onClick={() => setEditOpen(true)}>Edit</button>
-          </div>
-
-          <div className="detail-field-list">
-            {LEFT_FIELDS.map(f => {
-              if (f.isEmail) {
-                const list = valueList(enriched.email, enriched.emails)
-                return (
-                  <div key={f.key} className="detail-field-row">
-                    <span className="detail-field-label">{f.label}</span>
-                    <span className="detail-field-value" style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                      {list.length
-                        ? list.map((e, i) => (
-                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
-                              {/* Opens the in-app composer, not the OS mail client */}
-                              <span
-                                className="link"
-                                style={{ cursor: 'pointer' }}
-                                title="Compose in Marketing → Email"
-                                onClick={() => openComposer(e)}
-                              >
-                                {e}
-                              </span>
-                              {i === 0 && list.length > 1 && <span style={PRIMARY_TAG}>Primary</span>}
-                            </span>
-                          ))
-                        : '--'}
-                    </span>
-                  </div>
-                )
-              }
-              if (f.isPhone) {
-                const list = valueList(enriched.phone, enriched.phones)
-                return (
-                  <div key={f.key} className="detail-field-row">
-                    <span className="detail-field-label">{f.label}</span>
-                    <span className="detail-field-value" style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                      {list.length
-                        ? list.map((p, i) => (
-                            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              {p}
-                              <button
-                                title="Open CallHippo dialer"
-                                onClick={() => {
-                                  const dialUrl = `https://dialer.callhippo.com/dial#/?phone=${encodeURIComponent(p)}`
-                                  navigator.clipboard.writeText(p).catch(() => {})
-                                  window.open(dialUrl, '_blank', 'noreferrer')
-                                }}
-                                style={{ display: 'flex', alignItems: 'center', background: 'none', border: 'none', cursor: 'pointer', color: '#e53e3e', padding: 0 }}
-                              >
-                                <Phone size={14} />
-                              </button>
-                              {i === 0 && list.length > 1 && <span style={PRIMARY_TAG}>Primary</span>}
-                            </span>
-                          ))
-                        : '--'}
-                    </span>
-                  </div>
-                )
-              }
-              if (f.isMulti) {
-                const list = Array.isArray(enriched[f.key]) ? enriched[f.key].filter(Boolean) : []
-                return (
-                  <div key={f.key} className="detail-field-row">
-                    <span className="detail-field-label">{f.label}</span>
-                    <span className="detail-field-value" style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'flex-start' }}>
-                      {list.length
-                        ? list.map((v, i) => {
-                            const asUrl = f.key === 'linkedProfiles' ? normalizeUrl(v) : null
-                            return (
-                              <span key={i} style={{ display: 'inline-flex', alignItems: 'center' }}>
-                                {asUrl
-                                  ? <a href={asUrl} target="_blank" rel="noopener noreferrer">{v}</a>
-                                  : v}
-                                {i === 0 && list.length > 1 && <span style={PRIMARY_TAG}>Primary</span>}
-                              </span>
-                            )
-                          })
-                        : '--'}
-                    </span>
-                  </div>
-                )
-              }
-              const val = enriched[f.key]
-              const asUrl = (f.key === 'domain' || f.key === 'endPdpUrl') ? normalizeUrl(val) : null
-              return (
-                <div key={f.key} className="detail-field-row">
-                  <span className="detail-field-label">{f.label}</span>
-                  <span className="detail-field-value">
-                    {asUrl
-                      ? <a href={asUrl} target="_blank" rel="noopener noreferrer">{val}</a>
-                      : (val || '--')}
-                  </span>
-                </div>
-              )
-            })}
+      <div className="company-workspace">
+        <div className="company-workspace-nav">
+          <button className="company-back-btn" onClick={() => navigate('/companies')}><MaterialIcon>arrow_back</MaterialIcon>Companies</button>
+          <div className="company-neighbor-nav">
+            <button disabled={!neighbors.prevId} onClick={() => goToCompany(neighbors.prevId)} title="Previous company"><MaterialIcon>chevron_left</MaterialIcon></button>
+            <button disabled={!neighbors.nextId} onClick={() => goToCompany(neighbors.nextId)} title="Next company"><MaterialIcon>chevron_right</MaterialIcon></button>
           </div>
         </div>
 
-        {/* Drag the left panel's right edge to resize it */}
-        <div
-          className={`detail-panel-resize-handle${draggingSide === 'left' ? ' dragging' : ''}`}
-          onMouseDown={startDrag('left')}
-          title="Drag to resize"
-        />
-
-        {/* ── CENTER ── */}
-        <div className="detail-center">
-          <div className="detail-center-tabs">
-            {CENTER_TABS.map(t => (
-              <button key={t} className={`detail-tab ${centerTab === t ? 'active' : ''}`} onClick={() => setCenterTab(t)}>{t}</button>
-            ))}
-          </div>
-
-          {centerTab === 'Overview' && (
-            <div className="detail-center-body">
-              <OverviewTab company={company} recentActs={recentActs} />
-            </div>
-          )}
-
-          {centerTab === 'Activities' && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <ActivityFeed companyId={id} companyName={company.name} contactEmail={company.email} onAction={openModal} refreshKey={feedRefreshKey} />
-            </div>
-          )}
-
-          {centerTab === 'Calls' && (
-            <div className="detail-center-body">
-              <CompanyCalls companyId={id} />
-            </div>
-          )}
-
-          {centerTab === 'Intelligence' && (
-            <div className="detail-center-body">
-              <IntelligenceTab company={company} />
-            </div>
-          )}
-        </div>
-
-        {/* Drag the right panel's left edge to resize it */}
-        <div
-          className={`detail-panel-resize-handle${draggingSide === 'right' ? ' dragging' : ''}`}
-          onMouseDown={startDrag('right')}
-          title="Drag to resize"
-        />
-
-        {/* ── RIGHT ── */}
-        <div className="detail-right" style={{ width: panelWidths.right }}>
-          <div className="right-panel-section">
-            <div className="right-panel-header">
-              <div className="right-panel-header-left"><ChevronDown size={14} /> Deals ({deals.length})</div>
-              <button className="right-panel-add" onClick={() => setShowDealModal(true)}><Plus size={12} /> Add</button>
-            </div>
-            {deals.length === 0 ? (
-              <div className="right-empty-state"><p className="right-empty-text">Track the revenue opportunities associated with this record.</p></div>
-            ) : (
-              <div style={{ padding: '4px 12px 12px' }}>
-                {deals.map(d => (
-                  <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 4px', borderBottom: '1px solid #f1f5f9' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div>
-                      <div style={{ fontSize: 11, color: '#64748b' }}>{d.stage}</div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>
-                        {formatCurrency(d.value, d.currency)}
-                      </span>
-                      <button onClick={() => setEditDeal(d)} title="Edit deal" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', padding: 2 }}><Pencil size={13} /></button>
-                      <button onClick={() => handleDeleteDeal(d.id)} title="Delete deal" style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444', padding: 2 }}><Trash2 size={13} /></button>
-                    </div>
-                  </div>
-                ))}
+        <header className="company-workspace-header">
+          <div className="company-header-main">
+            <div className="company-header-avatar">{initials}</div>
+            <div className="company-header-copy">
+              <div className="company-header-title-row">
+                <h1>{displayName}</h1>
+                <button
+                  className={`company-pin-btn${company.isPinned ? ' pinned' : ''}`}
+                  onClick={async () => {
+                    const { data } = await api.patch(`/companies/${id}/pin`)
+                    setCompany(prev => ({ ...prev, isPinned: data.isPinned }))
+                  }}
+                  title={company.isPinned ? 'Unpin company' : 'Pin company'}
+                ><MaterialIcon filled={company.isPinned}>star</MaterialIcon></button>
               </div>
-            )}
+              {company.domain && normalizeUrl(company.domain) && (
+                <a href={normalizeUrl(company.domain)} target="_blank" rel="noopener noreferrer" className="company-header-domain">
+                  {company.domain}<MaterialIcon>open_in_new</MaterialIcon>
+                </a>
+              )}
+              <div className="company-header-meta">
+                <span><MaterialIcon>category</MaterialIcon>{company.industry || '--'}</span>
+                <span><MaterialIcon>person</MaterialIcon>{company.owner?.name || '--'}</span>
+                <span><MaterialIcon>flag</MaterialIcon>{company.leadStatus || '--'}</span>
+              </div>
+            </div>
           </div>
-        </div>
 
+          <div className="company-quick-actions">
+            {[
+              { icon: 'note_add', label: 'Note', type: 'note' },
+              { icon: 'mail', label: 'Email', type: 'email' },
+              { icon: 'call', label: 'Call', type: 'call' },
+              { icon: 'add_task', label: 'Task', type: 'task' },
+              { icon: 'event', label: 'Meeting', type: 'meeting' },
+              { icon: 'more_horiz', label: 'More', type: null },
+            ].map(action => (
+              <button
+                key={action.label}
+                title={action.label}
+                onClick={() => {
+                  if (action.type === 'call') {
+                    const phone = company?.phone || ''
+                    if (phone) navigator.clipboard.writeText(phone).catch(() => {})
+                    window.open(phone ? `https://dialer.callhippo.com/dial#/?phone=${encodeURIComponent(phone)}` : 'https://dialer.callhippo.com/dial#/', '_blank', 'noreferrer')
+                  } else action.type && openModal(action.type)
+                }}
+              ><MaterialIcon>{action.icon}</MaterialIcon><span>{action.label}</span></button>
+            ))}
+          </div>
+        </header>
+
+        <nav className="company-workspace-tabs" aria-label="Company sections">
+          {CENTER_TABS.map(tab => (
+            <button key={tab} className={centerTab === tab ? 'active' : ''} onClick={() => setCenterTab(tab)}>{tab}</button>
+          ))}
+        </nav>
+
+        {centerTab === 'Overview' && (
+          <main className="company-workspace-body">
+            <section className="company-summary-strip">
+              <div><span>Create Date</span><strong>{company.createdAt ? new Date(company.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '--'}</strong></div>
+              <div><span>Lead Status</span><strong>{company.leadStatus || '--'}</strong></div>
+              <div><span>Lead Owner</span><strong>{company.owner?.name || '--'}</strong></div>
+              <div><span>Industry</span><strong>{company.industry || '--'}</strong></div>
+            </section>
+
+            <section className="company-workspace-card company-about-card">
+              <div className="company-card-header">
+                <div><h2>About this company</h2><p>Company profile and contact information</p></div>
+                <button className="company-secondary-btn" onClick={() => setEditOpen(true)}><MaterialIcon>edit</MaterialIcon>Edit</button>
+              </div>
+              <CompanyProperties enriched={enriched} openComposer={openComposer} />
+            </section>
+
+            <div className="company-overview-grid">
+              <section className="company-workspace-card company-activity-card">
+                <div className="company-card-header">
+                  <div><h2>Recent activities</h2><p>Latest interactions with this company</p></div>
+                  <button className="company-text-btn" onClick={() => setCenterTab('Activities')}>View all<MaterialIcon>arrow_forward</MaterialIcon></button>
+                </div>
+                <div className="company-recent-list">
+                  {recentActs.length === 0 ? (
+                    <div className="company-compact-empty"><MaterialIcon>history</MaterialIcon><span>No recent activities. Log a note, call, or email below.</span></div>
+                  ) : recentActs.slice(0, 5).map(activity => (
+                    <div key={activity.id} className="company-recent-item">
+                      <span className="company-timeline-icon"><MaterialIcon>history</MaterialIcon></span>
+                      <div><strong>{activity.title || activity.type}</strong><span>{new Date(activity.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="company-workspace-card company-deals-card">
+                <div className="company-card-header">
+                  <div><h2>Deals ({deals.length})</h2><p>Revenue opportunities</p></div>
+                  <button className="company-secondary-btn" onClick={() => setShowDealModal(true)}><MaterialIcon>add</MaterialIcon>Add</button>
+                </div>
+                {deals.length === 0 ? (
+                  <div className="company-compact-empty"><MaterialIcon>payments</MaterialIcon><span>Track the revenue opportunities associated with this record.</span></div>
+                ) : (
+                  <div className="company-deal-list">
+                    {deals.map(deal => (
+                      <div key={deal.id} className="company-deal-row">
+                        <div><strong>{deal.title}</strong><span>{deal.stage}</span></div>
+                        <div className="company-deal-actions">
+                          <b>{formatCurrency(deal.value, deal.currency)}</b>
+                          <button onClick={() => setEditDeal(deal)} title="Edit deal"><MaterialIcon>edit</MaterialIcon></button>
+                          <button className="danger" onClick={() => handleDeleteDeal(deal.id)} title="Delete deal"><MaterialIcon>delete</MaterialIcon></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </main>
+        )}
+
+        {centerTab === 'Activities' && (
+          <main className="company-workspace-body company-activities-body">
+            <ActivityFeed companyId={id} companyName={company.name} contactEmail={company.email} onAction={openModal} refreshKey={feedRefreshKey} />
+          </main>
+        )}
+
+        {centerTab === 'Intelligence' && (
+          <main className="company-workspace-body"><IntelligenceTab company={company} /></main>
+        )}
       </div>
 
       {/* ── Edit company modal ── */}

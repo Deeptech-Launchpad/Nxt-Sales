@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Search, ChevronLeft, RotateCcw, Trash2 } from 'lucide-react'
 import api from '../../api/client'
 import '../../styles/contacts.css'
+import '../../styles/companies.css'
 
 const RETENTION_DAYS = 30
 
@@ -78,7 +79,7 @@ export default function CompanyRecycleBin() {
   }
 
   return (
-    <div className="contacts-container">
+    <div className="contacts-container companies-page">
       <div className="contacts-header">
         <div className="header-left">
           <span className="detail-back-link" style={{ cursor: 'pointer', marginBottom: 6, display: 'inline-flex' }} onClick={() => navigate('/companies')}>
@@ -89,19 +90,19 @@ export default function CompanyRecycleBin() {
         </div>
         <div className="header-actions">
           {selected.length > 0 && (
-            <>
+            <div className="action-group">
               <button className="btn-action" onClick={restoreSelected} disabled={busy}>
                 <RotateCcw size={14} /> {busy ? 'Working…' : `Restore selected (${selected.length})`}
               </button>
               <button
                 className="btn-action"
-                style={{ color: '#ef4444', borderColor: '#fecaca' }}
+                style={{ color: '#ef4444' }}
                 onClick={permanentlyDeleteSelected}
                 disabled={busy}
               >
                 <Trash2 size={14} /> Permanently delete ({selected.length})
               </button>
-            </>
+            </div>
           )}
         </div>
       </div>
