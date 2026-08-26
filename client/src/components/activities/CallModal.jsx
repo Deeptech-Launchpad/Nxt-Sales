@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Phone, PhoneIncoming, PhoneOutgoing } from 'lucide-react'
 import api from '../../api/client'
 import { useDraggable } from '../../hooks/useDraggable'
@@ -48,7 +49,7 @@ export default function CallModal({ isOpen = true, companyId, contactName, onClo
 
   if (!isOpen) return null
 
-  return (
+  return createPortal(
     <div className="act-popup-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="act-popup" ref={dragRef} style={{ width: 560, transform: `translate(${pos.x}px, ${pos.y}px)` }}>
         <div className="act-popup-header">
@@ -110,6 +111,7 @@ export default function CallModal({ isOpen = true, companyId, contactName, onClo
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

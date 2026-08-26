@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react'
-import { X, Calendar, Video, CheckCircle, ExternalLink } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import {
+  X, Calendar, Video, CheckCircle, ExternalLink,
+  Building2, Type, Clock, Users, MapPin, AlignLeft,
+  User, ChevronDown
+} from 'lucide-react'
 import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
 import { useDraggable } from '../../hooks/useDraggable'
@@ -17,15 +22,15 @@ function addMinutes(isoStr, minutes) {
   return d.toISOString().slice(0, 16)
 }
 
-const DURATION_OPTIONS = ['15', '30', '45', '60', '90', '120']
+const DURATION_OPTIONS = [
+  { value: '15',  label: '15 min' },
+  { value: '30',  label: '30 min' },
+  { value: '45',  label: '45 min' },
+  { value: '60',  label: '1 hour' },
+  { value: '90',  label: '1.5 hours' },
+  { value: '120', label: '2 hours' },
+]
 
-// Pass `activity` (an existing meeting Activity record) to edit it —
-// otherwise a new meeting is created. Edit mode always uses the plain/manual
-// save path (PUT /activities/:id), never the Google Meet scheduling path —
-// rescheduling a live Meet/Calendar event is out of scope here. `companyId`
-// pre-links to a company (Company Detail always supplies this); when neither
-// `activity` nor `companyId` carries one (opened from the global Meetings
-// dashboard with nothing pre-selected), a CompanyPicker is shown.
 export default function MeetingModal({
   isOpen = true,
   activity,
@@ -44,7 +49,7 @@ export default function MeetingModal({
   const [useGoogleMeet,  setUseGoogleMeet]  = useState(false)
   const [users, setUsers] = useState([])
 
-  const [pickedCompanyId, setPickedCompanyId]     = useState(isEdit ? activity.companyId : (companyId || ''))
+  const [pickedCompanyId,   setPickedCompanyId]   = useState(isEdit ? activity.companyId : (companyId || ''))
   const [pickedCompanyName, setPickedCompanyName] = useState(isEdit ? (activity.company?.name || '') : '')
 
   const editDurationM = isEdit && activity.startTime && activity.endTime
@@ -63,13 +68,13 @@ export default function MeetingModal({
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState('')
 
+  // Company is now optional — show picker only when not already linked
   const needsCompanyPicker = !companyId && !(isEdit && activity.companyId)
 
-  // Result after Google Meet scheduling
   const [savedMeetLink, setSavedMeetLink] = useState(null)
 
   useEffect(() => {
-    if (!isOpen || isEdit) return // edit mode never offers the Google Meet path
+    if (!isOpen || isEdit) return
     api.get('/email/status')
       .then(r => {
         setGmailConnected(r.data.connected)
@@ -85,8 +90,8 @@ export default function MeetingModal({
   const endTime = addMinutes(start, Number(durationM))
 
   const save = async () => {
-    if (!title.trim()) { setError('Title is required.'); return }
-
+    if (!title.trim()) { setError('Please enter a meeting title.'); return }
+    // Company is now OPTIONAL — no validation required
     setSaving(true); setError('')
 
     try {
@@ -108,7 +113,6 @@ export default function MeetingModal({
         })
         data = res.data
       } else if (useGoogleMeet && gmailConnected) {
-        // Schedule via Google Calendar + generate Meet link
         const startDate = new Date(start)
         const endDate   = new Date(startDate.getTime() + Number(durationM) * 60000)
         const res = await api.post('/calendar/schedule', {
@@ -132,12 +136,10 @@ export default function MeetingModal({
           return
         }
 
-        // Calendar API returned no Meet link — show error, do not close
         setError('Meeting saved but no Google Meet link was generated. Check your Google account settings.')
         setSaving(false)
         return
       } else {
-        // Manual log via activities route
         const startTime = new Date(start)
         const endTimeDate = new Date(startTime.getTime() + Number(durationM) * 60000)
         const res = await api.post('/activities', {
@@ -168,20 +170,22 @@ export default function MeetingModal({
 
   if (!isOpen) return null
 
-  // Show Meet link result card
+  // Success screen after Google Meet scheduling
   if (savedMeetLink) {
-    return (
+    return createPortal(
       <div className="act-popup-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-        <div className="act-popup" ref={dragRef} style={{ width: 500, transform: `translate(${pos.x}px, ${pos.y}px)` }}>
+        <div className="act-popup" ref={dragRef} style={{ width: 480, transform: `translate(${pos.x}px, ${pos.y}px)` }}>
           <div className="act-popup-header">
             <div className="act-popup-title"><Calendar size={15} /> Meeting Scheduled</div>
             <button className="act-popup-icon-btn" onClick={onClose}><X size={15} /></button>
           </div>
-          <div className="act-popup-body" style={{ textAlign: 'center', padding: '32px 24px' }}>
-            <CheckCircle size={48} style={{ color: '#10b981', marginBottom: 16 }} />
-            <h3 style={{ margin: '0 0 8px', fontSize: 16, color: '#0f172a' }}>Meeting scheduled successfully!</h3>
-            <p style={{ color: '#64748b', fontSize: 13, marginBottom: 20 }}>
-              Google Calendar event created. Invitations sent to attendees.
+          <div className="act-popup-body" style={{ textAlign: 'center', padding: '40px 28px' }}>
+            <div style={{ width: 64, height: 64, background: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <CheckCircle size={32} color="#16a34a" />
+            </div>
+            <h3 style={{ margin: '0 0 8px', fontSize: 17, color: '#0f172a', fontWeight: 700 }}>Meeting scheduled!</h3>
+            <p style={{ color: '#64748b', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+              Google Calendar event created. Invitations sent to all attendees.
             </p>
             <a
               href={savedMeetLink}
@@ -189,13 +193,13 @@ export default function MeetingModal({
               rel="noreferrer"
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
-                background: '#1a73e8', color: '#fff', padding: '10px 20px',
+                background: '#1a73e8', color: '#fff', padding: '11px 22px',
                 borderRadius: 8, textDecoration: 'none', fontSize: 14, fontWeight: 600,
               }}
             >
               <Video size={16} /> Join Google Meet <ExternalLink size={13} />
             </a>
-            <div style={{ marginTop: 12, fontSize: 12, color: '#94a3b8', wordBreak: 'break-all' }}>{savedMeetLink}</div>
+            <div style={{ marginTop: 12, fontSize: 11, color: '#94a3b8', wordBreak: 'break-all' }}>{savedMeetLink}</div>
           </div>
           <div className="act-popup-footer">
             <div className="act-popup-footer-right" style={{ marginLeft: 'auto' }}>
@@ -203,138 +207,197 @@ export default function MeetingModal({
             </div>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body,
     )
   }
 
-  return (
-    <div className="act-popup-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="act-popup" ref={dragRef} style={{ width: 640, transform: `translate(${pos.x}px, ${pos.y}px)` }}>
+  const durationLabel = DURATION_OPTIONS.find(d => d.value === durationM)?.label || `${durationM} min`
 
+  return createPortal(
+    <div className="act-popup-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="act-popup mm-popup" ref={dragRef} style={{ width: 640, transform: `translate(${pos.x}px, ${pos.y}px)` }}>
+
+        {/* Header */}
         <div className="act-popup-header">
           <div className="act-popup-title">
-            <Calendar size={15} /> {isEdit ? 'Edit meeting' : (useGoogleMeet ? 'Schedule meeting' : 'Log a meeting')}
-            {contactName ? ` — ${contactName}` : ''}
+            <Calendar size={15} />
+            {isEdit ? 'Edit Meeting' : (useGoogleMeet ? 'Schedule Meeting' : 'Log a Meeting')}
+            {contactName ? <span style={{ opacity: 0.65, fontWeight: 400 }}> — {contactName}</span> : ''}
           </div>
           <div className="act-popup-header-actions">
-            <button className="act-popup-icon-btn" onClick={onClose}><X size={15} /></button>
+            <button className="act-popup-icon-btn" onClick={onClose} title="Close"><X size={15} /></button>
           </div>
         </div>
 
-        {/* Google Meet toggle */}
+        {/* Google Meet toggle banner */}
         {gmailConnected && (
-          <div style={{ padding: '10px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+          <div className="mm-meet-banner">
+            <label className="mm-meet-label">
               <input
                 type="checkbox"
                 checked={useGoogleMeet}
                 onChange={e => setUseGoogleMeet(e.target.checked)}
-                style={{ accentColor: '#1a73e8', width: 15, height: 15 }}
+                style={{ accentColor: '#1a73e8', width: 14, height: 14, cursor: 'pointer' }}
               />
-              <Video size={14} style={{ color: '#1a73e8' }} />
-              <span style={{ fontWeight: 500, color: '#0f172a' }}>Create Google Meet link</span>
-              <span style={{ color: '#64748b', fontWeight: 400 }}>— sends calendar invite to attendees</span>
+              <Video size={14} color="#1a73e8" />
+              <span className="mm-meet-text">Create Google Meet link</span>
+              <span className="mm-meet-sub">Sends calendar invite to all attendees</span>
             </label>
           </div>
         )}
 
-        <div className="act-popup-body">
-          {needsCompanyPicker && (
-            <div className="act-form-group" style={{ marginBottom: 12 }}>
-              <label>Company <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional)</span></label>
-              <CompanyPicker
-                value={pickedCompanyId}
-                label={pickedCompanyName}
-                onChange={(id, name) => { setPickedCompanyId(id); setPickedCompanyName(name) }}
-              />
-            </div>
-          )}
+        <div className="act-popup-body mm-body">
 
-          <div className="act-form-group" style={{ marginBottom: 12 }}>
-            <label>Title *</label>
-            <input
-              type="text"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. Product demo call"
-              autoFocus
-            />
-          </div>
-
-          <div className="act-form-row" style={{ marginBottom: 12 }}>
-            <div className="act-form-group">
-              <label>Start date & time</label>
-              <input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} />
-            </div>
-            <div className="act-form-group" style={{ maxWidth: 140 }}>
-              <label>Duration (min)</label>
-              <select value={durationM} onChange={e => setDurationM(e.target.value)}>
-                {(DURATION_OPTIONS.includes(durationM) ? DURATION_OPTIONS : [durationM, ...DURATION_OPTIONS]).map(v => (
-                  <option key={v} value={v}>{v} min</option>
-                ))}
-              </select>
-            </div>
-            {!useGoogleMeet && (
-              <div className="act-form-group" style={{ maxWidth: 160 }}>
-                <label>Status</label>
-                <select value={status} onChange={e => setStatus(e.target.value)}>
-                  <option value="scheduled">Scheduled</option>
-                  <option value="completed">Completed</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </div>
-            )}
-          </div>
-
-          <div className="act-form-group" style={{ marginBottom: 12 }}>
-            <label>Assign to</label>
-            <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
-              <option value="">Unassigned</option>
-              {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
-            </select>
-          </div>
-
-          {useGoogleMeet ? (
-            <div className="act-form-group" style={{ marginBottom: 12 }}>
-              <label>Attendees (email addresses, comma-separated)</label>
+          {/* Section: Title */}
+          <div className="mm-section">
+            <div className="mm-field-icon"><Type size={14} /></div>
+            <div className="mm-field-content">
               <input
                 type="text"
-                value={attendees}
-                onChange={e => setAttendees(e.target.value)}
-                placeholder="user@company.com, client@example.com"
+                className="mm-title-input"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="Meeting title  (e.g. Product Demo Call)"
+                autoFocus
               />
             </div>
-          ) : (
-            <div className="act-form-row" style={{ marginBottom: 12 }}>
-              <div className="act-form-group">
-                <label>Location</label>
+          </div>
+
+          <div className="mm-divider" />
+
+          {/* Section: Date, Duration, Status */}
+          <div className="mm-section">
+            <div className="mm-field-icon"><Clock size={14} /></div>
+            <div className="mm-field-content mm-row">
+              <div className="mm-field-group">
+                <label className="mm-label">Start Date & Time</label>
                 <input
-                  type="text"
-                  value={location}
-                  onChange={e => setLocation(e.target.value)}
-                  placeholder="Office, Zoom link, etc."
+                  type="datetime-local"
+                  className="mm-input"
+                  value={start}
+                  onChange={e => setStart(e.target.value)}
                 />
               </div>
-              <div className="act-form-group">
-                <label>Participants (emails, comma-separated)</label>
+              <div className="mm-field-group" style={{ maxWidth: 140 }}>
+                <label className="mm-label">Duration</label>
+                <select className="mm-input mm-select" value={durationM} onChange={e => setDurationM(e.target.value)}>
+                  {(DURATION_OPTIONS.some(d => d.value === durationM) ? DURATION_OPTIONS : [{ value: durationM, label: `${durationM} min` }, ...DURATION_OPTIONS]).map(d => (
+                    <option key={d.value} value={d.value}>{d.label}</option>
+                  ))}
+                </select>
+              </div>
+              {!useGoogleMeet && (
+                <div className="mm-field-group" style={{ maxWidth: 150 }}>
+                  <label className="mm-label">Status</label>
+                  <select className="mm-input mm-select" value={status} onChange={e => setStatus(e.target.value)}>
+                    <option value="scheduled">🕐 Scheduled</option>
+                    <option value="completed">✅ Completed</option>
+                    <option value="cancelled">❌ Cancelled</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mm-divider" />
+
+          {/* Section: Company (optional) */}
+          {needsCompanyPicker && (
+            <>
+              <div className="mm-section">
+                <div className="mm-field-icon"><Building2 size={14} /></div>
+                <div className="mm-field-content">
+                  <label className="mm-label">
+                    Company
+                    <span className="mm-optional-badge">optional</span>
+                  </label>
+                  <CompanyPicker
+                    value={pickedCompanyId}
+                    label={pickedCompanyName}
+                    onChange={(id, name) => { setPickedCompanyId(id); setPickedCompanyName(name) }}
+                  />
+                </div>
+              </div>
+              <div className="mm-divider" />
+            </>
+          )}
+
+          {/* Section: Assign To */}
+          <div className="mm-section">
+            <div className="mm-field-icon"><User size={14} /></div>
+            <div className="mm-field-content">
+              <label className="mm-label">Assigned To</label>
+              <select className="mm-input mm-select" value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
+                <option value="">Unassigned</option>
+                {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="mm-divider" />
+
+          {/* Section: Location & Participants */}
+          {useGoogleMeet ? (
+            <div className="mm-section">
+              <div className="mm-field-icon"><Users size={14} /></div>
+              <div className="mm-field-content">
+                <label className="mm-label">Attendees <span style={{ fontWeight: 400, textTransform: 'none', fontSize: 11 }}>(email addresses, comma-separated)</span></label>
                 <input
                   type="text"
+                  className="mm-input"
                   value={attendees}
                   onChange={e => setAttendees(e.target.value)}
-                  placeholder="user@company.com, …"
+                  placeholder="user@company.com, client@example.com"
                 />
+              </div>
+            </div>
+          ) : (
+            <div className="mm-section">
+              <div className="mm-field-icon"><MapPin size={14} /></div>
+              <div className="mm-field-content mm-row">
+                <div className="mm-field-group">
+                  <label className="mm-label">Location</label>
+                  <input
+                    type="text"
+                    className="mm-input"
+                    value={location}
+                    onChange={e => setLocation(e.target.value)}
+                    placeholder="Office, Zoom link, etc."
+                  />
+                </div>
+                <div className="mm-field-group">
+                  <label className="mm-label">Participants <span style={{ fontWeight: 400, textTransform: 'none' }}>(emails, comma-separated)</span></label>
+                  <input
+                    type="text"
+                    className="mm-input"
+                    value={attendees}
+                    onChange={e => setAttendees(e.target.value)}
+                    placeholder="user@company.com, …"
+                  />
+                </div>
               </div>
             </div>
           )}
 
-          <div className="act-form-group">
-            <label>Description / Agenda</label>
-            <textarea
-              rows={3}
-              value={body}
-              onChange={e => setBody(e.target.value)}
-              placeholder="What will be discussed?"
-            />
+          <div className="mm-divider" />
+
+          {/* Section: Description */}
+          <div className="mm-section">
+            <div className="mm-field-icon"><AlignLeft size={14} /></div>
+            <div className="mm-field-content">
+              <label className="mm-label">
+                Description / Agenda
+                <span className="mm-optional-badge">optional</span>
+              </label>
+              <textarea
+                className="mm-input mm-textarea"
+                rows={3}
+                value={body}
+                onChange={e => setBody(e.target.value)}
+                placeholder="What will be discussed? Add agenda, notes, or goals…"
+              />
+            </div>
           </div>
 
           <CustomFieldsSection
@@ -343,31 +406,38 @@ export default function MeetingModal({
             onChange={(key, value) => setCustomFields(p => ({ ...p, [key]: value }))}
           />
 
-          {error && <p style={{ color: '#ef4444', fontSize: 12, marginTop: 6, fontWeight: 500 }}>{error}</p>}
+          {error && (
+            <div className="mm-error">
+              <span>⚠</span> {error}
+            </div>
+          )}
         </div>
 
+        {/* Footer */}
         <div className="act-popup-footer">
           <div className="act-popup-footer-left">
             {!isEdit && !gmailConnected && (
-              <span style={{ fontSize: 11, color: '#94a3b8' }}>
-                Connect Gmail to schedule with Google Meet
+              <span style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Video size={12} /> Connect Gmail to use Google Meet
               </span>
             )}
           </div>
           <div className="act-popup-footer-right">
             <button className="btn-act-cancel" onClick={onClose}>Cancel</button>
-            <button className="btn-act-save" onClick={save} disabled={saving}>
-              {isEdit
-                ? <><Calendar size={13} /> {saving ? 'Saving…' : 'Save changes'}</>
-                : useGoogleMeet
-                  ? <><Video size={13} /> {saving ? 'Scheduling…' : 'Schedule & Create Meet'}</>
-                  : <><Calendar size={13} /> {saving ? 'Saving…' : 'Log meeting'}</>
-              }
+            <button className="btn-act-save mm-save-btn" onClick={save} disabled={saving}>
+              {isEdit ? (
+                <><Calendar size={13} /> {saving ? 'Saving…' : 'Save Changes'}</>
+              ) : useGoogleMeet ? (
+                <><Video size={13} /> {saving ? 'Scheduling…' : 'Schedule & Create Meet'}</>
+              ) : (
+                <><Calendar size={13} /> {saving ? 'Saving…' : 'Log Meeting'}</>
+              )}
             </button>
           </div>
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

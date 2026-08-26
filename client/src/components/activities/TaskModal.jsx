@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react'
-import { X, CheckSquare } from 'lucide-react'
+import { X } from 'lucide-react'
 import api from '../../api/client'
 import { useAuth } from '../../context/AuthContext'
-import { useDraggable } from '../../hooks/useDraggable'
 import CompanyPicker from '../CompanyPicker'
+import SearchableSelect from '../SearchableSelect'
 import CustomFieldsSection, { extractCustomFieldValues } from '../CustomFieldsSection'
-import '../../styles/activity-modals.css'
+import '../../styles/modal.css'
+
+const MaterialIcon = ({ children }) => (
+  <span className="material-symbols-rounded" aria-hidden="true">{children}</span>
+)
 
 // Default due date/time for a new task: tomorrow at 9am local time.
 function tomorrowDateTimeStr() {
@@ -34,7 +38,6 @@ export default function TaskModal({ isOpen = true, activity, companyId, contactN
   const { user }  = useAuth()
   const isEdit = !!activity
   const [users, setUsers] = useState([])
-  const { dragRef, pos } = useDraggable()
 
   const [pickedCompanyId, setPickedCompanyId]     = useState(isEdit ? activity.companyId : (companyId || ''))
   const [pickedCompanyName, setPickedCompanyName] = useState(isEdit ? (activity.company?.name || '') : '')
@@ -53,6 +56,11 @@ export default function TaskModal({ isOpen = true, activity, companyId, contactN
   useEffect(() => {
     api.get('/users').then(r => setUsers(r.data)).catch(() => {})
   }, [])
+
+  const assigneeOptions = [
+    { value: '', label: 'Unassigned' },
+    ...users.map(u => ({ value: u.id, label: u.name, email: u.email })),
+  ]
 
   const save = async () => {
     if (!taskName.trim()) { setError('Task name is required.'); return }
@@ -84,84 +92,94 @@ export default function TaskModal({ isOpen = true, activity, companyId, contactN
   if (!isOpen) return null
 
   return (
-    <div className="act-popup-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="act-popup" ref={dragRef} style={{ width: 580, transform: `translate(${pos.x}px, ${pos.y}px)` }}>
-        <div className="act-popup-header">
-          <div className="act-popup-title"><CheckSquare size={15} /> {isEdit ? 'Edit task' : 'Create task'}{contactName ? ` — ${contactName}` : ''}</div>
-          <div className="act-popup-header-actions">
-            <button className="act-popup-icon-btn" onClick={onClose}><X size={15} /></button>
+    <div className="modal-overlay company-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal-drawer company-create-modal task-create-modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+        <div className="modal-header company-modal-header">
+          <div className="company-modal-title">
+            <span className="company-modal-title-icon"><MaterialIcon>task_alt</MaterialIcon></span>
+            <div>
+              <h2 id="task-modal-title">{isEdit ? 'Edit Task' : 'Create Task'}{contactName ? ` — ${contactName}` : ''}</h2>
+              <p>{isEdit ? 'Update this task\'s details' : 'Add a task to your workflow'}</p>
+            </div>
           </div>
+          <button className="modal-close" aria-label="Close" onClick={onClose}><X size={18} /></button>
         </div>
 
-        <div className="act-popup-body">
-          {needsCompanyPicker && (
-            <div className="act-form-group" style={{ marginBottom: 12 }}>
-              <label>Company *</label>
-              <CompanyPicker
-                value={pickedCompanyId}
-                label={pickedCompanyName}
-                onChange={(id, name) => { setPickedCompanyId(id); setPickedCompanyName(name) }}
-              />
+        <div className="modal-body company-modal-body">
+          <section className="company-form-section">
+            <div className="company-form-section-head">
+              <MaterialIcon>edit_note</MaterialIcon>
+              <div><h3>Task Details</h3><p>What needs to get done</p></div>
             </div>
-          )}
-
-          <div className="act-form-group" style={{ marginBottom: 12 }}>
-            <label>Task name *</label>
-            <input type="text" value={taskName} onChange={e => setTaskName(e.target.value)} placeholder="e.g. Follow up with contact" autoFocus />
-          </div>
-
-          <div className="act-form-row" style={{ marginBottom: 12 }}>
-            <div className="act-form-group">
-              <label>Due date & time</label>
-              <input type="datetime-local" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+            <div className="company-form-grid">
+              {needsCompanyPicker && (
+                <div className="form-group required field-span-2">
+                  <label><MaterialIcon>business</MaterialIcon>Company</label>
+                  <CompanyPicker
+                    value={pickedCompanyId}
+                    label={pickedCompanyName}
+                    onChange={(id, name) => { setPickedCompanyId(id); setPickedCompanyName(name) }}
+                  />
+                </div>
+              )}
+              <div className="form-group required field-span-2">
+                <label><MaterialIcon>title</MaterialIcon>Task name</label>
+                <input type="text" value={taskName} onChange={e => setTaskName(e.target.value)} placeholder="e.g. Follow up with contact" autoFocus />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>event</MaterialIcon>Due date & time</label>
+                <input type="datetime-local" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label><MaterialIcon>person_pin</MaterialIcon>Assign to</label>
+                <SearchableSelect materialIcons value={assignedTo} onChange={setAssignedTo} options={assigneeOptions} placeholder="Unassigned" showEmail={true} />
+              </div>
             </div>
-            <div className="act-form-group">
-              <label>Assign to</label>
-              <select value={assignedTo} onChange={e => setAssignedTo(e.target.value)}>
-                <option value="">Unassigned</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
-              </select>
+          </section>
+
+          <section className="company-form-section">
+            <div className="company-form-section-head">
+              <MaterialIcon>fact_check</MaterialIcon>
+              <div><h3>Status</h3><p>Completion and auto-tracking</p></div>
             </div>
-          </div>
+            <div className="company-form-grid">
+              <div className="form-group field-span-2 task-checkbox-row">
+                <label>
+                  <input type="checkbox" checked={completed} onChange={e => setCompleted(e.target.checked)} />
+                  Mark as completed
+                </label>
+                <label>
+                  <input type="checkbox" checked={autoCompleteOverdue} onChange={e => setAutoCompleteOverdue(e.target.checked)} />
+                  Auto-complete once overdue
+                </label>
+              </div>
+              {autoCompleteOverdue && (
+                <p className="field-span-2" style={{ margin: '-4px 0 0', fontSize: 9.5, color: '#94a3b8', lineHeight: 1.5 }}>
+                  This task will be marked completed automatically after its due date/time passes. Off by default — only applies because you turned it on for this task.
+                </p>
+              )}
+              <div className="form-group field-span-2">
+                <label><MaterialIcon>notes</MaterialIcon>Description / Notes</label>
+                <textarea rows={3} value={body} onChange={e => setBody(e.target.value)} placeholder="Add task details…" />
+              </div>
+              <div className="company-modal-custom field-span-2">
+                <CustomFieldsSection
+                  entity="Task"
+                  values={customFields}
+                  onChange={(key, value) => setCustomFields(p => ({ ...p, [key]: value }))}
+                />
+              </div>
+            </div>
+          </section>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
-              <input type="checkbox" checked={completed} onChange={e => setCompleted(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#0d9488' }} />
-              Mark as completed
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
-              <input type="checkbox" checked={autoCompleteOverdue} onChange={e => setAutoCompleteOverdue(e.target.checked)} style={{ width: 14, height: 14, accentColor: '#0d9488' }} />
-              Auto-complete once overdue
-            </label>
-            {autoCompleteOverdue && (
-              <p style={{ fontSize: 11, color: '#94a3b8', margin: '-4px 0 0 22px' }}>
-                This task will be marked completed automatically after its due date/time passes. Off by default — only applies because you turned it on for this task.
-              </p>
-            )}
-          </div>
-
-          <div className="act-form-group">
-            <label>Description / Notes</label>
-            <textarea rows={3} value={body} onChange={e => setBody(e.target.value)} placeholder="Add task details…" />
-          </div>
-
-          <CustomFieldsSection
-            entity="Task"
-            values={customFields}
-            onChange={(key, value) => setCustomFields(p => ({ ...p, [key]: value }))}
-          />
-
-          {error && <p style={{ color: '#ef4444', fontSize: 12, marginTop: 6, fontWeight: 500 }}>{error}</p>}
+          {error && <p className="company-modal-error"><MaterialIcon>error</MaterialIcon>{error}</p>}
         </div>
 
-        <div className="act-popup-footer">
-          <div className="act-popup-footer-left" />
-          <div className="act-popup-footer-right">
-            <button className="btn-act-cancel" onClick={onClose}>Cancel</button>
-            <button className="btn-act-save" onClick={save} disabled={saving}>
-              <CheckSquare size={13} /> {saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create task')}
-            </button>
-          </div>
+        <div className="modal-footer company-modal-footer">
+          <button className="btn-modal-primary" onClick={save} disabled={saving}>
+            <MaterialIcon>{isEdit ? 'save' : 'add_task'}</MaterialIcon>{saving ? 'Saving…' : (isEdit ? 'Save changes' : 'Create task')}
+          </button>
+          <button className="btn-modal-cancel" onClick={onClose}>Cancel</button>
         </div>
       </div>
     </div>

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
-import { X, Paperclip, Eye, ArrowUpRight, ArrowDownLeft, Reply, ReplyAll, Forward } from 'lucide-react'
+import { X, Paperclip, Eye, ArrowUpRight, ArrowDownLeft, Reply, ReplyAll, Forward, Mail } from 'lucide-react'
 import api from '../../api/client'
 import { threadCache } from '../../utils/emailCache'
+import '../../styles/modal.css'
 import '../../styles/email-conversations.css'
 
 // Extracted out of EmailConversations.jsx unchanged (same markup, same cache,
@@ -233,61 +234,48 @@ export default function ThreadDrawer({ threadId, companyId, summary, onClose, on
   const messages = data?.messages || []
 
   return (
-    <>
-      <div className="ec-drawer-backdrop" onClick={onClose} />
-      <aside className="ec-drawer" role="dialog" aria-label="Conversation">
-        <div className="ec-drawer-header" style={{ position: 'relative' }}>
-          <button className="ec-drawer-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
-          <div className="ec-drawer-subject" style={{ paddingRight: 28 }}>
-            {data?.subject || summary?.subject || 'Conversation'}
+    <div className="modal-overlay company-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal-drawer company-create-modal thread-view-modal" role="dialog" aria-modal="true" aria-label="Conversation">
+        <div className="modal-header company-modal-header">
+          <div className="company-modal-title">
+            <span className="company-modal-title-icon"><Mail size={16} /></span>
+            <div>
+              <h2>{data?.subject || summary?.subject || 'Conversation'}</h2>
+              <p>
+                {messages.length || summary?.messageCount || 0} message{(messages.length || summary?.messageCount) === 1 ? '' : 's'}
+                {(data?.matchedCompanyEmail || summary?.address) && ` · via ${data?.matchedCompanyEmail || summary?.address}`}
+              </p>
+            </div>
           </div>
-          <div className="ec-drawer-sub">
-            <span>{messages.length || summary?.messageCount || 0} message{(messages.length || summary?.messageCount) === 1 ? '' : 's'}</span>
-            {(data?.matchedCompanyEmail || summary?.address) && (
-              <><span>·</span><span>via {data?.matchedCompanyEmail || summary?.address}</span></>
-            )}
-            {/* Reply/Reply All/Forward act on the last message of the loaded
-                thread, so they need real message data (not just the summary
-                row) — disabled until that finishes loading. */}
-            {onReply && (
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                <button
-                  className="ec-btn"
-                  style={{ padding: '3px 9px' }}
-                  disabled={messages.length === 0}
-                  onClick={() => onReply(buildReplyDraft(data, 'reply'))}
-                >
-                  <Reply size={12} /> Reply
-                </button>
-                <button
-                  className="ec-btn"
-                  style={{ padding: '3px 9px' }}
-                  disabled={messages.length === 0}
-                  onClick={() => onReply(buildReplyDraft(data, 'replyAll'))}
-                >
-                  <ReplyAll size={12} /> Reply All
-                </button>
-                <button
-                  className="ec-btn"
-                  style={{ padding: '3px 9px' }}
-                  disabled={messages.length === 0}
-                  onClick={() => onReply(buildReplyDraft(data, 'forward'))}
-                >
-                  <Forward size={12} /> Forward
-                </button>
-              </div>
-            )}
-          </div>
+          <button className="modal-close" aria-label="Close" onClick={onClose}><X size={18} /></button>
         </div>
 
-        <div className="ec-drawer-body">
+        <div className="modal-body company-modal-body ec-thread-body">
           {loading && <div className="ec-loading">Loading conversation…</div>}
           {!loading && error && <div className="ec-empty" style={{ color: '#ef4444' }}>{error}</div>}
           {!loading && !error && messages.map((m, i) => (
             <ThreadMessage key={m.id} msg={m} index={i} total={messages.length} />
           ))}
         </div>
-      </aside>
-    </>
+
+        {/* Reply/Reply All/Forward act on the last message of the loaded
+            thread, so they need real message data (not just the summary
+            row) — disabled until that finishes loading. */}
+        {onReply && (
+          <div className="modal-footer company-modal-footer">
+            <button className="btn-modal-secondary" disabled={messages.length === 0} onClick={() => onReply(buildReplyDraft(data, 'reply'))}>
+              <Reply size={13} /> Reply
+            </button>
+            <button className="btn-modal-secondary" disabled={messages.length === 0} onClick={() => onReply(buildReplyDraft(data, 'replyAll'))}>
+              <ReplyAll size={13} /> Reply All
+            </button>
+            <button className="btn-modal-secondary" disabled={messages.length === 0} onClick={() => onReply(buildReplyDraft(data, 'forward'))}>
+              <Forward size={13} /> Forward
+            </button>
+            <button className="btn-modal-cancel" onClick={onClose}>Close</button>
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
