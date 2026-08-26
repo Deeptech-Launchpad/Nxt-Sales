@@ -9,6 +9,8 @@ import api from '../api/client'
 import { getSocket } from '../socket'
 import '../styles/chat.css'
 
+const MaterialIcon = ({ children }) => <span className="material-symbols-rounded" aria-hidden="true">{children}</span>
+
 function initials(name) {
   return (name || '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 }
@@ -18,6 +20,15 @@ function formatBytes(bytes) {
   const k = 1024, sizes = ['B', 'KB', 'MB', 'GB']
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
+}
+
+function conversationTime(iso) {
+  if (!iso) return ''
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
+  if (minutes < 1) return 'now'
+  if (minutes < 60) return `${minutes}m`
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h`
+  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
 // Derives what a conversation is called / shown as from the caller's point of
@@ -80,11 +91,11 @@ function CreateGroupModal({ users, onClose, onCreated }) {
   }
 
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="chat-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 14, width: 440, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid #e2e8f0' }}>
-          <span style={{ fontSize: 16.5, fontWeight: 700, color: '#0f172a' }}>Create Group</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={19} /></button>
+          <span className="chat-modal-title" style={{ fontSize: 16.5, fontWeight: 700, color: '#0f172a' }}>Create Group</span>
+          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={19} /></button>
         </div>
         <div style={{ padding: '20px 22px', overflowY: 'auto', flex: 1 }}>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 7 }}>Group Name</label>
@@ -124,11 +135,11 @@ function NewChatModal({ users, onClose, onPicked }) {
   const filtered = users.filter(u => u.name.toLowerCase().includes(search.toLowerCase()))
 
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="chat-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 14, width: 380, maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid #e2e8f0' }}>
-          <span style={{ fontSize: 16.5, fontWeight: 700, color: '#0f172a' }}>New Chat</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={19} /></button>
+          <span className="chat-modal-title" style={{ fontSize: 16.5, fontWeight: 700, color: '#0f172a' }}>New Chat</span>
+          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={19} /></button>
         </div>
         <div style={{ padding: '14px 22px 0' }}>
           <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Search teammates…"
@@ -176,11 +187,11 @@ function AttachRecordModal({ onClose, onPicked }) {
   }, [type, query, allDeals])
 
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="chat-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 14, width: 380, maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid #e2e8f0' }}>
-          <span style={{ fontSize: 16.5, fontWeight: 700, color: '#0f172a' }}>Attach a Record</span>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={19} /></button>
+          <span className="chat-modal-title" style={{ fontSize: 16.5, fontWeight: 700, color: '#0f172a' }}>Attach a Record</span>
+          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={19} /></button>
         </div>
         <div style={{ display: 'flex', gap: 9, padding: '14px 22px 0' }}>
           <button onClick={() => setType('company')} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: '1px solid #e2e8f0', background: type === 'company' ? '#eff6ff' : '#fff', color: type === 'company' ? '#1d4ed8' : '#64748b', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>Company</button>
@@ -232,6 +243,7 @@ export default function Chat() {
   const [newMessage,        setNewMessage]        = useState('')
   const [sending,           setSending]           = useState(false)
   const [search,            setSearch]            = useState('')
+  const [conversationFilter,setConversationFilter]= useState('all')
   const [onlineIds,         setOnlineIds]         = useState(() => new Set())
   const [typingByConv,      setTypingByConv]      = useState({}) // { conversationId: fromUserId }
   const [showCreateGroup,   setShowCreateGroup]   = useState(false)
@@ -561,37 +573,59 @@ export default function Chat() {
 
   const attachedRecordLink = (rec) => rec.type === 'company' ? `/companies/${rec.id}` : '/deals'
 
-  const filteredConversations = conversations.filter(c =>
-    conversationLabel(c).toLowerCase().includes(search.toLowerCase())
-  )
+  const filteredConversations = conversations.filter(c => {
+    const matchesSearch = conversationLabel(c).toLowerCase().includes(search.toLowerCase())
+    const matchesFilter = conversationFilter === 'all'
+      || (conversationFilter === 'unread' && c.unreadCount > 0)
+      || (conversationFilter === 'direct' && !c.isGroup)
+      || (conversationFilter === 'groups' && c.isGroup)
+    return matchesSearch && matchesFilter
+  })
+  const directConversations = filteredConversations.filter(c => !c.isGroup)
+  const groupConversations = filteredConversations.filter(c => c.isGroup)
+  const unreadConversations = conversations.filter(c => c.unreadCount > 0).length
 
   const typingUserId = selectedId ? typingByConv[selectedId] : null
   const typingUserName = selectedConv?.members.find(m => m.id === typingUserId)?.name
+  const renderConversationItem = (c) => {
+    const other = !c.isGroup ? c.members[0] : null
+    return (
+      <button key={c.id} className={`chat-user-item ${selectedId === c.id ? 'active' : ''}${c.unreadCount > 0 ? ' unread' : ''}`} onClick={() => selectConversation(c.id)}>
+        <div className="chat-avatar-wrap">
+          <div className={`chat-user-avatar${c.isGroup ? ' group' : ''}`}>{c.isGroup ? <MaterialIcon>group</MaterialIcon> : initials(other?.name)}</div>
+          {other && onlineIds.has(other.id) && <span className="chat-presence-dot" title="Online" />}
+        </div>
+        <div className="chat-user-info">
+          <span className="chat-user-name">{conversationLabel(c)}</span>
+          <span className="chat-user-email">{typingByConv[c.id] ? <em>typing…</em> : (c.lastMessagePreview ? `${c.lastMessageFromSelf ? 'You: ' : ''}${c.lastMessagePreview}` : 'No messages yet')}</span>
+        </div>
+        <div className="chat-conversation-meta">
+          <time>{conversationTime(c.lastMessageAt)}</time>
+          {c.unreadCount > 0 && <span className="chat-unread-badge">{c.unreadCount > 99 ? '99+' : c.unreadCount}</span>}
+        </div>
+      </button>
+    )
+  }
 
   return (
     <div className="chat-page">
 
       {/* ── Left: conversation list ── */}
       <div className="chat-sidebar">
-        <div className="chat-sidebar-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <h2>Team Chat</h2>
-          <div style={{ display: 'flex', gap: 2 }}>
-            <button onClick={() => setShowSearch(v => !v)} title="Search messages" className={`chat-icon-btn ${showSearch ? 'active' : ''}`}>
-              <Search size={17} />
-            </button>
-            <button onClick={() => setShowNewChat(true)} title="New chat" className="chat-icon-btn">
-              <Plus size={17} />
-            </button>
-            <button onClick={() => setShowCreateGroup(true)} title="Create group" className="chat-icon-btn">
-              <Users size={17} />
-            </button>
+        <div className="chat-sidebar-header">
+          <div className="chat-sidebar-title-row"><div><h2>Team Chat</h2><p>{conversations.length} conversations · {onlineIds.size} online</p></div>
+            <button onClick={() => setShowSearch(v => !v)} title="Search messages" className={`chat-icon-btn ${showSearch ? 'active' : ''}`}><MaterialIcon>manage_search</MaterialIcon></button>
+          </div>
+          <div className="chat-sidebar-actions">
+            <button className="primary" onClick={() => setShowNewChat(true)}><MaterialIcon>add_comment</MaterialIcon> New conversation</button>
+            <button onClick={() => setShowCreateGroup(true)}><MaterialIcon>group_add</MaterialIcon> Group</button>
           </div>
         </div>
 
         {showSearch ? (
           <>
             <div className="chat-search">
-              <Search size={14} color="#94a3b8" />
+              <MaterialIcon>search</MaterialIcon>
               <input
                 autoFocus type="text"
                 placeholder="Search message content…"
@@ -617,52 +651,27 @@ export default function Chat() {
         ) : (
           <>
             <div className="chat-search">
-              <Search size={14} color="#94a3b8" />
+              <MaterialIcon>search</MaterialIcon>
               <input
                 type="text"
-                placeholder="Search conversations…"
+                placeholder="Search people and groups..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />
             </div>
 
+            <div className="chat-filter-chips" role="tablist" aria-label="Conversation filters">
+              {[
+                ['all', 'All', conversations.length], ['unread', 'Unread', unreadConversations],
+                ['direct', 'Direct', conversations.filter(c => !c.isGroup).length], ['groups', 'Groups', conversations.filter(c => c.isGroup).length],
+              ].map(([value, label, count]) => <button key={value} role="tab" aria-selected={conversationFilter === value} onClick={() => setConversationFilter(value)}>{label}{count > 0 && <span>{count}</span>}</button>)}
+            </div>
+
             <div className="chat-user-list">
-              {filteredConversations.map(c => {
-                const other = !c.isGroup ? c.members[0] : null
-                return (
-                  <button
-                    key={c.id}
-                    className={`chat-user-item ${selectedId === c.id ? 'active' : ''}`}
-                    onClick={() => selectConversation(c.id)}
-                  >
-                    <div style={{ position: 'relative' }}>
-                      <div className="chat-user-avatar" style={c.isGroup ? { background: 'linear-gradient(135deg,#7c3aed,#5b21b6)' } : undefined}>
-                        {c.isGroup ? <Users size={16} /> : initials(other?.name)}
-                      </div>
-                      {other && onlineIds.has(other.id) && (
-                        <span title="Online" style={{ position: 'absolute', bottom: 0, right: 0, width: 9, height: 9, borderRadius: '50%', background: '#22c55e', border: '2px solid #f8fafc' }} />
-                      )}
-                    </div>
-                    <div className="chat-user-info">
-                      <span className="chat-user-name">{conversationLabel(c)}</span>
-                      <span className="chat-user-email">
-                        {typingByConv[c.id]
-                          ? <em style={{ color: '#0d9488', fontStyle: 'italic' }}>typing…</em>
-                          : (c.lastMessagePreview
-                              ? `${c.lastMessageFromSelf ? 'You: ' : ''}${c.lastMessagePreview}`
-                              : 'No messages yet')}
-                      </span>
-                    </div>
-                    {c.unreadCount > 0 && (
-                      <span className="chat-unread-badge">
-                        {c.unreadCount > 99 ? '99+' : c.unreadCount}
-                      </span>
-                    )}
-                  </button>
-                )
-              })}
+              {directConversations.length > 0 && <div className="chat-list-section"><span>Direct messages</span>{directConversations.map(renderConversationItem)}</div>}
+              {groupConversations.length > 0 && <div className="chat-list-section"><span>Groups</span>{groupConversations.map(renderConversationItem)}</div>}
               {filteredConversations.length === 0 && (
-                <div className="chat-list-empty">No conversations yet — start one with + or create a group.</div>
+                <div className="chat-list-empty"><MaterialIcon>chat_bubble</MaterialIcon><strong>{conversations.length ? 'No matching conversations' : 'No conversations yet'}</strong><p>{conversations.length ? 'Try a different search or filter.' : 'Start a direct chat or create a team group.'}</p></div>
               )}
             </div>
           </>
@@ -880,9 +889,11 @@ export default function Chat() {
           </>
         ) : (
           <div className="chat-no-conversation">
-            <MessageSquare size={48} color="#cbd5e1" />
-            <h3>Select a conversation to start chatting</h3>
-            <p>Or start a new one with the + button, or create a group</p>
+            <span className="chat-welcome-icon"><MaterialIcon>forum</MaterialIcon></span>
+            <h3>Welcome to Team Chat</h3>
+            <p>Start a conversation with teammates, create groups, and collaborate in real time.</p>
+            <div className="chat-welcome-actions"><button className="primary" onClick={() => setShowNewChat(true)}><MaterialIcon>add_comment</MaterialIcon> New conversation</button><button onClick={() => setShowCreateGroup(true)}><MaterialIcon>group_add</MaterialIcon> Create group</button></div>
+            {users.length > 0 && <div className="chat-teammate-suggestions"><span>Start with a teammate</span><div>{users.slice(0, 3).map(u => <button key={u.id} onClick={() => startOneOnOne(u.id)}><span className="chat-user-avatar">{initials(u.name)}</span><strong>{u.name}</strong><small>{onlineIds.has(u.id) ? 'Online' : 'Teammate'}</small></button>)}</div></div>}
           </div>
         )}
       </div>

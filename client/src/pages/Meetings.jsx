@@ -1,16 +1,49 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Pencil, Trash2, Search } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, CalendarDays, Clock, CheckCircle2, XCircle, ArrowRight, Video } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import MeetingModal from '../components/activities/MeetingModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
+import DateFilterDropdown from '../components/filters/DateFilterDropdown'
 import { renderCustomCell } from '../utils/customFieldRender'
 import '../styles/contacts.css'
+import '../styles/meetings.css'
 
 const PAGE_SIZE = 50
 const COLUMNS_STORAGE_KEY = 'mwz_meetings_visible_columns'
 const DEFAULT_COLUMNS = []
+const DATE_OPTIONS = [
+  { value: 'today', label: 'Today' },
+  { value: 'this_week', label: 'This week' },
+  { value: 'last_7', label: 'Last 7 days' },
+  { value: 'last_30', label: 'Last 30 days' },
+  { value: 'next_7', label: 'Next 7 days' },
+  { value: 'next_30', label: 'Next 30 days' },
+]
+
+function meetingDateParams(token) {
+  if (!token) return {}
+  const now = new Date()
+  const startOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const endOfDay = d => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+  const today = startOfDay(now)
+  let from, to
+  if (token === 'today') { from = today; to = endOfDay(today) }
+  else if (token === 'this_week') { from = new Date(today); from.setDate(today.getDate() - today.getDay()); to = new Date(from.getTime() + 7 * 86400000 - 1) }
+  else if (/^last_(7|30)$/.test(token)) { from = new Date(now.getTime() - Number(token.slice(5)) * 86400000); to = now }
+  else if (/^next_(7|30)$/.test(token)) { from = now; to = new Date(now.getTime() + Number(token.slice(5)) * 86400000) }
+  else {
+    const range = token.match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/)
+    const day = token.match(/^\d{4}-\d{2}-\d{2}$/)
+    const month = token.match(/^(\d{4})-(\d{2})$/)
+    if (range) { from = startOfDay(new Date(`${range[1]}T00:00:00`)); to = endOfDay(new Date(`${range[2]}T00:00:00`)) }
+    else if (day) { from = startOfDay(new Date(`${token}T00:00:00`)); to = endOfDay(from) }
+    else if (month) { from = new Date(Number(month[1]), Number(month[2]) - 1, 1); to = new Date(Number(month[1]), Number(month[2]), 0, 23, 59, 59, 999) }
+    else if (/^\d{4}$/.test(token)) { from = new Date(Number(token), 0, 1); to = new Date(Number(token), 11, 31, 23, 59, 59, 999) }
+  }
+  return from && to ? { dateFrom: from.toISOString(), dateTo: to.toISOString() } : {}
+}
 
 // meetingStatus is stored as scheduled/completed/cancelled — the user-facing
 // Upcoming/Completed/Cancelled labels are a display-only mapping, same
@@ -40,11 +73,13 @@ export default function Meetings() {
   const [page, setPage]         = useState(1)
   const [loading, setLoading]   = useState(true)
   const [users, setUsers]       = useState([])
+  const [meetingSummary, setMeetingSummary] = useState({ all: 0, scheduled: 0, completed: 0, cancelled: 0 })
 
   const [meetingTab, setMeetingTab] = useState('all') // 'all' | 'mine'
   const [search, setSearch]                 = useState('')
   const [statusFilter, setStatusFilter]     = useState('')
   const [assigneeFilter, setAssigneeFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState([])
 
   const [showCreate, setShowCreate] = useState(false)
   const [editMeeting, setEditMeeting] = useState(null)
@@ -82,6 +117,22 @@ export default function Meetings() {
   // the exact pattern Tasks.jsx already established.
   const effectiveAssigneeId = meetingTab === 'mine' ? user?.id : assigneeFilter
 
+  const fetchMeetingSummary = useCallback(() => {
+    const base = { type: 'meeting', page: 1, limit: 1, ...(effectiveAssigneeId && { assignedToId: effectiveAssigneeId }) }
+    Promise.all([
+      api.get('/activities', { params: base }),
+      api.get('/activities', { params: { ...base, status: 'scheduled' } }),
+      api.get('/activities', { params: { ...base, status: 'completed' } }),
+      api.get('/activities', { params: { ...base, status: 'cancelled' } }),
+    ]).then(([all, scheduled, completed, cancelled]) => setMeetingSummary({
+      all: all.data?.total || 0,
+      scheduled: scheduled.data?.total || 0,
+      completed: completed.data?.total || 0,
+      cancelled: cancelled.data?.total || 0,
+    })).catch(() => {})
+  }, [effectiveAssigneeId])
+  useEffect(() => { fetchMeetingSummary() }, [fetchMeetingSummary])
+
   const fetchMeetings = useCallback(() => {
     setLoading(true)
     api.get('/activities', {
@@ -92,12 +143,13 @@ export default function Meetings() {
         ...(search.trim() && { search: search.trim() }),
         ...(statusFilter && { status: statusFilter }),
         ...(effectiveAssigneeId && { assignedToId: effectiveAssigneeId }),
+        ...meetingDateParams(dateFilter[0]),
       },
     })
       .then(r => { setMeetings(r.data.items || []); setTotal(r.data.total || 0) })
       .catch(() => { setMeetings([]); setTotal(0) })
       .finally(() => setLoading(false))
-  }, [page, search, statusFilter, effectiveAssigneeId])
+  }, [page, search, statusFilter, effectiveAssigneeId, dateFilter])
 
   useEffect(() => { fetchMeetings() }, [fetchMeetings])
 
@@ -108,6 +160,7 @@ export default function Meetings() {
     try {
       await api.delete(`/activities/${meetingId}`)
       fetchMeetings()
+      fetchMeetingSummary()
     } catch {
       // no-op — matches the lightweight error handling style already used on Tasks/Deals/Companies
     }
@@ -118,131 +171,133 @@ export default function Meetings() {
     else setEditMeeting(m)
   }
 
-  const clearFilters = () => { setSearch(''); setStatusFilter(''); setAssigneeFilter(''); setPage(1) }
-
-  const cellTh = { padding: '13px 18px', textAlign: 'left', fontWeight: 700, color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.5px', whiteSpace: 'nowrap' }
-  const cellTd = { padding: '14px 18px', color: '#334155', whiteSpace: 'nowrap', fontSize: 14 }
-  const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 7, borderRadius: 7, display: 'flex', transition: 'background .12s' }
-  const filterSelect = { padding: '8px 11px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', color: '#334155', background: '#fff', cursor: 'pointer', transition: 'border-color .12s' }
-  const pillStyle = (c) => ({ fontSize: 12, fontWeight: 700, color: c.text, background: c.bg, border: `1px solid ${c.border}`, borderRadius: 20, padding: '4px 11px', display: 'inline-block' })
+  const clearFilters = () => { setSearch(''); setStatusFilter(''); setAssigneeFilter(''); setDateFilter([]); setPage(1) }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, background: '#fff', borderRadius: 12, padding: 28, boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 18, borderBottom: '1px solid #eef1f5' }}>
-        <div>
-          <h1 style={{ fontSize: 23, fontWeight: 700, color: '#0f172a', letterSpacing: '-.2px' }}>Meetings</h1>
-          <span style={{ fontSize: 13.5, color: '#94a3b8', fontWeight: 500 }}>{loading ? 'Loading…' : `${total} meeting${total === 1 ? '' : 's'}`}</span>
+    <div className="meetings-workspace">
+      <header className="meetings-hero">
+        <div className="meetings-hero-copy">
+          <span className="meetings-eyebrow"><CalendarDays size={14} /> Schedule workspace</span>
+          <h1>Make every meeting count</h1>
+          <p>Plan customer conversations, keep ownership clear and turn every discussion into a confident next step.</p>
         </div>
         <button
+          className="meetings-create-btn"
           onClick={() => setShowCreate(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 8, border: 'none', background: '#e63329', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', boxShadow: '0 1px 2px rgba(230,51,41,0.25)', transition: 'background .12s, box-shadow .12s' }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#c0271e'; e.currentTarget.style.boxShadow = '0 2px 6px rgba(230,51,41,0.35)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = '#e63329'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(230,51,41,0.25)' }}
         >
-          <Plus size={14} /> Create meeting
+          <Plus size={15} /> Create meeting <ArrowRight size={14} />
         </button>
-      </div>
+      </header>
 
-      <div style={{ display: 'flex', gap: 20, alignItems: 'center', paddingBottom: 2, borderBottom: '1px solid #eef1f5' }}>
+      <section className="meetings-summary-grid" aria-label="Meeting overview">
+        {[
+          { key: 'all', label: 'All meetings', value: meetingSummary.all, Icon: CalendarDays },
+          { key: 'scheduled', label: 'Upcoming', value: meetingSummary.scheduled, Icon: Clock },
+          { key: 'completed', label: 'Completed', value: meetingSummary.completed, Icon: CheckCircle2 },
+          { key: 'cancelled', label: 'Cancelled', value: meetingSummary.cancelled, Icon: XCircle },
+        ].map(metric => <article key={metric.key} className={`meetings-summary-card ${metric.key}`}><span><metric.Icon size={16} /></span><div><small>{metric.label}</small><strong>{metric.value.toLocaleString()}</strong></div></article>)}
+      </section>
+
+      <section className="meetings-data-shell">
+      <div className="meetings-viewbar">
+      <div className="meetings-tabs" role="tablist">
         <button
+          role="tab" aria-selected={meetingTab === 'all'}
           onClick={() => switchTab('all')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
-            color: meetingTab === 'all' ? '#0f172a' : '#94a3b8', borderBottom: `2px solid ${meetingTab === 'all' ? '#e63329' : 'transparent'}`, paddingBottom: 10, transition: 'color .12s, border-color .12s' }}
         >
-          All Meetings
+          All meetings <span>{meetingTab === 'all' && !loading ? total : meetingSummary.all}</span>
         </button>
         <button
+          role="tab" aria-selected={meetingTab === 'mine'}
           onClick={() => switchTab('mine')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
-            color: meetingTab === 'mine' ? '#0f172a' : '#94a3b8', borderBottom: `2px solid ${meetingTab === 'mine' ? '#e63329' : 'transparent'}`, paddingBottom: 10, transition: 'color .12s, border-color .12s' }}
         >
           My Meetings
         </button>
       </div>
+      <span className="meetings-view-hint"><Video size={13} /> Keep follow-ups connected to every conversation</span>
+      </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative' }}>
-          <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+      <div className="meetings-filterbar">
+        <div className="meetings-search">
+          <Search size={13} />
           <input
             type="text"
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
-            placeholder="Search meetings…"
-            style={{ padding: '9px 13px 9px 33px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13.5, width: 240, fontFamily: 'inherit', transition: 'border-color .12s, box-shadow .12s' }}
-            onFocus={e => { e.currentTarget.style.borderColor = '#e63329'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(230,51,41,0.10)' }}
-            onBlur={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none' }}
+            placeholder="Search meeting, company or assignee…"
           />
         </div>
 
-        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} style={filterSelect}>
+        <div className="meetings-date-filter"><DateFilterDropdown label="Date" presets={DATE_OPTIONS} value={dateFilter[0] || ''} onChange={value => { setDateFilter(value); setPage(1) }} /></div>
+
+        <select className="meetings-filter-select" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }}>
           <option value="">All statuses</option>
           {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
 
         {meetingTab === 'all' && (
-          <select value={assigneeFilter} onChange={e => { setAssigneeFilter(e.target.value); setPage(1) }} style={filterSelect}>
+          <select className="meetings-filter-select" value={assigneeFilter} onChange={e => { setAssigneeFilter(e.target.value); setPage(1) }}>
             <option value="">All assignees</option>
             {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         )}
 
-        {(search || statusFilter || assigneeFilter) && (
-          <button onClick={clearFilters} style={{ border: 'none', background: 'transparent', color: '#e63329', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+        {Boolean(search || statusFilter || assigneeFilter || dateFilter.length) && (
+          <button className="meetings-clear-filters" onClick={clearFilters}>
             Clear filters
           </button>
         )}
 
-        <div style={{ marginLeft: 'auto' }}>
+        <div className="meetings-columns-control">
           <EditColumnsMenu fields={meetingFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} alwaysShownKey="title" />
         </div>
       </div>
 
-      <div style={{ overflowX: 'auto', border: '1px solid #eef1f5', borderRadius: 10 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead style={{ background: '#f8fafc', borderBottom: '1px solid #eef1f5' }}>
+      <div className="meetings-table-wrap">
+        <table className="meetings-table">
+          <thead>
             <tr>
-              <th style={cellTh}>Meeting</th>
-              <th style={cellTh}>Company</th>
-              <th style={cellTh}>Date &amp; time</th>
-              <th style={cellTh}>Assigned to</th>
-              <th style={cellTh}>Status</th>
-              {orderedVisibleFields.map(f => <th key={f.key} style={cellTh}>{f.label}</th>)}
-              <th style={cellTh}></th>
+              <th>Meeting</th><th>Company</th><th>Date &amp; time</th><th>Assigned to</th><th>Status</th>
+              {orderedVisibleFields.map(f => <th key={f.key}>{f.label}</th>)}<th></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Loading meetings…</td></tr>
+              <tr><td className="meetings-empty-cell" colSpan={6 + orderedVisibleFields.length}>Loading meetings…</td></tr>
             ) : meetings.length === 0 ? (
-              <tr><td colSpan={6 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
-                {total === 0 ? 'No meetings yet.' : 'No meetings match your filters.'}
+              <tr><td className="meetings-empty-cell" colSpan={6 + orderedVisibleFields.length}>
+                <div className="meetings-empty-state">
+                  <span><CalendarDays size={22} /></span>
+                  <strong>{total === 0 ? 'Your schedule is ready' : 'No meetings match these filters'}</strong>
+                  <p>{total === 0 ? 'Create your first meeting and keep the next customer conversation moving.' : 'Try adjusting the date, status or search to find the meeting you need.'}</p>
+                  {total === 0 ? <button onClick={() => setShowCreate(true)}><Plus size={13} /> Schedule a meeting</button> : <button onClick={clearFilters}>Clear filters</button>}
+                </div>
               </td></tr>
-            ) : meetings.map((m, i) => (
-              <tr key={m.id} style={{ borderBottom: i < meetings.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenMeeting(m)}>{m.title || '(untitled)'}</td>
-                <td style={cellTd}>{m.company?.name || '--'}</td>
-                <td style={cellTd}>{fmtDateTime(m.startTime)}</td>
-                <td style={cellTd}>{m.assignedTo?.name || 'Unassigned'}</td>
-                <td style={cellTd}><span style={pillStyle(STATUS_COLORS[m.meetingStatus || 'scheduled'])}>{STATUS_LABELS[m.meetingStatus || 'scheduled']}</span></td>
-                {orderedVisibleFields.map(f => <td key={f.key} style={cellTd}>{renderMeetingCell(f, m)}</td>)}
-                <td style={{ ...cellTd, display: 'flex', gap: 4 }}>
+            ) : meetings.map(m => {
+              const status = m.meetingStatus || 'scheduled'
+              return <tr key={m.id} className={`meeting-row status-${status}`}>
+                <td className="meeting-title-cell" data-label="Meeting" onClick={() => handleOpenMeeting(m)}>{m.title || '(untitled)'}</td>
+                <td className="meeting-company-cell" data-label="Company">{m.company?.name || '--'}</td>
+                <td className="meeting-date-cell" data-label="Date & time"><span><Clock size={11} />{fmtDateTime(m.startTime)}</span></td>
+                <td className="meeting-assignee-cell" data-label="Assigned to">{m.assignedTo?.name ? <span><i>{m.assignedTo.name.slice(0,1).toUpperCase()}</i>{m.assignedTo.name}</span> : <em>Unassigned</em>}</td>
+                <td className="meeting-status-cell" data-label="Status"><span className={`meeting-status-pill ${status}`}>{STATUS_LABELS[status]}</span></td>
+                {orderedVisibleFields.map(f => <td className="meeting-optional-cell" data-label={f.label} key={f.key}>{renderMeetingCell(f, m)}</td>)}
+                <td className="meeting-actions-cell">
                   <button
-                    onClick={() => setEditMeeting(m)} title="Edit meeting" style={{ ...iconBtn, color: '#64748b' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    onClick={() => setEditMeeting(m)} title="Edit meeting"
                   ><Pencil size={14} /></button>
                   <button
-                    onClick={() => handleDelete(m.id)} title="Delete meeting" style={{ ...iconBtn, color: '#ef4444' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#fef2f2'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    className="danger" onClick={() => handleDelete(m.id)} title="Delete meeting"
                   ><Trash2 size={14} /></button>
                 </td>
               </tr>
-            ))}
+            } )}
           </tbody>
         </table>
       </div>
 
       {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="meetings-pagination">
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <button className="page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
             {pageWindow(page, totalPages).map((n, i, arr) => (
@@ -256,13 +311,14 @@ export default function Meetings() {
           <span className="per-page">{PAGE_SIZE} per page</span>
         </div>
       )}
+      </section>
 
       {showCreate && (
-        <MeetingModal onClose={() => setShowCreate(false)} onSaved={() => fetchMeetings()} />
+        <MeetingModal onClose={() => setShowCreate(false)} onSaved={() => { fetchMeetings(); fetchMeetingSummary() }} />
       )}
 
       {editMeeting && (
-        <MeetingModal activity={editMeeting} onClose={() => setEditMeeting(null)} onSaved={() => fetchMeetings()} />
+        <MeetingModal activity={editMeeting} onClose={() => setEditMeeting(null)} onSaved={() => { fetchMeetings(); fetchMeetingSummary() }} />
       )}
     </div>
   )

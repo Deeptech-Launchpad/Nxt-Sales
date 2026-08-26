@@ -1,19 +1,136 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Mail, ArrowUpRight, ArrowDownLeft, Paperclip, Upload as UploadIcon } from 'lucide-react'
-import DataExportMenu from '../components/DataExportMenu'
-import DataImportModal from '../components/modals/DataImportModal'
+import { Search, Mail, ArrowUpRight, ArrowDownLeft, Paperclip, Download, Upload, ChevronDown, Inbox as InboxIcon, RefreshCw } from 'lucide-react'
 import api from '../api/client'
 import ThreadDrawer from '../components/activities/ThreadDrawer'
+import DataImportModal from '../components/modals/DataImportModal'
+import DateFilterDropdown from '../components/filters/DateFilterDropdown'
+import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUtils'
 import '../styles/contacts.css'
 import '../styles/email-conversations.css'
+import '../styles/inbox.css'
 
 const PAGE_SIZE = 50
+
+const DATE_OPTIONS = [
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'this_week', label: 'This week' },
+  { value: 'last_7', label: 'Last 7 days' },
+  { value: 'last_30', label: 'Last 30 days' },
+  { value: 'last_90', label: 'Last 90 days' },
+]
+
+function dateParamsFor(token) {
+  if (!token) return {}
+  const now = new Date()
+  const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const endOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
+  const today = startOfDay(now)
+  let from
+  let to
+
+  if (token === 'today') { from = today; to = endOfDay(today) }
+  else if (token === 'yesterday') { from = new Date(today.getTime() - 86400000); to = endOfDay(from) }
+  else if (token === 'this_week') {
+    from = new Date(today); from.setDate(today.getDate() - today.getDay()); to = endOfDay(now)
+  } else if (/^last_(7|30|90)$/.test(token)) {
+    from = new Date(now.getTime() - Number(token.slice(5)) * 86400000); to = now
+  } else {
+    const range = token.match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/)
+    const day = token.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    const month = token.match(/^(\d{4})-(\d{2})$/)
+    if (range) { from = startOfDay(new Date(`${range[1]}T00:00:00`)); to = endOfDay(new Date(`${range[2]}T00:00:00`)) }
+    else if (day) { from = startOfDay(new Date(`${token}T00:00:00`)); to = endOfDay(from) }
+    else if (month) { from = new Date(Number(month[1]), Number(month[2]) - 1, 1); to = new Date(Number(month[1]), Number(month[2]), 0, 23, 59, 59, 999) }
+    else if (/^\d{4}$/.test(token)) { from = new Date(Number(token), 0, 1); to = new Date(Number(token), 11, 31, 23, 59, 59, 999) }
+  }
+  return from && to ? { dateFrom: from.toISOString(), dateTo: to.toISOString() } : {}
+}
+
+const EXPORT_COLUMNS = [
+  { key: 'direction',   header: 'Direction' },
+  { key: 'fromEmail',   header: 'From' },
+  { key: 'toEmail',     header: 'To' },
+  { key: 'subject',     header: 'Subject' },
+  { key: 'companyName', header: 'Company' },
+  { key: 'createdAt',   header: 'Date' },
+]
+
+// Export dropdown for the Inbox list — mirrors CompanyExportMenu/DealExportMenu
+// (same exportUtils, same CSV/Excel/JSON/PDF choices), styled inline to match
+// this page's existing bespoke button look rather than the shared .btn-action
+// class other list pages use.
+function InboxExportMenu({ fetchAllForExport }) {
+  const [open, setOpen]           = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  const run = async (fn, extraArgs = []) => {
+    setOpen(false); setExporting(true)
+    try {
+      const records = await fetchAllForExport()
+      const rows = records.map(it => ({ ...it, direction: it.direction === 'outbound' ? 'Sent' : 'Received' }))
+      fn(rows, 'inbox', EXPORT_COLUMNS, ...extraArgs)
+    } catch {
+      // fetch failed — nothing to export; same lightweight error handling as other list pages
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div className="inbox-export-wrap" ref={ref}>
+      <button
+        className="inbox-secondary-btn"
+        onClick={() => setOpen(o => !o)}
+        disabled={exporting}
+      >
+        <Download size={14} /> {exporting ? 'Exporting…' : 'Export'} <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="inbox-export-menu">
+          {[
+            { label: 'Export as CSV',   fn: () => run(exportCSV) },
+            { label: 'Export as Excel', fn: () => run(exportXLSX, ['Inbox']) },
+            { label: 'Export as JSON',  fn: () => run(exportJSON) },
+            { label: 'Export as PDF',   fn: () => run(exportPDF, ['Inbox Export — NXT Sales']) },
+          ].map(item => (
+            <button key={item.label} onClick={item.fn}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Compact page-number window, same approach Companies.jsx/Tasks.jsx/Meetings.jsx use.
 function pageWindow(current, total) {
   const pages = new Set([1, total, current - 2, current - 1, current, current + 1, current + 2])
   return [...pages].filter(p => p >= 1 && p <= total).sort((a, b) => a - b)
+}
+
+// fromEmail/toEmail are raw Gmail headers (e.g. `"Rebekah Dezius"
+// <customerservice@...>`, sometimes several comma-separated recipients) —
+// showing that raw string in a compact row just displays a truncated,
+// broken-looking mid-tag cut. Pull out a clean display name (or the bare
+// address if there's no name) for the first participant, plus a count of
+// any others so nothing is silently hidden.
+function parseAddress(raw) {
+  if (!raw) return { label: '', extra: 0 }
+  const parts = raw.split(',').map(s => s.trim()).filter(Boolean)
+  const first = parts[0] || ''
+  const m = first.match(/^"?([^"<]*?)"?\s*<([^>]+)>$/)
+  const label = m ? (m[1].trim() || m[2]) : first
+  return { label, extra: Math.max(0, parts.length - 1) }
 }
 
 function fmtDate(iso) {
@@ -30,18 +147,6 @@ function fmtDate(iso) {
 // (paginated, thread-deduped server-side). Opening a row reuses the exact
 // same ThreadDrawer the per-company Email tab uses (see EmailConversations.jsx),
 // so "the existing conversation/thread" is genuinely the same UI, not a copy.
-// Export columns for the Inbox — the same fields the list displays.
-const INBOX_EXPORT_COLUMNS = [
-  { key: 'subject',    header: 'Subject' },
-  { key: 'fromEmail',  header: 'From' },
-  { key: 'toEmail',    header: 'To' },
-  { key: 'ccEmail',    header: 'Cc' },
-  { key: 'direction',  header: 'Direction' },
-  { key: '_company',   header: 'Company Name' },
-  { key: '_date',      header: 'Date' },
-  { key: 'body',       header: 'Body' },
-]
-
 export default function Inbox() {
   const navigate = useNavigate()
   const [items, setItems]     = useState([])
@@ -50,6 +155,7 @@ export default function Inbox() {
   const [loading, setLoading] = useState(true)
 
   const [search, setSearch]       = useState('')
+  const [dateFilter, setDateFilter] = useState([])
   const [directionTab, setDirectionTab] = useState('all') // 'all' | 'outbound' | 'inbound'
   const [openItem, setOpenItem]   = useState(null)
   const [showImport, setShowImport] = useState(false)
@@ -64,16 +170,43 @@ export default function Inbox() {
         limit: PAGE_SIZE,
         ...(search.trim() && { search: search.trim() }),
         ...(directionTab !== 'all' && { direction: directionTab }),
+        ...dateParamsFor(dateFilter[0]),
       },
     })
       .then(r => { setItems(r.data.items || []); setTotal(r.data.total || 0) })
       .catch(() => { setItems([]); setTotal(0) })
       .finally(() => setLoading(false))
-  }, [page, search, directionTab])
+  }, [page, search, directionTab, dateFilter])
 
   useEffect(() => { fetchInbox() }, [fetchInbox])
 
+  // Export: walk every page matching the current search/direction filter (the
+  // inbox endpoint caps at 100/request server-side, unlike Companies/Deals
+  // which have a dedicated no-limit export route) so "Export" always covers
+  // every matching conversation, not just the current page on screen.
+  const fetchAllForExport = useCallback(async () => {
+    const collected = []
+    let p = 1
+    while (true) {
+      const { data } = await api.get('/email/inbox', {
+        params: {
+          page: p,
+          limit: 100,
+          ...(search.trim() && { search: search.trim() }),
+          ...(directionTab !== 'all' && { direction: directionTab }),
+          ...dateParamsFor(dateFilter[0]),
+        },
+      })
+      const batch = data.items || []
+      collected.push(...batch)
+      if (batch.length === 0 || collected.length >= (data.total || 0)) break
+      p += 1
+    }
+    return collected
+  }, [search, directionTab, dateFilter])
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const hasActiveInboxFilters = Boolean(search.trim() || dateFilter.length || directionTab !== 'all')
 
   const goCompose = (to) => navigate('/email', { state: { to: to || '' } })
 
@@ -87,129 +220,120 @@ export default function Inbox() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, background: '#fff', borderRadius: 12, padding: 28, boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 18, borderBottom: '1px solid #eef1f5' }}>
-        <div>
-          <h1 style={{ fontSize: 23, fontWeight: 700, color: '#0f172a', letterSpacing: '-.2px' }}>Inbox</h1>
-          <span style={{ fontSize: 13.5, color: '#94a3b8', fontWeight: 500 }}>{loading ? 'Loading…' : `${total} conversation${total === 1 ? '' : 's'}`}</span>
+    <div className="inbox-workspace">
+      <header className="inbox-hero">
+        <div className="inbox-hero-copy">
+          <span className="inbox-eyebrow"><InboxIcon size={13} /> Conversation center</span>
+          <h1>Stay close to every conversation</h1>
+          <p>Review customer emails, find important context and continue the conversation without losing momentum.</p>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button
-          onClick={() => setShowImport(true)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#334155', cursor: 'pointer', fontFamily: 'inherit' }}
-        >
-          <UploadIcon size={13} /> Import
-        </button>
-        <DataExportMenu
-          filename="inbox"
-          sheetName="Inbox"
-          title="Inbox Export — NXT MarketingWiz"
-          columns={INBOX_EXPORT_COLUMNS}
-          fetchRows={async () => {
-            const { data } = await api.get('/data/inbox/export', {
-              params: { ...(directionTab !== 'all' && { direction: directionTab }) },
-            })
-            return (data.rows || []).map(r => ({
-              ...r,
-              _company: r.company?.name || '',
-              _date: r.createdAt ? String(r.createdAt).slice(0, 10) : '',
-            }))
-          }}
-        />
-        <button
-          onClick={() => goCompose('')}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 8, border: 'none', background: '#e63329', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', boxShadow: '0 1px 2px rgba(230,51,41,0.25)', transition: 'background .12s, box-shadow .12s' }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#c0271e'; e.currentTarget.style.boxShadow = '0 2px 6px rgba(230,51,41,0.35)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = '#e63329'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(230,51,41,0.25)' }}
-        >
-          <Mail size={14} /> Compose
-        </button>
+        <div className="inbox-hero-side">
+          <div className="inbox-total-card"><span>{hasActiveInboxFilters ? 'Matching conversations' : 'All conversations'}</span><strong>{loading ? '—' : total.toLocaleString()}</strong><small>{hasActiveInboxFilters ? 'Based on current filters' : 'Synced across your CRM'}</small></div>
+          <div className="inbox-hero-actions">
+          <button
+            className="inbox-secondary-btn"
+            onClick={() => setShowImport(true)}
+            title="Log a historical email conversation (address must already match a Company or Deal in your CRM)"
+          >
+            <Upload size={13} /> Import
+          </button>
+          <InboxExportMenu fetchAllForExport={fetchAllForExport} />
+          <button
+            className="inbox-compose-btn"
+            onClick={() => goCompose('')}
+          >
+            <Mail size={13} /> Compose
+          </button>
+          </div>
         </div>
-      </div>
+      </header>
 
-      {/* Inbox lists exactly the emails the canonical matcher associated with
-          a company — the same records Company → Activities → Emails shows.
-          Mail that matched no company (personal, internal, vendor, newsletter)
-          is kept in the database for audit but is never shown here: the CRM is
-          for customer correspondence only. There is no "Unassigned" tab by
-          design — to surface such mail, add its address to the company it
-          belongs to and the next sync files it automatically. */}
-      <div style={{ display: 'flex', gap: 20, alignItems: 'center', paddingBottom: 2, borderBottom: '1px solid #eef1f5' }}>
+      <section className="inbox-data-shell">
+      <div className="inbox-list-toolbar">
+      <div className="inbox-tabs" role="tablist">
         {[['all', 'All'], ['outbound', 'Sent'], ['inbound', 'Received']].map(([v, label]) => (
           <button
             key={v}
+            role="tab"
+            aria-selected={directionTab === v}
             onClick={() => switchTab(v)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
-              color: directionTab === v ? '#0f172a' : '#94a3b8', borderBottom: `2px solid ${directionTab === v ? '#e63329' : 'transparent'}`, paddingBottom: 10, transition: 'color .12s, border-color .12s' }}
           >
-            {label}
+            {label}{v === 'all' && !loading && <span>{total}</span>}
           </button>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative' }}>
-          <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+      <div className="inbox-toolbar-actions">
+        <div className="inbox-date-control">
+          <DateFilterDropdown
+            label="Date"
+            presets={DATE_OPTIONS}
+            value={dateFilter[0] || ''}
+            onChange={value => { setDateFilter(value); setPage(1) }}
+          />
+        </div>
+        <div className="inbox-search">
+          <Search size={13} />
           <input
             type="text"
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
-            placeholder="Search subject or address…"
-            style={{ padding: '9px 13px 9px 33px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13.5, width: 280, fontFamily: 'inherit', transition: 'border-color .12s, box-shadow .12s' }}
-            onFocus={e => { e.currentTarget.style.borderColor = '#e63329'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(230,51,41,0.10)' }}
-            onBlur={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none' }}
+            placeholder="Search client, subject or email…"
           />
         </div>
+        <button className="inbox-refresh-btn" onClick={fetchInbox} title="Refresh inbox" aria-label="Refresh inbox"><RefreshCw size={13} /></button>
+      </div>
       </div>
 
-      <div style={{ border: '1px solid #eef1f5', borderRadius: 10, overflow: 'hidden' }}>
+      <div className="inbox-list-head" aria-hidden="true"><span>Contact</span><span>Conversation</span><span>Date</span></div>
+      <div className="inbox-list">
         {loading ? (
-          <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Loading inbox…</div>
+          <div className="inbox-empty">Loading inbox…</div>
         ) : items.length === 0 ? (
-          <div style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+          <div className="inbox-empty">
             {total === 0 ? 'No emails yet.' : 'No emails match your search.'}
           </div>
-        ) : items.map((it, i) => (
+        ) : items.map((it, i) => {
+          const participant = parseAddress(it.direction === 'outbound' ? it.toEmail : it.fromEmail)
+          return (
           <div
+            className="inbox-row"
             key={it.id}
             onClick={() => setOpenItem(it)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 14, padding: '13px 18px', cursor: 'pointer',
-              borderBottom: i < items.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
-            <span title={it.direction === 'outbound' ? 'Sent' : 'Received'} style={{ flexShrink: 0, display: 'flex', color: it.direction === 'outbound' ? '#3b82f6' : '#8b5cf6' }}>
-              {it.direction === 'outbound' ? <ArrowUpRight size={15} /> : <ArrowDownLeft size={15} />}
+            <span className={`inbox-direction ${it.direction}`} title={it.direction === 'outbound' ? 'Sent' : 'Received'}>
+              {it.direction === 'outbound' ? <ArrowUpRight size={13} /> : <ArrowDownLeft size={13} />}
             </span>
 
-            <div style={{ minWidth: 0, flex: '0 0 220px' }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {it.direction === 'outbound' ? (it.toEmail || '(no recipient)') : (it.fromEmail || '(unknown sender)')}
+            <span className="inbox-contact-avatar">{(participant.label || '?').slice(0, 2).toUpperCase()}</span>
+            <div className="inbox-participant" title={it.direction === 'outbound' ? it.toEmail : it.fromEmail}>
+              <div>
+                {participant.label || (it.direction === 'outbound' ? '(no recipient)' : '(unknown sender)')}
+                {participant.extra > 0 && <span className="inbox-extra">+{participant.extra}</span>}
               </div>
               {it.companyName && (
-                <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 1 }}>{it.companyName}</div>
+                <small>{it.companyName}</small>
               )}
             </div>
 
-            <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 13.5, color: '#334155', fontWeight: 500, flexShrink: 0 }}>{it.subject}</span>
+            <div className="inbox-message-preview">
+              <strong>{it.subject || '(No subject)'}</strong>
               {it.snippet && (
-                <span style={{ fontSize: 13, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <span>
                   — {it.snippet}
                 </span>
               )}
-              {it.hasAttachments && <Paperclip size={12} color="#94a3b8" style={{ flexShrink: 0 }} />}
+              {it.hasAttachments && <Paperclip size={11} className="inbox-attachment" />}
             </div>
 
-            <span style={{ fontSize: 12.5, color: '#94a3b8', flexShrink: 0 }}>{fmtDate(it.createdAt)}</span>
+            <span className="inbox-row-date">{fmtDate(it.createdAt)}</span>
           </div>
-        ))}
+          )
+        })}
       </div>
 
       {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="inbox-pagination">
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <button className="page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
             {pageWindow(page, totalPages).map((n, i, arr) => (
@@ -223,16 +347,7 @@ export default function Inbox() {
           <span className="per-page">{PAGE_SIZE} per page</span>
         </div>
       )}
-
-      <DataImportModal
-        isOpen={showImport}
-        onClose={() => setShowImport(false)}
-        onSuccess={() => fetchInbox()}
-        entityLabel="Inbox"
-        fieldsUrl="/data/inbox/import-fields"
-        importUrl="/data/inbox/bulk"
-        payloadKey="rows"
-      />
+      </section>
 
       {openItem && (
         <ThreadDrawer
@@ -243,6 +358,17 @@ export default function Inbox() {
           onReply={handleReply}
         />
       )}
+
+      <DataImportModal
+        isOpen={showImport}
+        onClose={() => setShowImport(false)}
+        onSuccess={fetchInbox}
+        entityLabel="Emails"
+        fieldsUrl="/email/import-fields"
+        importUrl="/email/import"
+        payloadKey="emails"
+        templateName="inbox_email_log"
+      />
     </div>
   )
 }

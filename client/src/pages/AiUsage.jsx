@@ -68,12 +68,12 @@ function useChart(canvasRef, config, deps) {
   }, deps)
 }
 
-// Shared dark-theme chart options so both charts read identically.
-const axisTicks = { color: '#94A3B8', font: { family: 'Inter', size: 11 } }
-const gridLine = { color: 'rgba(255,255,255,0.05)' }
+// Shared light-theme chart options so both charts read identically.
+const axisTicks = { color: '#8B96A8', font: { family: 'Inter', size: 10 } }
+const gridLine = { color: 'rgba(15, 34, 74, 0.07)' }
 const tooltipStyle = {
-  backgroundColor: '#1E293B', titleColor: '#F8FAFC', bodyColor: '#CBD5E1',
-  borderColor: 'rgba(255,255,255,0.12)', borderWidth: 1, padding: 10,
+  backgroundColor: '#071B52', titleColor: '#FFFFFF', bodyColor: '#DCE6FF',
+  borderColor: 'rgba(255,255,255,0.15)', borderWidth: 1, padding: 10,
 }
 
 export default function AiUsage() {
@@ -105,14 +105,14 @@ export default function AiUsage() {
     data: {
       labels: daily.map(d => d.day),
       datasets: [
-        { label: 'Input tokens',  data: daily.map(d => d.promptTokens), backgroundColor: '#38BDF8', borderRadius: 3, stack: 't' },
-        { label: 'Output tokens', data: daily.map(d => d.outputTokens), backgroundColor: '#A78BFA', borderRadius: 3, stack: 't' },
+        { label: 'Input tokens',  data: daily.map(d => d.promptTokens), backgroundColor: '#3267E3', borderRadius: 5, stack: 't' },
+        { label: 'Output tokens', data: daily.map(d => d.outputTokens), backgroundColor: '#8065DE', borderRadius: 5, stack: 't' },
       ],
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: '#CBD5E1', font: { family: 'Inter', size: 11 }, boxWidth: 12 } },
+        legend: { labels: { color: '#68758A', font: { family: 'Inter', size: 10 }, boxWidth: 10, usePointStyle: true } },
         tooltip: tooltipStyle,
       },
       scales: {
@@ -130,15 +130,15 @@ export default function AiUsage() {
       datasets: [{
         label: 'Estimated cost (USD)',
         data: daily.map(d => d.totalCost),
-        borderColor: '#34D399',
-        backgroundColor: 'rgba(52, 211, 153, 0.12)',
-        fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: '#34D399',
+        borderColor: '#20A875',
+        backgroundColor: 'rgba(32, 168, 117, 0.10)',
+        fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#20A875',
       }],
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: '#CBD5E1', font: { family: 'Inter', size: 11 }, boxWidth: 12 } },
+        legend: { labels: { color: '#68758A', font: { family: 'Inter', size: 10 }, boxWidth: 10, usePointStyle: true } },
         tooltip: {
           ...tooltipStyle,
           callbacks: { label: (c) => ' Estimated cost: ' + money(c.parsed.y) },
@@ -155,10 +155,11 @@ export default function AiUsage() {
 
   return (
     <div className="aiu-root">
-      <div className="aiu-header">
+      <section className="aiu-header">
         <div>
-          <div className="aiu-title">AI Usage</div>
-          <div className="aiu-sub">Company-wide AI token consumption and estimated cost across all users and every AI feature.</div>
+          <div className="aiu-eyebrow"><Sparkles size={13} /> AI operations</div>
+          <h1 className="aiu-title">AI usage &amp; spend</h1>
+          <div className="aiu-sub">Understand token consumption, feature adoption and estimated AI cost across your workspace.</div>
         </div>
         <div className="aiu-header-actions">
           <div className="aiu-range">
@@ -179,7 +180,7 @@ export default function AiUsage() {
             Refresh
           </button>
         </div>
-      </div>
+      </section>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {error && (
@@ -216,7 +217,7 @@ export default function AiUsage() {
             </div>
             <div className="aiu-card">
               <div className="aiu-card-label"><Coins size={12} /> Estimated Cost</div>
-              <div className="aiu-card-value" style={{ color: t.priced ? '#34D399' : '#64748B' }}>
+              <div className={`aiu-card-value aiu-cost-value${t.priced ? '' : ' unavailable'}`}>
                 {t.priced ? money(t.totalCost) : 'N/A'}
               </div>
               <div className="aiu-card-note">
@@ -253,6 +254,7 @@ export default function AiUsage() {
             </div>
           </div>
 
+          <div className="aiu-breakdown-grid">
           {/* ── Usage by feature ── */}
           <div className="aiu-panel">
             <div className="aiu-panel-title"><Sparkles size={14} color="#A78BFA" /> Usage by Feature</div>
@@ -306,6 +308,8 @@ export default function AiUsage() {
                 </table>
               </div>
             )}
+          </div>
+
           </div>
 
           {/* ── Usage by user ── */}

@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   Search, LayoutGrid, List, Download, Plus,
-  ChevronDown, SlidersHorizontal, Pencil, Upload, Trash2, Star
+  ChevronDown, SlidersHorizontal, Pencil, Upload, Trash2, Star,
+  ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, X, ArrowRight,
+  CheckCircle2, History, Building2, Briefcase, UserX, Layers
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
 import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import FilterDropdown from '../components/filters/FilterDropdown'
+import DateFilterDropdown, { describeDateToken } from '../components/filters/DateFilterDropdown'
 import AddFilterMenu from '../components/filters/AddFilterMenu'
-import DateFilterDropdown from '../components/filters/DateFilterDropdown'
 import CreateCompanyModal from '../components/modals/CreateCompanyModal'
 import ImportModal from '../components/modals/ImportModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
@@ -17,6 +19,8 @@ import { valueList } from '../utils/multiValue'
 import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUtils'
 import { renderCustomCell } from '../utils/customFieldRender'
 import '../styles/contacts.css'
+import '../styles/companies.css'
+import '../styles/recents.css'
 
 // "+N" badge when a company has more than one email.
 const moreCount = (primary, arr) => Math.max(0, valueList(primary, arr).length - 1)
@@ -24,8 +28,33 @@ const MoreBadge = ({ n }) => n > 0
   ? <span style={{ marginLeft: 6, fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>+{n}</span>
   : null
 
+// Check if company is newly created (within 24 hours)
+const isNewCompany = (createdAt) => {
+  if (!createdAt) return false
+  const created = new Date(createdAt)
+  const now = new Date()
+  const hoursOld = (now - created) / (1000 * 60 * 60)
+  return hoursOld < 24
+}
+
+const NewBadge = ({ createdAt }) => isNewCompany(createdAt)
+  ? <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#ffffff', background: '#10b981', borderRadius: 3, padding: '2px 6px', whiteSpace: 'nowrap' }}>New</span>
+  : null
+
+function AdvancedTextFilter({ label, value, onChange, placeholder }) {
+  return (
+    <label className="advanced-field">
+      <span>{label}</span>
+      <input value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} />
+      {value && <button type="button" aria-label={`Clear ${label}`} onClick={() => onChange('')}><X size={11} /></button>}
+    </label>
+  )
+}
+
 const COLUMNS_STORAGE_KEY = 'mwz_companies_visible_columns'
+const VIEW_STORAGE_KEY = 'mwz_companies_view'
 const DEFAULT_COLUMNS = ['country', 'industry', 'email', 'phone', 'domain', 'cms', 'remarks']
+const SORTABLE_COLUMN_KEYS = new Set(['name', 'email', 'phone', 'industry', 'leadStatus', 'status', 'domain', 'country', 'cms', 'remarks', 'createdAt', 'updatedAt'])
 
 // Optional filters offered behind the "+" button — not shown by default,
 // added/removed by the user via AddFilterMenu. Extend this list to offer
@@ -36,8 +65,6 @@ const OPTIONAL_FILTER_DEFS = [
   { key: 'industry', label: 'Industry' },
   { key: 'country',  label: 'Country' },
   { key: 'hasDeal',  label: 'Deals Created' },
-  { key: 'cms',      label: 'CMS' },
-  { key: 'remarks',  label: 'Remarks' },
 ]
 
 // Not admin-managed like Industry/Country — a fixed yes/no choice, so no
@@ -126,11 +153,14 @@ function pageWindow(current, total) {
 const DATE_OPTIONS = [
   { value: 'today',      label: 'Today'          },
   { value: 'yesterday',  label: 'Yesterday'      },
-  { value: 'tomorrow',   label: 'Tomorrow'       },
   { value: 'this_week',  label: 'This Week'      },
   { value: 'last_7',     label: 'Last 7 Days'    },
+  { value: 'last_14',    label: 'Last 14 Days'   },
   { value: 'last_30',    label: 'Last 30 Days'   },
+  { value: 'last_60',    label: 'Last 60 Days'   },
   { value: 'last_90',    label: 'Last 90 Days'   },
+  { value: 'last_180',   label: 'Last 6 Months'  },
+  { value: 'last_365',   label: 'Last 12 Months' },
 ]
 
 // 'Unassigned' is a filter-only pseudo-value meaning "no status set" — it's
@@ -143,6 +173,7 @@ const TABS = [
   { key: 'all',        label: 'All companies'        },
   { key: 'mine',       label: 'My companies'         },
   { key: 'unassigned', label: 'Unassigned companies' },
+  { key: 'pinned',     label: '★ Pinned'             },
 ]
 
 export default function Companies({ recentsMode = false }) {
@@ -154,48 +185,47 @@ export default function Companies({ recentsMode = false }) {
     UNASSIGNED_STATUS_OPTION,
   ]
 
-  // Tab / page / search / every filter live in the URL, so opening a company
-  // and pressing Back restores exactly the view the user left — no recreating
-  // filters. It also makes a filtered list shareable and refresh-safe.
-  // Values are joined with "|" rather than "," because several real filter
-  // values contain a literal comma (e.g. the industry "Construction, Building
-  // Materials"), which a comma-joined param would shred.
-  const [searchParams, setSearchParams] = useSearchParams()
-  const urlList = (key) => {
-    const v = searchParams.get(key)
-    return v ? v.split('|').filter(Boolean) : []
-  }
-
   const [companies, setCompanies]     = useState([])
   const [total, setTotal]             = useState(0)
   const [loading, setLoading]         = useState(true)
-  const [search, setSearch]           = useState(() => searchParams.get('q') || '')
-  const [view, setView]               = useState('table')
-  const [activeTab, setActiveTab]     = useState(() => searchParams.get('tab') || 'all')
-  const [page, setPage]               = useState(() => Math.max(1, parseInt(searchParams.get('page'), 10) || 1))
+  const [search, setSearch]           = useState('')
+  const [view, setView]               = useState(() => localStorage.getItem(VIEW_STORAGE_KEY) === 'grid' ? 'grid' : 'table')
+  const [activeTab, setActiveTab]     = useState('all')
+  const [page, setPage]               = useState(1)
   const [selected, setSelected]       = useState([])
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
+  const [sortBy, setSortBy] = useState(recentsMode ? 'createdAt' : '')
+  const [sortDir, setSortDir] = useState(recentsMode ? 'desc' : 'asc')
 
   const [showCreate, setShowCreate]   = useState(false)
   const [showImport, setShowImport]   = useState(false)
   const [deleting, setDeleting]       = useState(false)
   const [recycleBinCount, setRecycleBinCount] = useState(0)
+  const [recentCounts, setRecentCounts] = useState({ today: 0, last7: 0 })
+  const [companySummary, setCompanySummary] = useState({ total: 0, withDeals: 0, unassigned: 0, withCms: 0 })
 
-  const [ownerFilter,      setOwnerFilter]      = useState(() => urlList('owners'))
-  const [createDateFilter, setCreateDateFilter] = useState(() => urlList('created'))
-  const [leadStatusFilter, setLeadStatusFilter] = useState(() => urlList('status'))
-  const [industryFilter,   setIndustryFilter]   = useState(() => urlList('industry'))
-  const [countryFilter,    setCountryFilter]    = useState(() => urlList('country'))
-  const [hasDealFilter,    setHasDealFilter]    = useState(() => urlList('hasDeal'))
-  const [cmsFilter,        setCmsFilter]        = useState(() => urlList('cms'))
-  const [remarksFilter,    setRemarksFilter]    = useState(() => urlList('remarks'))
+  const [ownerFilter,      setOwnerFilter]      = useState([])
+  const [createDateFilter, setCreateDateFilter] = useState([])
+  const [leadStatusFilter, setLeadStatusFilter] = useState([])
+  const [industryFilter,   setIndustryFilter]   = useState([])
+  const [countryFilter,    setCountryFilter]    = useState([])
+  const [hasDealFilter,    setHasDealFilter]    = useState([])
+  const [cmsFilter,        setCmsFilter]        = useState([])
+  const [remarksFilter,    setRemarksFilter]    = useState([])
+  const [websiteFilter,    setWebsiteFilter]    = useState('')
+  const [phoneFilter,      setPhoneFilter]      = useState('')
+  const [emailFilter,      setEmailFilter]      = useState('')
+  const [updatedDateFilter,setUpdatedDateFilter]= useState([])
+  const [lastActivityFilter,setLastActivityFilter] = useState([])
   const { options: ownerDropdownOptions } = useDropdownOptions('company.ownerId')
   const { options: industryValues } = useDropdownOptions('company.industry')
   const { options: countryValues }  = useDropdownOptions('company.country')
   const industryOptions = industryValues.map(o => ({ value: o.value, label: o.label }))
   const countryOptions  = countryValues.map(o => ({ value: o.value, label: o.label }))
-  // CMS and Remarks options are discovered from the live Company data by the
-  // backend (derived dropdowns), so a brand-new CMS value becomes filterable
-  // as soon as a company is saved with it - nothing is hardcoded here.
+
+  // CMS and Remarks come from the same dropdown-options source as Industry and
+  // Country above, so all four filters stay consistent with Settings -> Dropdown
+  // Lists instead of one pair reading from a separate endpoint.
   const { options: cmsValuesList }     = useDropdownOptions('company.cms')
   const { options: remarksValuesList } = useDropdownOptions('company.remarks')
   const cmsOptions     = cmsValuesList.map(o => ({ value: o.value, label: o.label }))
@@ -205,18 +235,12 @@ export default function Companies({ recentsMode = false }) {
   // toolbar, chosen via the "+" button — persisted so the choice sticks
   // across reloads, same pattern as visibleColumns below.
   const [activeOptionalFilters, setActiveOptionalFilters] = useState(() => {
-    let saved = []
     try {
-      const raw = JSON.parse(localStorage.getItem(OPTIONAL_FILTERS_STORAGE_KEY))
-      if (Array.isArray(raw)) saved = raw
-    } catch { /* ignore malformed preference */ }
-    // An optional filter arriving in the URL (a shared link, or Back from a
-    // company) must have its chip visible, otherwise the list would be
-    // filtered by something the user cannot see or clear.
-    const fromUrl = OPTIONAL_FILTER_DEFS
-      .map(d => d.key)
-      .filter(k => searchParams.get(k === 'industry' ? 'industry' : k))
-    return [...new Set([...saved, ...fromUrl])]
+      const saved = JSON.parse(localStorage.getItem(OPTIONAL_FILTERS_STORAGE_KEY))
+      return Array.isArray(saved) ? saved : []
+    } catch {
+      return []
+    }
   })
   const saveActiveOptionalFilters = (keys) => {
     // Removing a filter also clears its current selection immediately, so
@@ -225,8 +249,6 @@ export default function Companies({ recentsMode = false }) {
     if (!keys.includes('industry')) setIndustryFilter([])
     if (!keys.includes('country'))  setCountryFilter([])
     if (!keys.includes('hasDeal'))  setHasDealFilter([])
-    if (!keys.includes('cms'))      setCmsFilter([])
-    if (!keys.includes('remarks'))  setRemarksFilter([])
     setActiveOptionalFilters(keys)
     localStorage.setItem(OPTIONAL_FILTERS_STORAGE_KEY, JSON.stringify(keys))
     setPage(1)
@@ -255,6 +277,26 @@ export default function Companies({ recentsMode = false }) {
   }, [])
   useEffect(() => { fetchRecycleBinCount() }, [fetchRecycleBinCount])
 
+  useEffect(() => {
+    if (!recentsMode) return
+    Promise.all([
+      api.get('/companies', { params: { page: 1, limit: 1, createDate: 'today' } }),
+      api.get('/companies', { params: { page: 1, limit: 1, createDate: 'last_7' } }),
+    ]).then(([todayResponse, weekResponse]) => {
+      setRecentCounts({
+        today: todayResponse.data?.total || 0,
+        last7: weekResponse.data?.total || 0,
+      })
+    }).catch(() => {})
+  }, [recentsMode])
+
+  useEffect(() => {
+    if (recentsMode) return
+    api.get('/companies/summary')
+      .then(response => setCompanySummary(response.data || {}))
+      .catch(() => {})
+  }, [recentsMode])
+
   // Load the dynamic Company field list (same one Create/Import already use)
   useEffect(() => {
     api.get('/companies/import-fields').then(r => setCompanyFields(r.data.fields || [])).catch(() => {})
@@ -271,20 +313,6 @@ export default function Companies({ recentsMode = false }) {
     { value: 'unassigned', label: 'Unassigned' },
   ]
 
-  useEffect(() => {
-    const p = new URLSearchParams()
-    if (activeTab !== 'all') p.set('tab', activeTab)
-    if (page > 1) p.set('page', String(page))
-    if (search) p.set('q', search)
-    const lists = {
-      owners: ownerFilter, created: createDateFilter, status: leadStatusFilter,
-      industry: industryFilter, country: countryFilter, hasDeal: hasDealFilter,
-      cms: cmsFilter, remarks: remarksFilter,
-    }
-    for (const [k, v] of Object.entries(lists)) if (v.length) p.set(k, v.join('|'))
-    if (p.toString() !== searchParams.toString()) setSearchParams(p, { replace: true })
-  }, [activeTab, page, search, ownerFilter, createDateFilter, leadStatusFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // Fetch companies from API
   const fetchCompanies = useCallback(async () => {
     setLoading(true)
@@ -293,9 +321,6 @@ export default function Companies({ recentsMode = false }) {
         page,
         limit: PAGE_SIZE,
         view: activeTab === 'all' ? undefined : activeTab,
-        // Recents: newest activity (created OR edited) first - see the sort
-        // handling in GET /api/companies.
-        ...(recentsMode && { sort: 'recent' }),
         ...(search && { search }),
         ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
         ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
@@ -306,8 +331,19 @@ export default function Companies({ recentsMode = false }) {
         ...(industryFilter.length   > 0 && { industries:   industryFilter }),
         ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
         ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
-        ...(cmsFilter.length        > 0 && { cmsValues:     cmsFilter }),
-        ...(remarksFilter.length    > 0 && { remarksValues: remarksFilter }),
+        ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter.join(',') }),
+        ...(remarksFilter.length > 0 && { remarksValues: remarksFilter }),
+        ...(websiteFilter.trim()    && { website:      websiteFilter.trim() }),
+        ...(phoneFilter.trim()      && { phone:        phoneFilter.trim() }),
+        ...(emailFilter.trim()      && { email:        emailFilter.trim() }),
+        ...(updatedDateFilter.length > 0 && { updatedDate: updatedDateFilter[0] }),
+        ...(lastActivityFilter.length > 0 && { lastActivity: lastActivityFilter[0] }),
+        ...(sortBy && { sortBy, sortDir }),
+        // Recents must show only EDITED companies, most-recently-updated
+        // first — the backend's `sort=recent` already implements exactly
+        // that (see companies.js). sortBy/sortDir above do nothing for this
+        // (the backend never reads them); recentsMode needs its own signal.
+        ...(recentsMode && { sort: 'recent' }),
       }
       const { data } = await api.get('/companies', { params })
       setCompanies(data.companies || [])
@@ -317,7 +353,7 @@ export default function Companies({ recentsMode = false }) {
     } finally {
       setLoading(false)
     }
-  }, [page, activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter, recentsMode])
+  }, [page, activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter, websiteFilter, phoneFilter, emailFilter, updatedDateFilter, lastActivityFilter, sortBy, sortDir, recentsMode])
 
   useEffect(() => { fetchCompanies() }, [fetchCompanies])
 
@@ -334,8 +370,15 @@ export default function Companies({ recentsMode = false }) {
     ...(industryFilter.length   > 0 && { industries:   industryFilter }),
     ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
     ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
-        ...(cmsFilter.length        > 0 && { cmsValues:     cmsFilter }),
-        ...(remarksFilter.length    > 0 && { remarksValues: remarksFilter }),
+    ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter.join(',') }),
+    ...(remarksFilter.length > 0 && { remarksValues: remarksFilter }),
+    ...(websiteFilter.trim()    && { website:      websiteFilter.trim() }),
+    ...(phoneFilter.trim()      && { phone:        phoneFilter.trim() }),
+    ...(emailFilter.trim()      && { email:        emailFilter.trim() }),
+    ...(updatedDateFilter.length > 0 && { updatedDate: updatedDateFilter[0] }),
+    ...(lastActivityFilter.length > 0 && { lastActivity: lastActivityFilter[0] }),
+    ...(sortBy && { sortBy, sortDir }),
+    ...(recentsMode && { sort: 'recent' }),
   }
   const openCompany = (id) => navigate(`/companies/${id}`, { state: { listContext } })
 
@@ -352,15 +395,27 @@ export default function Companies({ recentsMode = false }) {
       ...(industryFilter.length   > 0 && { industries:   industryFilter }),
       ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
       ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
-        ...(cmsFilter.length        > 0 && { cmsValues:     cmsFilter }),
-        ...(remarksFilter.length    > 0 && { remarksValues: remarksFilter }),
+      ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter.join(',') }),
+      ...(remarksFilter.length > 0 && { remarksValues: remarksFilter }),
+      ...(websiteFilter.trim()    && { website:      websiteFilter.trim() }),
+      ...(phoneFilter.trim()      && { phone:        phoneFilter.trim() }),
+      ...(emailFilter.trim()      && { email:        emailFilter.trim() }),
+      ...(updatedDateFilter.length > 0 && { updatedDate: updatedDateFilter[0] }),
+      ...(lastActivityFilter.length > 0 && { lastActivity: lastActivityFilter[0] }),
+      ...(sortBy && { sortBy, sortDir }),
+      ...(recentsMode && { sort: 'recent' }),
     }
     const { data } = await api.get('/companies/export', { params })
     return data.companies || []
-  }, [activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter])
+  }, [activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter, websiteFilter, phoneFilter, emailFilter, updatedDateFilter, lastActivityFilter, sortBy, sortDir, recentsMode])
 
   // Tab change resets page
   const switchTab = (key) => { setActiveTab(key); setPage(1); setSelected([]) }
+  const switchView = (nextView) => {
+    setView(nextView)
+    setSelected([])
+    localStorage.setItem(VIEW_STORAGE_KEY, nextView)
+  }
 
   // Select all toggle
   const allSelected = companies.length > 0 && selected.length === companies.length
@@ -392,7 +447,26 @@ export default function Companies({ recentsMode = false }) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const hasFilters = ownerFilter.length > 0 || createDateFilter.length > 0 || leadStatusFilter.length > 0
     || industryFilter.length > 0 || countryFilter.length > 0 || hasDealFilter.length > 0
-    || cmsFilter.length > 0 || remarksFilter.length > 0
+    || cmsFilter.length > 0 || remarksFilter.length > 0 || websiteFilter || phoneFilter || emailFilter
+    || updatedDateFilter.length > 0 || lastActivityFilter.length > 0
+
+  const clearAllFilters = () => {
+    setOwnerFilter([]); setCreateDateFilter([]); setLeadStatusFilter([])
+    setIndustryFilter([]); setCountryFilter([]); setHasDealFilter([])
+    setCmsFilter([]); setRemarksFilter([]); setWebsiteFilter(''); setPhoneFilter(''); setEmailFilter('')
+    setUpdatedDateFilter([]); setLastActivityFilter([]); setPage(1)
+  }
+  const clearOneFilter = (setter, emptyValue) => { setter(emptyValue); setPage(1) }
+
+  const toggleSort = (key) => {
+    if (sortBy === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortBy(key); setSortDir('asc') }
+    setPage(1)
+  }
+
+  const SortIcon = ({ column }) => sortBy === column
+    ? (sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)
+    : <ArrowUpDown size={12} />
 
   // Export always includes every Company field (a superset of the visible
   // table columns) — except 'phone', the legacy primary-scalar mirror of the
@@ -423,7 +497,29 @@ export default function Companies({ recentsMode = false }) {
       return <>{c.phone || '--'}<MoreBadge n={moreCount(c.phone, c.phones)} /></>
     }
     if (f.key === 'ownerId') {
-      return c.owner?.name || '--'
+      return c.owner?.name
+        ? <span className="company-owner-cell"><i>{c.owner.name.slice(0, 1).toUpperCase()}</i>{c.owner.name}</span>
+        : <span className="company-empty-value">Unassigned</span>
+    }
+    if (f.key === 'cms') {
+      const value = String(c.cms || '').trim()
+      return value && value !== '--'
+        ? <span className="company-data-pill cms-pill"><Layers size={11} />{value}</span>
+        : <span className="company-empty-value">Not identified</span>
+    }
+    if (f.key === 'leadStatus' || f.key === 'status') {
+      const value = String(c[f.key] || '').trim()
+      const tone = /won|active|qualified/i.test(value) ? 'positive' : /lost|inactive/i.test(value) ? 'negative' : 'neutral'
+      return value
+        ? <span className={`company-data-pill status-pill ${tone}`}>{value}</span>
+        : <span className="company-empty-value">Not set</span>
+    }
+    if (f.key === 'remarks') {
+      const value = String(c.remarks || '').trim()
+      const tone = /less data|missing|incomplete/i.test(value) ? 'attention' : 'neutral'
+      return value && value !== '--'
+        ? <span className={`company-data-pill remark-pill ${tone}`}>{value}</span>
+        : <span className="company-empty-value">No remarks</span>
     }
     if (f.key.startsWith('custom.')) return renderCustomCell(f.type, c[f.key])
     const v = c[f.key]
@@ -431,48 +527,114 @@ export default function Companies({ recentsMode = false }) {
     return (v === null || v === undefined || v === '') ? '--' : String(v)
   }
 
+  function companyCellTitle(f, c) {
+    if (f.key === 'email') return valueList(c.email, c.emails).join('; ') || '--'
+    if (f.key === 'phone') return valueList(c.phone, c.phones).join('; ') || '--'
+    if (f.key === 'ownerId') return c.owner?.name || '--'
+    const value = c[f.key]
+    if (Array.isArray(value)) return value.join(', ')
+    return value === null || value === undefined || value === '' ? '--' : String(value)
+  }
+
   return (
-    <div className="contacts-container">
+    <div className={`contacts-container companies-page${recentsMode ? ' recents-workspace' : ''}`}>
 
       {/* ── Header ── */}
-      <div className="contacts-header">
-        <div className="header-left">
-          <h1 className="contacts-title">
-            {recentsMode ? 'Recents' : 'Companies'}
-          </h1>
-          <span className="records-count">
-            {total} records{recentsMode ? ' · most recently created or updated first' : ''}
-          </span>
-        </div>
-        <div className="header-actions">
-          {selected.length > 0 && (
-            <button
-              className="btn-action"
-              style={{ color: '#ef4444', borderColor: '#fecaca' }}
-              onClick={deleteSelected}
-              disabled={deleting}
-            >
-              <Trash2 size={14} /> {deleting ? 'Moving…' : `Delete selected (${selected.length})`}
+      {recentsMode ? (
+        <>
+          <section className="recents-hero">
+            <div className="recents-hero-copy">
+              <span className="recents-eyebrow"><History size={13} /> Recently added</span>
+              <h1>See what’s new in your CRM</h1>
+              <p>Every newly created company appears here first, so your team can discover fresh accounts and take action quickly.</p>
+              <div className="recents-hero-meta">
+                <span><CheckCircle2 size={14} /> Newest companies first</span>
+                <span><CheckCircle2 size={14} /> “New” tag for the first 24 hours</span>
+              </div>
+            </div>
+            <div className="recents-hero-actions">
+              <button type="button" className="recents-import-primary" onClick={() => setShowCreate(true)}>
+                <Plus size={18} /> Create company <ArrowRight size={16} />
+              </button>
+              <button type="button" className="recents-create-secondary" onClick={() => navigate('/companies')}>
+                View all companies
+              </button>
+            </div>
+            <div className="recents-hero-stats">
+              <div><span>Total records</span><strong>{total.toLocaleString()}</strong></div>
+              <div><span>Added today</span><strong>{recentCounts.today.toLocaleString()}</strong></div>
+              <div><span>Added last 7 days</span><strong>{recentCounts.last7.toLocaleString()}</strong></div>
+            </div>
+          </section>
+
+          <div className="recents-list-heading">
+            <div><span className="recents-eyebrow">Fresh accounts</span><h2>Recently created companies</h2><p>Latest created records appear first. Companies under 24 hours old carry a “New” tag.</p></div>
+            <div className="recents-list-actions">
+              <button className="btn-action" onClick={() => navigate('/companies/recycle-bin')}><Trash2 size={14} /> Recycle Bin{recycleBinCount > 0 ? ` (${recycleBinCount})` : ''}</button>
+              <button className="btn-primary" onClick={() => setShowCreate(true)}><Plus size={14} /> Create company</button>
+            </div>
+          </div>
+        </>
+      ) : <>
+        <section className="companies-hero">
+          <div className="companies-hero-copy">
+            <span className="companies-hero-eyebrow"><Building2 size={14} /> Account workspace</span>
+            <h1>Know every company.<br />Grow every relationship.</h1>
+            <p>Keep account context, ownership and opportunities in one focused workspace built for action.</p>
+          </div>
+          <div className="companies-hero-actions">
+            <div className="companies-hero-secondary-actions">
+              <button onClick={() => navigate('/companies/recycle-bin')}>
+                <Trash2 size={15} /> Recycle Bin{recycleBinCount > 0 ? ` (${recycleBinCount})` : ''}
+              </button>
+              <button onClick={() => setShowImport(true)}><Download size={15} /> Import</button>
+            </div>
+            <button className="companies-hero-primary" onClick={() => setShowCreate(true)}>
+              <Plus size={17} /> Create company <ArrowRight size={15} />
             </button>
-          )}
-          <button className="btn-action" onClick={() => navigate('/companies/recycle-bin')}>
-            <Trash2 size={14} /> Recycle Bin{recycleBinCount > 0 ? ` (${recycleBinCount})` : ''}
-          </button>
-          <button className="btn-action" onClick={() => setShowImport(true)}>
-            <Download size={14} /> Import
-          </button>
-          <button className="btn-primary" onClick={() => setShowCreate(true)}>
-            <Plus size={14} /> Create company
-          </button>
-        </div>
-      </div>
+          </div>
+        </section>
+
+        <section className="company-summary-grid" aria-label="Company overview">
+          <article className="company-summary-card total"><span><Building2 size={17} /></span><div><small>Total companies</small><strong>{Number(companySummary.total || total).toLocaleString()}</strong><p>Your complete account database</p></div></article>
+          <article
+            className="company-summary-card deals"
+            onClick={() => {
+              setHasDealFilter(['yes'])
+              if (!activeOptionalFilters.includes('hasDeal')) {
+                const next = [...activeOptionalFilters, 'hasDeal']
+                setActiveOptionalFilters(next)
+                localStorage.setItem(OPTIONAL_FILTERS_STORAGE_KEY, JSON.stringify(next))
+              }
+              setPage(1)
+            }}
+            style={{ cursor: 'pointer' }}
+            title="Click to filter companies linked to deals"
+          >
+            <span><Briefcase size={17} /></span><div><small>With active context</small><strong>{Number(companySummary.withDeals || 0).toLocaleString()}</strong><p>Companies linked to deals</p></div>
+          </article>
+          <article className="company-summary-card owner"><span><UserX size={17} /></span><div><small>Needs an owner</small><strong>{Number(companySummary.unassigned || 0).toLocaleString()}</strong><p>Ready for team assignment</p></div></article>
+          <article className="company-summary-card cms"><span><Layers size={17} /></span><div><small>CMS identified</small><strong>{Number(companySummary.withCms || 0).toLocaleString()}</strong><p>Technology data available</p></div></article>
+        </section>
+
+        {selected.length > 0 && (
+          <div className="company-bulk-bar">
+            <span><CheckCircle2 size={15} /> {selected.length} compan{selected.length === 1 ? 'y' : 'ies'} selected</span>
+            {selected.length > 0 && (
+              <button onClick={deleteSelected} disabled={deleting}><Trash2 size={14} /> {deleting ? 'Moving…' : 'Move to Recycle Bin'}</button>
+            )}
+          </div>
+        )}
+      </>}
+
+      <section className="companies-data-shell">
 
       {/* ── Tabs ── */}
       <div className="filter-tabs">
         {TABS.map(t => (
-          <div key={t.key} className={`tab ${activeTab === t.key ? 'active' : ''}`} onClick={() => switchTab(t.key)}>
-            {t.label}
-          </div>
+          <button type="button" key={t.key} className={`tab ${activeTab === t.key ? 'active' : ''}`} onClick={() => switchTab(t.key)}>
+            {recentsMode ? ({ all: 'All recent records', mine: 'My recent records', unassigned: 'Unassigned records' }[t.key]) : t.label}
+          </button>
         ))}
       </div>
 
@@ -485,11 +647,20 @@ export default function Companies({ recentsMode = false }) {
             selected={ownerFilter}
             onChange={v => { setOwnerFilter(v); setPage(1) }}
           />
-          {/* Create date — presets plus an explicit day / month / year / range
-              calendar. Same single filter (one token in the `created` param),
-              so the list, the record count and Export all stay in step. */}
+          <FilterDropdown
+            label="CMS platform"
+            options={cmsOptions}
+            selected={cmsFilter}
+            onChange={v => { setCmsFilter(v); setPage(1) }}
+          />
+          <FilterDropdown
+            label="Remarks"
+            options={remarksOptions}
+            selected={remarksFilter}
+            onChange={v => { setRemarksFilter(v); setPage(1) }}
+          />
           <DateFilterDropdown
-            label="Create date"
+            label="Created date"
             presets={DATE_OPTIONS}
             value={createDateFilter[0] || ''}
             onChange={v => { setCreateDateFilter(v); setPage(1) }}
@@ -526,28 +697,15 @@ export default function Companies({ recentsMode = false }) {
               singleSelect
             />
           )}
-          {activeOptionalFilters.includes('cms') && (
-            <FilterDropdown
-              label="CMS"
-              options={cmsOptions}
-              selected={cmsFilter}
-              onChange={v => { setCmsFilter(v); setPage(1) }}
-            />
-          )}
-          {activeOptionalFilters.includes('remarks') && (
-            <FilterDropdown
-              label="Remarks"
-              options={remarksOptions}
-              selected={remarksFilter}
-              onChange={v => { setRemarksFilter(v); setPage(1) }}
-            />
-          )}
           <AddFilterMenu fields={OPTIONAL_FILTER_DEFS} activeKeys={activeOptionalFilters} onSave={saveActiveOptionalFilters} />
           <button className="filter-chip chip-icon" title="Edit filters"><Pencil size={13} /></button>
-          <button className="filter-chip advanced-filter"><SlidersHorizontal size={13} /> Advanced filters</button>
+          <button className={`filter-chip advanced-filter${showAdvancedFilters ? ' active' : ''}`} onClick={() => setShowAdvancedFilters(v => !v)}>
+            <SlidersHorizontal size={13} /> Advanced filters
+            {hasFilters && <span className="filter-count-dot" />}
+            <ChevronDown size={11} className={showAdvancedFilters ? 'rotated' : ''} />
+          </button>
           {hasFilters && (
-            <button className="filter-chip" style={{ color: '#ef4444', borderColor: '#fecaca' }}
-              onClick={() => { setOwnerFilter([]); setCreateDateFilter([]); setLeadStatusFilter([]); setIndustryFilter([]); setCountryFilter([]); setHasDealFilter([]); setCmsFilter([]); setRemarksFilter([]); setPage(1) }}>
+            <button className="filter-chip clear-filter-btn" onClick={clearAllFilters}>
               Clear all
             </button>
           )}
@@ -566,80 +724,168 @@ export default function Companies({ recentsMode = false }) {
           <CompanyExportMenu fetchAllForExport={fetchAllForExport} columns={exportColumns} />
           <EditColumnsMenu fields={editColumnsFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} />
           <div className="view-toggle">
-            <button className={`view-btn ${view === 'table' ? 'active' : ''}`} onClick={() => setView('table')}><List size={14} /></button>
-            <button className={`view-btn ${view === 'grid'  ? 'active' : ''}`} onClick={() => setView('grid')}><LayoutGrid size={14} /></button>
+            <button aria-label="Table view" title="Table view" className={`view-btn ${view === 'table' ? 'active' : ''}`} onClick={() => switchView('table')}><List size={13} /></button>
+            <button aria-label="Grid view" title="Grid view" className={`view-btn ${view === 'grid'  ? 'active' : ''}`} onClick={() => switchView('grid')}><LayoutGrid size={13} /></button>
           </div>
         </div>
       </div>
 
-      {/* ── Table ── */}
+      {showAdvancedFilters && (
+        <div className="advanced-filters-panel">
+          <div className="advanced-filters-head">
+            <div><strong>Advanced Filters</strong><span>Combine multiple conditions to narrow the company list.</span></div>
+            <button type="button" className="advanced-close" onClick={() => setShowAdvancedFilters(false)} aria-label="Close Advanced Filters"><X size={14} /></button>
+          </div>
+          <div className="advanced-filter-grid">
+            {!activeOptionalFilters.includes('industry') && <FilterDropdown label="Industry" options={industryOptions} selected={industryFilter} onChange={v => { setIndustryFilter(v); setPage(1) }} />}
+            {!activeOptionalFilters.includes('country') && <FilterDropdown label="Country" options={countryOptions} selected={countryFilter} onChange={v => { setCountryFilter(v); setPage(1) }} />}
+            {!activeOptionalFilters.includes('hasDeal') && <FilterDropdown label="Deals Created" options={HAS_DEAL_OPTIONS} selected={hasDealFilter} onChange={v => { setHasDealFilter(v); setPage(1) }} searchable={false} singleSelect />}
+            <AdvancedTextFilter label="Website" value={websiteFilter} onChange={v => { setWebsiteFilter(v); setPage(1) }} placeholder="Domain or URL" />
+            <AdvancedTextFilter label="Phone" value={phoneFilter} onChange={v => { setPhoneFilter(v); setPage(1) }} placeholder="Contains number" />
+            <AdvancedTextFilter label="Email" value={emailFilter} onChange={v => { setEmailFilter(v); setPage(1) }} placeholder="Contains email" />
+            <DateFilterDropdown label="Updated date" presets={DATE_OPTIONS} value={updatedDateFilter[0] || ''} onChange={v => { setUpdatedDateFilter(v); setPage(1) }} />
+            <DateFilterDropdown label="Last activity date" presets={DATE_OPTIONS} value={lastActivityFilter[0] || ''} onChange={v => { setLastActivityFilter(v); setPage(1) }} />
+          </div>
+          <div className="advanced-filters-foot">
+            <span>{hasFilters ? 'Filters apply instantly to the table and export.' : 'No advanced filters applied.'}</span>
+            {hasFilters && <button type="button" onClick={clearAllFilters}>Clear All</button>}
+          </div>
+        </div>
+      )}
+
+      {hasFilters && (
+        <div className="active-filter-strip" aria-label="Active filters">
+          <span className="active-filter-label">Active filters</span>
+          {ownerFilter.length > 0 && <button onClick={() => clearOneFilter(setOwnerFilter, [])}>Lead Owner · {ownerFilter.length}<X size={10} /></button>}
+          {createDateFilter.length > 0 && <button onClick={() => clearOneFilter(setCreateDateFilter, [])}>Created · {describeDateToken(createDateFilter[0], DATE_OPTIONS)}<X size={10} /></button>}
+          {leadStatusFilter.length > 0 && <button onClick={() => clearOneFilter(setLeadStatusFilter, [])}>Lead status · {leadStatusFilter.length}<X size={10} /></button>}
+          {industryFilter.length > 0 && <button onClick={() => clearOneFilter(setIndustryFilter, [])}>Industry · {industryFilter.length}<X size={10} /></button>}
+          {countryFilter.length > 0 && <button onClick={() => clearOneFilter(setCountryFilter, [])}>Country · {countryFilter.length}<X size={10} /></button>}
+          {hasDealFilter.length > 0 && <button onClick={() => clearOneFilter(setHasDealFilter, [])}>Deals Created<X size={10} /></button>}
+          {cmsFilter.length > 0 && <button onClick={() => clearOneFilter(setCmsFilter, [])}>CMS · {cmsFilter.length === 1 ? cmsFilter[0] : `${cmsFilter.length} selected`}<X size={10} /></button>}
+          {remarksFilter.length > 0 && <button onClick={() => clearOneFilter(setRemarksFilter, [])}>Remarks · {remarksFilter.length === 1 ? remarksFilter[0] : `${remarksFilter.length} selected`}<X size={10} /></button>}
+          {websiteFilter && <button onClick={() => clearOneFilter(setWebsiteFilter, '')}>Website<X size={10} /></button>}
+          {phoneFilter && <button onClick={() => clearOneFilter(setPhoneFilter, '')}>Phone<X size={10} /></button>}
+          {emailFilter && <button onClick={() => clearOneFilter(setEmailFilter, '')}>Email<X size={10} /></button>}
+          {updatedDateFilter.length > 0 && <button onClick={() => clearOneFilter(setUpdatedDateFilter, [])}>Updated · {describeDateToken(updatedDateFilter[0], DATE_OPTIONS)}<X size={10} /></button>}
+          {lastActivityFilter.length > 0 && <button onClick={() => clearOneFilter(setLastActivityFilter, [])}>Last activity · {describeDateToken(lastActivityFilter[0], DATE_OPTIONS)}<X size={10} /></button>}
+          <button className="strip-clear" onClick={clearAllFilters}>Clear All</button>
+        </div>
+      )}
+
+      {/* ── Table / Grid ── */}
+      {view === 'table' ? (
       <div className="contacts-table-wrapper">
         <table className="contacts-table">
           <thead>
             <tr>
-              <th><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
-              <th style={{ width: 30 }} />
-              <th>COMPANY</th>
-              {orderedVisibleFields.map(f => <th key={f.key}>{f.label.toUpperCase()}</th>)}
+              <th className="select-column"><input type="checkbox" aria-label="Select all companies" checked={allSelected} onChange={toggleAll} /></th>
+              <th className="pin-column" />
+              <th>
+                <button type="button" className={`sort-button${sortBy === 'name' ? ' active' : ''}`} onClick={() => toggleSort('name')}>
+                  COMPANY <SortIcon column="name" />
+                </button>
+              </th>
+              {orderedVisibleFields.map(f => (
+                <th key={f.key}>
+                  {SORTABLE_COLUMN_KEYS.has(f.key) ? (
+                    <button type="button" className={`sort-button${sortBy === f.key ? ' active' : ''}`} onClick={() => toggleSort(f.key)}>
+                      {f.label.toUpperCase()} <SortIcon column={f.key} />
+                    </button>
+                  ) : f.label.toUpperCase()}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={3 + orderedVisibleFields.length} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading...</td></tr>
+              Array.from({ length: 9 }).map((_, row) => (
+                <tr className="company-skeleton-row" key={row} aria-label={row === 0 ? 'Loading...' : undefined}>
+                  {Array.from({ length: 3 + orderedVisibleFields.length }).map((__, cell) => <td key={cell}><span /></td>)}
+                </tr>
+              ))
             ) : companies.length === 0 ? (
               <tr><td colSpan={3 + orderedVisibleFields.length} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No companies found</td></tr>
             ) : companies.map(c => (
-              <tr key={c.id}>
-                <td><input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} /></td>
+              <tr key={c.id} className={selected.includes(c.id) ? 'selected-row' : ''}>
+                <td className="select-column"><input type="checkbox" aria-label={`Select ${c.name}`} checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} /></td>
                 <td>
                   <button
                     onClick={e => togglePin(e, c.id)}
                     title={c.isPinned ? 'Unpin company' : 'Pin company'}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', padding: 2 }}
+                    className="pin-button"
                   >
                     <Star size={15} color={c.isPinned ? '#f59e0b' : '#cbd5e1'} fill={c.isPinned ? '#f59e0b' : 'none'} />
                   </button>
                 </td>
                 <td className="name-cell">
-                  {c._count?.deals > 0 && (
-                    <span
-                      title={`${c._count.deals} deal${c._count.deals > 1 ? 's' : ''} for this company`}
-                      style={{
-                        flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: '#0d9488',
-                        background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: 99,
-                        padding: '2px 8px', whiteSpace: 'nowrap',
-                      }}
-                    >
-                      DC
-                    </span>
-                  )}
                   <span className="avatar" style={{ fontSize: '10px', letterSpacing: '-0.5px' }}>
                     {(c.name || '??').slice(0, 2).toUpperCase()}
                   </span>
-                  {/* A real anchor so the browser offers its normal
-                      "Open link in new tab/window", middle-click and
-                      Ctrl/Cmd-click. Left-click is still intercepted for SPA
-                      navigation, which is what carries listContext through so
-                      the Companies filters/search/page are preserved on
-                      return (and Prev/Next walks the same filtered list). */}
-                  <a
-                    className="link-style"
-                    href={`/companies/${c.id}`}
-                    onClick={e => {
-                      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-                      e.preventDefault()
-                      openCompany(c.id)
-                    }}
-                  >
-                    {c.name}
-                  </a>
+                  <span className="company-name-stack">
+                    <span className="link-style" title={c.name} onClick={() => openCompany(c.id)}>{c.name}</span>
+                    {c._count?.deals > 0 && <small>{c._count.deals} active deal{c._count.deals > 1 ? 's' : ''}</small>}
+                  </span>
+                  <NewBadge createdAt={c.createdAt} />
+                  <button type="button" className="row-open-btn" title="Open company" onClick={() => openCompany(c.id)}><ExternalLink size={12} /></button>
                 </td>
-                {orderedVisibleFields.map(f => <td key={f.key}><div className="cell-clamp">{renderCompanyCell(f, c)}</div></td>)}
+                {orderedVisibleFields.map(f => <td key={f.key} data-tooltip={companyCellTitle(f, c)}><div className="cell-clamp">{renderCompanyCell(f, c)}</div></td>)}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      ) : (
+        <div className="company-grid-view" aria-label="Companies grid">
+          <div className="grid-view-toolbar">
+            <label><input type="checkbox" checked={allSelected} onChange={toggleAll} /> Select all on page</label>
+            <span>{companies.length} shown</span>
+            <div className="grid-sort-control">
+              <select aria-label="Sort companies" value={sortBy} onChange={e => { setSortBy(e.target.value); setSortDir('asc'); setPage(1) }}>
+                <option value="">Default order</option>
+                {recentsMode && <option value="createdAt">Recently created</option>}
+                <option value="name">Company</option>
+                {orderedVisibleFields.filter(f => SORTABLE_COLUMN_KEYS.has(f.key)).map(f => <option value={f.key} key={f.key}>{f.label}</option>)}
+              </select>
+              <button type="button" aria-label="Toggle sort direction" disabled={!sortBy} onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}>
+                {sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
+              </button>
+            </div>
+          </div>
+          {loading ? (
+            Array.from({ length: 12 }).map((_, index) => <div className="company-grid-card grid-skeleton-card" key={index}><i /><b /><span /><span /><span /></div>)
+          ) : companies.length === 0 ? (
+            <div className="grid-empty-state">No companies found</div>
+          ) : companies.map(c => (
+            <article key={c.id} className={`company-grid-card${selected.includes(c.id) ? ' selected' : ''}`}>
+              <div className="grid-card-actions">
+                <input type="checkbox" aria-label={`Select ${c.name}`} checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} />
+                <button onClick={e => togglePin(e, c.id)} title={c.isPinned ? 'Unpin company' : 'Pin company'} className="pin-button">
+                  <Star size={14} color={c.isPinned ? '#f59e0b' : '#cbd5e1'} fill={c.isPinned ? '#f59e0b' : 'none'} />
+                </button>
+              </div>
+              <div className="grid-company-head">
+                <span className="avatar">{(c.name || '??').slice(0, 2).toUpperCase()}</span>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button type="button" className="grid-company-name" title={c.name} onClick={() => openCompany(c.id)}>{c.name}</button>
+                    <NewBadge createdAt={c.createdAt} />
+                  </div>
+                  {c._count?.deals > 0 && <span className="grid-deal-badge" title={`${c._count.deals} deal${c._count.deals > 1 ? 's' : ''} for this company`}>{c._count.deals} deal{c._count.deals > 1 ? 's' : ''}</span>}
+                </div>
+                <button type="button" className="grid-open-btn" title="Open company" onClick={() => openCompany(c.id)}><ExternalLink size={12} /></button>
+              </div>
+              <div className="grid-field-list">
+                {orderedVisibleFields.map(f => (
+                  <div className="grid-field-row" key={f.key} title={companyCellTitle(f, c)}>
+                    <span>{f.label}</span><strong>{renderCompanyCell(f, c)}</strong>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
 
       {/* ── Pagination ── */}
       <div className="contacts-pagination">
@@ -655,6 +901,7 @@ export default function Companies({ recentsMode = false }) {
         </div>
         <span className="per-page">{PAGE_SIZE} per page</span>
       </div>
+      </section>
 
       {/* ── Modals ── */}
       <CreateCompanyModal

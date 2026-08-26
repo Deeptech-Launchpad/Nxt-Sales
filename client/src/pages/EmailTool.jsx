@@ -633,188 +633,223 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
       <div className="et-compose-split">
         {/* ── Left: Form ── */}
         <div className="et-form-card">
-          {/* Sender (readonly) */}
-          <div className="et-form-group">
-            <label className="et-label">From (Sender)</label>
-            <div className="et-input et-readonly">
-              {gmailStatus.email || 'Manoj@altiusnxt.com'}
+          {/* ── 1. Recipients ─────────────────────────────────────────── */}
+          <section className="et-form-section et-section-recipients">
+            <div className="et-form-section-head">
+              <span className="et-section-step">1</span>
+              <h3>Recipients</h3>
             </div>
-          </div>
-
-          {/* To */}
-          <div className="et-form-group">
-            <label className="et-label">To</label>
-            <input className="et-input" type="email" placeholder="recipient@company.com"
-              value={to} onChange={e => setTo(e.target.value)} />
-          </div>
-
-          {/* CC / BCC */}
-          <div className="et-form-row">
-            <div className="et-form-group">
-              <label className="et-label">CC</label>
-              <input className="et-input" type="email" placeholder="cc@company.com"
-                value={cc} onChange={e => setCc(e.target.value)} />
-            </div>
-            <div className="et-form-group">
-              <label className="et-label">BCC</label>
-              <input className="et-input" type="email" placeholder="bcc@company.com"
-                value={bcc} onChange={e => setBcc(e.target.value)} />
-            </div>
-          </div>
-
-          {/* Email Mode — controls thread continuation for this send only.
-              "Continue Existing Thread" looks up the latest conversation by
-              sender+recipient email automatically; no manual thread picking. */}
-          <div className="et-form-group">
-            <label className="et-label">Email Mode</label>
-            <select className="et-input" value={emailMode} onChange={e => setEmailMode(e.target.value)}>
-              <option value="continue">Continue Existing Thread</option>
-              <option value="new">New Conversation</option>
-            </select>
-          </div>
-
-          {/* Present only for a genuine Reply/Reply All/Forward (see
-              ThreadDrawer.jsx) — the quoted original message that will be
-              appended after your signature on send. Read-only; not part of
-              the editable body above. */}
-          {quotedHtml && (
-            <div className="et-form-group">
-              <label className="et-label">Quoted below your signature</label>
-              <div
-                className="et-input et-readonly"
-                style={{ height: 'auto', maxHeight: 160, overflowY: 'auto', whiteSpace: 'normal', lineHeight: 1.5 }}
-                dangerouslySetInnerHTML={{ __html: quotedHtml }}
-              />
-            </div>
-          )}
-
-          {/* Client Type — selects which template set (Static vs E-commerce) loads */}
-          <div className="et-form-group">
-            <label className="et-label">Client Type</label>
-            <select className="et-input" value={clientType} onChange={e => handleClientTypeChange(e.target.value)}>
-              <option value="ecommerce">E-commerce</option>
-              <option value="static">Static Website</option>
-            </select>
-          </div>
-
-          {/* Template */}
-          <div className="et-form-group">
-            <label className="et-label">Email Template</label>
-            <select className="et-input" value={template} onChange={e => handleTemplateChange(e.target.value)}>
-              <option value="manual">✍️ Manual</option>
-              <option value="1">1 — Before &amp; After Sample</option>
-              <option value="2">2 — Client References</option>
-              <option value="3">3 — Audit (AI)</option>
-              <option value="4">4 — Pilot Offer POC</option>
-            </select>
-          </div>
-
-          {/* Client Name (if not manual) */}
-          {!isManual && (
-            <div className="et-form-group">
-              <label className="et-label">Client Name</label>
-              <input className="et-input" type="text" placeholder="e.g. John Smith"
-                value={clientName} onChange={e => setClientName(e.target.value)} />
-            </div>
-          )}
-
-          {/* Before/After uploads (template 1 or 3) */}
-          {!isManual && (
-            <div className="et-form-group">
-              <label className="et-label">
-                Before &amp; After Screenshots
-                {isBeforeAfter ? ' (Required)' : ' (Optional)'}
-              </label>
-              <div className="et-upload-grid">
-                <div className={`et-upload-box ${isBeforeAfter ? 'required' : ''}`}>
-                  <input ref={beforeRef} type="file" accept="image/*,.pdf" onChange={handleBefore} />
-                  {beforeThumb
-                    ? <img src={beforeThumb} alt="before" className="et-thumb" />
-                    : beforeFile?.type === 'application/pdf'
-                      ? <span style={{ color: '#EF4444', fontSize: '0.75rem', fontWeight: 600 }}>📄 PDF Attached</span>
-                      : <>
-                          <span className="et-upload-icon">⬆️</span>
-                          <div className="et-upload-text"><span>BEFORE</span> screenshot</div>
-                        </>
-                  }
-                  <div className="et-upload-filename">
-                    {beforeFile ? beforeFile.name : 'PNG, JPG, PDF'}
-                  </div>
+            <div className="et-form-section-grid">
+              {/* Sender (readonly) */}
+              <div className="et-form-group et-field-sender">
+                <label className="et-label">From (Sender)</label>
+                <div className="et-input et-readonly">
+                  {gmailStatus.email || 'Manoj@altiusnxt.com'}
                 </div>
+              </div>
 
-                <div className={`et-upload-box ${isBeforeAfter ? 'required' : ''}`}>
-                  <input ref={afterRef} type="file" accept="image/*,.pdf" onChange={handleAfter} />
-                  {afterThumb
-                    ? <img src={afterThumb} alt="after" className="et-thumb" />
-                    : afterFile?.type === 'application/pdf'
-                      ? <span style={{ color: '#EF4444', fontSize: '0.75rem', fontWeight: 600 }}>📄 PDF Attached</span>
-                      : <>
-                          <span className="et-upload-icon">⬆️</span>
-                          <div className="et-upload-text"><span>AFTER</span> screenshot</div>
-                        </>
-                  }
-                  <div className="et-upload-filename">
-                    {afterFile ? afterFile.name : 'PNG, JPG, PDF'}
-                  </div>
+              {/* To */}
+              <div className="et-form-group et-field-recipient">
+                <label className="et-label">To</label>
+                <input className="et-input" type="email" placeholder="recipient@company.com"
+                  value={to} onChange={e => setTo(e.target.value)} />
+              </div>
+
+              {/* CC / BCC */}
+              <div className="et-form-row">
+                <div className="et-form-group">
+                  <label className="et-label">CC</label>
+                  <input className="et-input" type="email" placeholder="cc@company.com"
+                    value={cc} onChange={e => setCc(e.target.value)} />
+                </div>
+                <div className="et-form-group">
+                  <label className="et-label">BCC</label>
+                  <input className="et-input" type="email" placeholder="bcc@company.com"
+                    value={bcc} onChange={e => setBcc(e.target.value)} />
                 </div>
               </div>
             </div>
-          )}
+          </section>
 
-          {/* Additional Attachments */}
-          <div className="et-form-group">
-            <label className="et-label">Additional Attachments</label>
-            <div
-              className={`et-drop-zone ${isDragOver ? 'dragover' : ''}`}
-              onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
-              onDragLeave={() => setIsDragOver(false)}
-              onDrop={e => { e.preventDefault(); setIsDragOver(false); handleAdditionalFiles(e.dataTransfer.files) }}
-            >
-              <input ref={addFilesRef} type="file" multiple onChange={e => handleAdditionalFiles(e.target.files)} />
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: '#64748b' }}>
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-              </svg>
-              <p>Drag &amp; drop files or <span>click to browse</span></p>
+          {/* ── 2. Outreach setup ─────────────────────────────────────── */}
+          <section className="et-form-section et-section-setup">
+            <div className="et-form-section-head">
+              <span className="et-section-step">2</span>
+              <h3>Outreach setup</h3>
             </div>
-            {additionalFiles.length > 0 && (
-              <div className="et-file-list">
-                {additionalFiles.map((f, i) => (
-                  <div key={i} className="et-file-item">
-                    <div className="et-file-info">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                      </svg>
-                      <span className="et-file-name" title={f.name}>{f.name}</span>
-                      <span className="et-file-size">({formatBytes(f.size)})</span>
+            <div className="et-form-section-grid">
+              {/* Client Type — selects which template set (Static vs E-commerce) loads */}
+              <div className="et-form-group et-field-client-type">
+                <label className="et-label">Client Type</label>
+                <select className="et-input" value={clientType} onChange={e => handleClientTypeChange(e.target.value)}>
+                  <option value="ecommerce">E-commerce</option>
+                  <option value="static">Static Website</option>
+                </select>
+              </div>
+
+              {/* Template */}
+              <div className="et-form-group et-field-template">
+                <label className="et-label">Email Template</label>
+                <select className="et-input" value={template} onChange={e => handleTemplateChange(e.target.value)}>
+                  <option value="manual">✍️ Manual</option>
+                  <option value="1">1 — Before &amp; After Sample</option>
+                  <option value="2">2 — Client References</option>
+                  <option value="3">3 — Audit (AI)</option>
+                  <option value="4">4 — Pilot Offer POC</option>
+                </select>
+              </div>
+
+              {/* Email Mode — controls thread continuation for this send only.
+                  "Continue Existing Thread" looks up the latest conversation by
+                  sender+recipient email automatically; no manual thread picking. */}
+              <div className="et-form-group et-field-mode">
+                <label className="et-label">Email Mode</label>
+                <select className="et-input" value={emailMode} onChange={e => setEmailMode(e.target.value)}>
+                  <option value="continue">Continue Existing Thread</option>
+                  <option value="new">New Conversation</option>
+                </select>
+              </div>
+
+              {/* Client Name (if not manual) */}
+              {!isManual && (
+                <div className="et-form-group et-field-client-name">
+                  <label className="et-label">Client Name</label>
+                  <input className="et-input" type="text" placeholder="e.g. John Smith"
+                    value={clientName} onChange={e => setClientName(e.target.value)} />
+                </div>
+              )}
+
+              {/* Present only for a genuine Reply/Reply All/Forward (see
+                  ThreadDrawer.jsx) — the quoted original message that will be
+                  appended after your signature on send. Read-only; not part of
+                  the editable body above. */}
+              {quotedHtml && (
+                <div className="et-form-group et-field-quoted">
+                  <label className="et-label">Quoted below your signature</label>
+                  <div
+                    className="et-input et-readonly"
+                    style={{ height: 'auto', maxHeight: 160, overflowY: 'auto', whiteSpace: 'normal', lineHeight: 1.5 }}
+                    dangerouslySetInnerHTML={{ __html: quotedHtml }}
+                  />
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ── 3. Assets ─────────────────────────────────────────────── */}
+          <section className="et-form-section et-section-assets">
+            <div className="et-form-section-head">
+              <span className="et-section-step">3</span>
+              <h3>Assets</h3>
+            </div>
+            <div className="et-form-section-grid">
+              {/* Before/After uploads (template 1 or 3) */}
+              {!isManual && (
+                <div className="et-form-group et-field-screenshots">
+                  <label className="et-label">
+                    Before &amp; After Screenshots
+                    {isBeforeAfter ? ' (Required)' : ' (Optional)'}
+                  </label>
+                  <div className="et-upload-grid">
+                    <div className={`et-upload-box ${isBeforeAfter ? 'required' : ''}`}>
+                      <input ref={beforeRef} type="file" accept="image/*,.pdf" onChange={handleBefore} />
+                      {beforeThumb
+                        ? <img src={beforeThumb} alt="before" className="et-thumb" />
+                        : beforeFile?.type === 'application/pdf'
+                          ? <span style={{ color: '#EF4444', fontSize: '0.75rem', fontWeight: 600 }}>📄 PDF Attached</span>
+                          : <>
+                              <span className="et-upload-icon">⬆️</span>
+                              <div className="et-upload-text"><span>BEFORE</span> screenshot</div>
+                            </>
+                      }
+                      <div className="et-upload-filename">
+                        {beforeFile ? beforeFile.name : 'PNG, JPG, PDF'}
+                      </div>
                     </div>
-                    <button className="et-file-remove" onClick={() => removeAdditional(i)}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                      </svg>
-                    </button>
+
+                    <div className={`et-upload-box ${isBeforeAfter ? 'required' : ''}`}>
+                      <input ref={afterRef} type="file" accept="image/*,.pdf" onChange={handleAfter} />
+                      {afterThumb
+                        ? <img src={afterThumb} alt="after" className="et-thumb" />
+                        : afterFile?.type === 'application/pdf'
+                          ? <span style={{ color: '#EF4444', fontSize: '0.75rem', fontWeight: 600 }}>📄 PDF Attached</span>
+                          : <>
+                              <span className="et-upload-icon">⬆️</span>
+                              <div className="et-upload-text"><span>AFTER</span> screenshot</div>
+                            </>
+                      }
+                      <div className="et-upload-filename">
+                        {afterFile ? afterFile.name : 'PNG, JPG, PDF'}
+                      </div>
+                    </div>
                   </div>
-                ))}
+                </div>
+              )}
+
+              {/* Additional Attachments */}
+              <div className="et-form-group et-field-attachments">
+                <label className="et-label">Additional Attachments</label>
+                <div
+                  className={`et-drop-zone ${isDragOver ? 'dragover' : ''}`}
+                  onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
+                  onDragLeave={() => setIsDragOver(false)}
+                  onDrop={e => { e.preventDefault(); setIsDragOver(false); handleAdditionalFiles(e.dataTransfer.files) }}
+                >
+                  <input ref={addFilesRef} type="file" multiple onChange={e => handleAdditionalFiles(e.target.files)} />
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: '#64748b' }}>
+                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                  </svg>
+                  <p>Drag &amp; drop files or <span>click to browse</span></p>
+                </div>
+                {additionalFiles.length > 0 && (
+                  <div className="et-file-list">
+                    {additionalFiles.map((f, i) => (
+                      <div key={i} className="et-file-item">
+                        <div className="et-file-info">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                          </svg>
+                          <span className="et-file-name" title={f.name}>{f.name}</span>
+                          <span className="et-file-size">({formatBytes(f.size)})</span>
+                        </div>
+                        <button className="et-file-remove" onClick={() => removeAdditional(i)}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          </section>
 
-          {/* Subject */}
-          <div className="et-form-group">
-            <label className="et-label">Subject Line</label>
-            <input className="et-input" type="text" placeholder="Email subject..."
-              value={subject} onChange={e => setSubject(e.target.value)} />
-          </div>
+          {/* ── 4. Message ────────────────────────────────────────────── */}
+          <section className="et-form-section et-section-message">
+            <div className="et-form-section-head">
+              <span className="et-section-step">4</span>
+              <h3>Message</h3>
+            </div>
+            <div className="et-form-section-grid">
+              {/* Subject */}
+              <div className="et-form-group et-field-subject">
+                <label className="et-label">Subject Line</label>
+                <input className="et-input" type="text" placeholder="Email subject..."
+                  value={subject} onChange={e => setSubject(e.target.value)} />
+              </div>
 
-          {/* Body */}
-          <div className="et-form-group">
-            <label className="et-label">Email Body</label>
-            <textarea className="et-textarea" rows="6"
-              placeholder={isManual ? 'Write your email body...' : 'Auto-filled after clicking Compile Preview. You can edit.'}
-              value={body} onChange={e => setBody(e.target.value)}
-            />
-          </div>
+              {/* Body */}
+              <div className="et-form-group et-field-body">
+                <label className="et-label">Email Body</label>
+                <textarea className="et-textarea" rows="6"
+                  placeholder={isManual ? 'Write your email body...' : 'Auto-filled after clicking Compile Preview. You can edit.'}
+                  value={body} onChange={e => setBody(e.target.value)}
+                />
+              </div>
+            </div>
+          </section>
 
-          {/* Action Buttons */}
           <div className="et-actions">
             <button className="et-btn et-btn-secondary" onClick={() => compilePreview()} disabled={generating}>
               {generating

@@ -1,173 +1,214 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  TrendingUp, Briefcase, CheckCircle, XCircle, Target, FileCheck,
-  Building2, Wallet, ArrowRight,
+  ArrowRight, Briefcase, Building2, Check, ChevronRight,
+  FileCheck2, Layers, Sparkles, Target, TrendingUp, Trophy, X, Zap,
 } from 'lucide-react'
 import api from '../api/client'
 import { formatCurrency } from '../utils/formatCurrency'
-import '../styles/dashboard.css'
+import '../styles/deals-dashboard.css'
 
-// Deals Dashboard — every deal-specific metric, moved off the Main Dashboard
-// so that page stays a general overview and these live in one place.
-//
-// Figures come from GET /api/dashboard/deal-stats, which counts DB-side. The
-// Main Dashboard previously derived its deal cards by fetching the entire
-// /deals list into the browser; this deliberately does not repeat that.
-//
-// Every card is clickable and deep-links into the Deals list with a `focus`
-// query param (see FOCUS_FILTERS in Deals.jsx), so "POC = 63" opens exactly
-// those 63 deals rather than the unfiltered list.
+const STAGE_COLORS = ['#3267e3', '#7c5ce5', '#ef9a2d', '#e4544e', '#21a875', '#18a1b8']
+
+const stageTone = stage => {
+  const value = String(stage || '').toLowerCase()
+  if (value === 'won') return 'won'
+  if (value === 'lost') return 'lost'
+  if (value.includes('qualif')) return 'qualified'
+  return 'active'
+}
+
+const shortDate = value => value
+  ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  : 'No date'
+
+function MetricSkeleton() {
+  return <span className="dd-skeleton" aria-label="Loading" />
+}
 
 export default function DealsDashboard() {
   const navigate = useNavigate()
-  const [stats, setStats]     = useState(null)
+  const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState('')
+  const [error, setError] = useState('')
+
   useEffect(() => {
     let alive = true
     setLoading(true)
+    setError('')
     api.get('/dashboard/deal-stats')
-      .then(r => { if (alive) setStats(r.data) })
+      .then(response => { if (alive) setStats(response.data) })
       .catch(err => { if (alive) setError(err?.response?.data?.message || 'Could not load deal statistics.') })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [])
 
-  const cards = [
-    { label: 'Total Deals',        value: stats?.totalDeals,          Icon: TrendingUp, color: '#fef9ee', iconColor: '#f59e0b', to: '/deals' },
-    { label: 'Active Deals',       value: stats?.activeDeals,         Icon: Briefcase,  color: '#f0fdf4', iconColor: '#22c55e', to: '/deals?focus=active' },
-    { label: 'Won Deals',          value: stats?.wonDeals,            Icon: CheckCircle, color: '#fff1f2', iconColor: '#e63329', to: '/deals?focus=won' },
-    { label: 'Lost Deals',         value: stats?.lostDeals,           Icon: XCircle,    color: '#fef2f2', iconColor: '#ef4444', to: '/deals?focus=lost' },
-    { label: 'POC',                value: stats?.pocDeals,            Icon: Target,     color: '#eff6ff', iconColor: '#3b82f6', to: '/deals?focus=poc' },
-    { label: 'Proposal Shared',    value: stats?.proposalSharedDeals, Icon: FileCheck,  color: '#f5f3ff', iconColor: '#8b5cf6', to: '/deals?focus=proposal' },
+  const outcomes = (stats?.wonDeals || 0) + (stats?.lostDeals || 0)
+  const winRate = outcomes ? Math.round(((stats?.wonDeals || 0) / outcomes) * 100) : 0
+  const activeShare = stats?.totalDeals ? Math.round(((stats?.activeDeals || 0) / stats.totalDeals) * 100) : 0
+  const companyCoverage = stats?.totalDeals
+    ? Math.round(((stats.totalDeals - (stats?.dealsWithoutCompany || 0)) / stats.totalDeals) * 100)
+    : 0
+  const maxStage = Math.max(1, ...(stats?.stageBreakdown || []).map(item => item.count))
+
+  const stageRows = useMemo(() => (stats?.stageBreakdown || []).map((item, index) => ({
+    ...item,
+    color: STAGE_COLORS[index % STAGE_COLORS.length],
+    share: stats?.totalDeals ? Math.round((item.count / stats.totalDeals) * 100) : 0,
+  })), [stats])
+
+  const metrics = [
+    { label: 'Active pipeline', value: stats?.activeDeals, meta: `${activeShare}% of all deals`, Icon: Zap, tone: 'blue', to: '/deals?focus=active' },
+    { label: 'Deals won', value: stats?.wonDeals, meta: `${winRate}% close rate`, Icon: Trophy, tone: 'green', to: '/deals?focus=won' },
+    { label: 'Deals lost', value: stats?.lostDeals, meta: `${outcomes ? 100 - winRate : 0}% of outcomes`, Icon: X, tone: 'red', to: '/deals?focus=lost' },
+    { label: 'Total deals', value: stats?.totalDeals, meta: 'Across every stage', Icon: Layers, tone: 'violet', to: '/deals' },
   ]
 
-  const maxStage = Math.max(1, ...(stats?.stageBreakdown || []).map(s => s.count))
+  const openDeal = deal => {
+    if (deal.company?.id) navigate(`/companies/${deal.company.id}`)
+    else navigate('/deals')
+  }
 
   return (
-    <div className="dashboard">
-      <div>
-        <h1 className="dash-greeting">Deals Dashboard</h1>
-        <p className="dash-sub">Pipeline metrics at a glance — click any card to open the matching deals.</p>
-      </div>
-
-      {error && (
-        <div style={{ fontSize: 13, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 13px' }}>
-          {error}
+    <main className="dd-page">
+      <section className="dd-hero dd-reveal">
+        <div className="dd-hero-glow" aria-hidden="true" />
+        <div className="dd-hero-copy">
+          <span className="dd-eyebrow"><Sparkles size={13} /> Sales performance</span>
+          <h1>Deals command center</h1>
+          <p>See pipeline momentum, conversion health and the deals that need your attention.</p>
         </div>
-      )}
+        <button className="dd-hero-action" type="button" onClick={() => navigate('/deals')}>
+          View deal pipeline <ArrowRight size={16} />
+        </button>
+        <div className="dd-hero-value">
+          <span>Total pipeline value</span>
+          <strong>{loading ? <MetricSkeleton /> : formatCurrency(stats?.totalValue || 0, 'USD')}</strong>
+          <small><TrendingUp size={13} /> Value across {stats?.totalDeals || 0} deals</small>
+        </div>
+      </section>
 
-      <div className="stats-grid">
-        {cards.map(({ label, value, Icon, color, iconColor, to }) => (
-          <div
-            key={label}
-            className="stat-card"
-            role="button"
-            tabIndex={0}
-            title={`View ${label}`}
-            onClick={() => navigate(to)}
-            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(to) } }}
-            style={{ cursor: 'pointer', transition: 'transform .12s, box-shadow .12s' }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(15,23,42,0.10)' }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '' }}
-          >
-            <div className="stat-icon-wrap" style={{ background: color }}>
-              <Icon size={17} color={iconColor} />
-            </div>
-            <div className="stat-value">{loading ? '—' : (value ?? 0)}</div>
-            <div className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              {label} <ArrowRight size={11} color="#cbd5e1" />
-            </div>
-          </div>
+      {error && <div className="dd-error" role="alert">{error}</div>}
+
+      <section className="dd-metrics dd-reveal dd-delay-1" aria-label="Deal highlights">
+        {metrics.map(({ label, value, meta, Icon, tone, to }) => (
+          <button className={`dd-metric dd-metric--${tone}`} type="button" key={label} onClick={() => navigate(to)}>
+            <span className="dd-metric-icon"><Icon size={19} /></span>
+            <span className="dd-metric-copy">
+              <span>{label}</span>
+              <strong>{loading ? <MetricSkeleton /> : (value ?? 0)}</strong>
+              <small>{meta}</small>
+            </span>
+            <ChevronRight className="dd-metric-arrow" size={17} />
+          </button>
         ))}
-      </div>
+      </section>
 
-      <div className="dash-row">
-        <div className="panel">
-          <div className="panel-header">
-            <span className="panel-title">Deals by Stage</span>
-            <button className="panel-link" onClick={() => navigate('/deals')}>View all</button>
-          </div>
-          <div style={{ padding: '4px 0' }}>
-            {loading ? (
-              <p className="activity-time" style={{ padding: '8px 0' }}>Loading…</p>
-            ) : (stats?.stageBreakdown || []).length === 0 ? (
-              <p className="activity-time" style={{ padding: '8px 0' }}>No deals yet.</p>
-            ) : stats.stageBreakdown.map(s => (
-              <div key={s.stage} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
-                <span style={{ fontSize: 13, color: '#334155', width: 130, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {s.stage}
+      <section className="dd-workspace dd-reveal dd-delay-2">
+        <article className="dd-card dd-stage-card">
+          <header className="dd-card-head">
+            <div>
+              <span className="dd-section-kicker">Pipeline distribution</span>
+              <h2>Deals by stage</h2>
+              <p>Understand where deals are gathering momentum.</p>
+            </div>
+            <button type="button" className="dd-text-action" onClick={() => navigate('/deals')}>Explore all <ArrowRight size={14} /></button>
+          </header>
+
+          <div className="dd-stage-list">
+            {loading ? [1, 2, 3, 4].map(item => <div className="dd-stage-placeholder" key={item} />) : stageRows.length ? stageRows.map((item, index) => (
+              <button className="dd-stage-row" type="button" key={item.stage} onClick={() => navigate('/deals')}>
+                <span className="dd-stage-order">{String(index + 1).padStart(2, '0')}</span>
+                <span className="dd-stage-main">
+                  <span className="dd-stage-label"><strong>{item.stage}</strong><em>{item.share}% of pipeline</em></span>
+                  <span className="dd-stage-track"><i style={{ width: `${Math.max(4, (item.count / maxStage) * 100)}%`, background: item.color }} /></span>
                 </span>
-                <div style={{ flex: 1, height: 8, background: '#f1f5f9', borderRadius: 99, overflow: 'hidden' }}>
-                  <div style={{ width: `${(s.count / maxStage) * 100}%`, height: '100%', background: '#3b82f6', borderRadius: 99 }} />
-                </div>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: '#0f172a', width: 40, textAlign: 'right' }}>{s.count}</span>
-              </div>
-            ))}
+                <span className="dd-stage-count">{item.count}</span>
+              </button>
+            )) : <div className="dd-empty">No deals have been added yet.</div>}
           </div>
-        </div>
+        </article>
 
-        <div className="panel">
-          <div className="panel-header">
-            <span className="panel-title">Recent Deals</span>
-            <button className="panel-link" onClick={() => navigate('/deals')}>View all</button>
-          </div>
-          <div className="activity-list">
-            {loading ? (
-              <p className="activity-time" style={{ padding: '8px 0' }}>Loading…</p>
-            ) : (stats?.recent || []).length === 0 ? (
-              <p className="activity-time" style={{ padding: '8px 0' }}>No deals yet.</p>
-            ) : stats.recent.map(d => (
-              <div
-                key={d.id}
-                className="activity-item"
-                style={{ cursor: d.company?.id ? 'pointer' : 'default' }}
-                onClick={() => d.company?.id && navigate(`/companies/${d.company.id}`)}
-              >
-                <div className="activity-dot" style={{ background: '#fef9ee' }}>
-                  <TrendingUp size={15} color="#f59e0b" />
-                </div>
-                <div className="activity-body">
-                  <p className="activity-text"><strong>{d.title}</strong> — {d.stage}</p>
-                  <p className="activity-time">
-                    {d.createdAt ? new Date(d.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
-                    {d.company?.name ? ` · ${d.company.name}` : ''}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="panel">
-        <div className="panel-header"><span className="panel-title">Pipeline Summary</span></div>
-        <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap', padding: '10px 0 4px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <Wallet size={16} color="#16a34a" />
+        <aside className="dd-card dd-health-card">
+          <header className="dd-card-head">
             <div>
-              <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Total Pipeline Value</div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: '#0f172a' }}>
-                {loading ? '—' : formatCurrency(stats?.totalValue || 0, 'USD')}
-              </div>
+              <span className="dd-section-kicker">Conversion snapshot</span>
+              <h2>Pipeline health</h2>
+              <p>Closed deal performance at a glance.</p>
+            </div>
+          </header>
+
+          <div className="dd-health-visual">
+            <div className="dd-health-ring" style={{ '--dd-progress': `${winRate * 3.6}deg` }}>
+              <div><strong>{loading ? '—' : `${winRate}%`}</strong><span>win rate</span></div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <Building2 size={16} color="#8b5cf6" />
-            <div>
-              <div style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px' }}>Deals With No Company</div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: '#0f172a' }}>{loading ? '—' : (stats?.dealsWithoutCompany ?? 0)}</div>
-            </div>
+
+          <div className="dd-health-stats">
+            <button type="button" onClick={() => navigate('/deals?focus=won')}>
+              <span className="dd-health-icon dd-health-icon--won"><Check size={15} /></span>
+              <span><small>Won</small><strong>{loading ? '—' : stats?.wonDeals || 0}</strong></span>
+            </button>
+            <button type="button" onClick={() => navigate('/deals?focus=lost')}>
+              <span className="dd-health-icon dd-health-icon--lost"><X size={15} /></span>
+              <span><small>Lost</small><strong>{loading ? '—' : stats?.lostDeals || 0}</strong></span>
+            </button>
           </div>
-        </div>
-        <p style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 6 }}>
-          A deal's company link is optional, so deals with no company never appear under any company record —
-          this is why the deal count and the “companies with a deal” count legitimately differ.
-        </p>
-      </div>
 
+          <div className="dd-progress-metrics">
+            <button type="button" onClick={() => navigate('/deals?focus=poc')}>
+              <span><Target size={15} /> POC initiated</span><strong>{loading ? '—' : stats?.pocDeals || 0}</strong>
+            </button>
+            <button type="button" onClick={() => navigate('/deals?focus=proposal')}>
+              <span><FileCheck2 size={15} /> Proposals shared</span><strong>{loading ? '—' : stats?.proposalSharedDeals || 0}</strong>
+            </button>
+          </div>
+        </aside>
+      </section>
 
-    </div>
+      <section className="dd-bottom-grid dd-reveal dd-delay-3">
+        <article className="dd-card dd-recent-card">
+          <header className="dd-card-head">
+            <div>
+              <span className="dd-section-kicker">Latest activity</span>
+              <h2>Recent deals</h2>
+              <p>Your newest opportunities, ready to review.</p>
+            </div>
+            <button type="button" className="dd-text-action" onClick={() => navigate('/deals')}>View all <ArrowRight size={14} /></button>
+          </header>
+
+          <div className="dd-deal-table">
+            <div className="dd-table-head"><span>Deal</span><span>Stage</span><span>Value</span><span>Created</span><span /></div>
+            {loading ? [1, 2, 3, 4].map(item => <div className="dd-deal-placeholder" key={item} />) : (stats?.recent || []).length ? stats.recent.map(deal => (
+              <button className="dd-deal-row" type="button" key={deal.id} onClick={() => openDeal(deal)}>
+                <span className="dd-deal-name">
+                  <i><Briefcase size={16} /></i>
+                  <span><strong>{deal.title}</strong><small>{deal.company?.name || 'No company linked'}</small></span>
+                </span>
+                <span><em className={`dd-stage-badge dd-stage-badge--${stageTone(deal.stage)}`}>{deal.stage || 'No stage'}</em></span>
+                <strong className="dd-deal-value">{deal.value ? formatCurrency(deal.value, deal.currency || 'USD') : '—'}</strong>
+                <span className="dd-deal-date">{shortDate(deal.openDate || deal.createdAt)}</span>
+                <ChevronRight className="dd-row-arrow" size={17} />
+              </button>
+            )) : <div className="dd-empty">No recent deals to show.</div>}
+          </div>
+        </article>
+
+        <aside className="dd-card dd-quality-card">
+          <div className="dd-quality-icon"><Building2 size={22} /></div>
+          <span className="dd-section-kicker">Data quality</span>
+          <h2>Connect every deal to a company</h2>
+          <p>Linked records give your team stronger context and more accurate account reporting.</p>
+          <div className="dd-coverage">
+            <div><span>Company coverage</span><strong>{loading ? '—' : `${companyCoverage}%`}</strong></div>
+            <span><i style={{ width: `${companyCoverage}%` }} /></span>
+          </div>
+          <div className="dd-unlinked">
+            <span><strong>{loading ? '—' : stats?.dealsWithoutCompany || 0}</strong> deals need attention</span>
+            <button type="button" onClick={() => navigate('/deals?focus=no_company')}>Review deals <ArrowRight size={14} /></button>
+          </div>
+        </aside>
+      </section>
+    </main>
   )
 }

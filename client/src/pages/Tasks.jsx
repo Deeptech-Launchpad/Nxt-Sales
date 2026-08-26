@@ -1,19 +1,73 @@
-import { useState, useEffect, useCallback } from 'react'
-import DataExportMenu from '../components/DataExportMenu'
-import DataImportModal from '../components/modals/DataImportModal'
-import { Upload as UploadIcon } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Pencil, Trash2, Search, AlertTriangle, Clock, CalendarClock, CheckCircle2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Search, AlertTriangle, Clock, CalendarClock, CheckCircle2, Upload, Download, ChevronDown, ListTodo, ArrowRight } from 'lucide-react'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import TaskModal from '../components/activities/TaskModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
+import DataImportModal from '../components/modals/DataImportModal'
 import { renderCustomCell } from '../utils/customFieldRender'
+import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUtils'
 import '../styles/contacts.css'
+import '../styles/tasks.css'
 
 const PAGE_SIZE = 50
 const COLUMNS_STORAGE_KEY = 'mwz_tasks_visible_columns'
 const DEFAULT_COLUMNS = []
+
+// Export dropdown for Tasks — same exportUtils / CSV-Excel-JSON-PDF choices
+// as Companies/Deals, styled inline to match this page's existing bespoke
+// button look (its own convention, not the shared .btn-action other list
+// pages use).
+function TasksExportMenu({ fetchAllForExport, columns }) {
+  const [open, setOpen]           = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+
+  const run = async (fn, extraArgs = []) => {
+    setOpen(false); setExporting(true)
+    try {
+      const records = await fetchAllForExport()
+      fn(records, 'tasks', columns, ...extraArgs)
+    } catch {
+      // fetch failed — nothing to export; same lightweight error handling as other list pages
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div className="tasks-export-wrap" ref={ref}>
+      <button
+        className="tasks-secondary-btn"
+        onClick={() => setOpen(o => !o)}
+        disabled={exporting}
+      >
+        <Download size={14} /> {exporting ? 'Exporting…' : 'Export'} <ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="tasks-export-menu">
+          {[
+            { label: 'Export as CSV',   fn: () => run(exportCSV) },
+            { label: 'Export as Excel', fn: () => run(exportXLSX, ['Tasks']) },
+            { label: 'Export as JSON',  fn: () => run(exportJSON) },
+            { label: 'Export as PDF',   fn: () => run(exportPDF, ['Tasks Export — NXT Sales']) },
+          ].map(item => (
+            <button key={item.label} onClick={item.fn}>
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Today / Overdue / Upcoming replaces the old Pending / In Progress /
 // Completed status model — bucket is derived from dueDate, not a stored
@@ -61,19 +115,6 @@ function fmtDateTime(d) {
   return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
-// Export columns for Tasks — mirrors what the table actually shows.
-const TASK_EXPORT_COLUMNS = [
-  { key: 'title',         header: 'Task' },
-  { key: 'body',          header: 'Description' },
-  { key: '_company',      header: 'Company Name' },
-  { key: '_country',      header: 'Country' },
-  { key: '_dueDate',      header: 'Due Date' },
-  { key: 'taskStatus',    header: 'Status' },
-  { key: '_assignedTo',   header: 'Assigned To' },
-  { key: '_createdAt',    header: 'Created Date' },
-]
-const isoDay = (v) => (v ? String(v).slice(0, 10) : '')
-
 export default function Tasks() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -82,6 +123,7 @@ export default function Tasks() {
   const [page, setPage]       = useState(1)
   const [loading, setLoading] = useState(true)
   const [users, setUsers]     = useState([])
+  const [taskSummary, setTaskSummary] = useState({ all: 0, today: 0, overdue: 0, upcoming: 0 })
 
   const [taskTab, setTaskTab] = useState('all') // 'all' | 'mine'
   const [search, setSearch]             = useState('')
@@ -90,8 +132,8 @@ export default function Tasks() {
   const [assigneeFilter, setAssigneeFilter] = useState('')
 
   const [showCreate, setShowCreate] = useState(false)
-  const [showImport, setShowImport] = useState(false)
   const [editTask, setEditTask]     = useState(null)
+  const [showImport, setShowImport] = useState(false)
 
   // Toggleable columns (Description, Auto-complete, + every active Task
   // custom field) — Task/Company/Assigned to/Due date/Status stay fixed,
@@ -125,6 +167,23 @@ export default function Tasks() {
   // render below) so there's never an ambiguous combination of the two.
   const effectiveAssigneeId = taskTab === 'mine' ? user?.id : assigneeFilter
 
+  const fetchTaskSummary = useCallback(() => {
+    const base = { type: 'task', page: 1, limit: 1, ...(effectiveAssigneeId && { assignedToId: effectiveAssigneeId }) }
+    Promise.all([
+      api.get('/activities', { params: base }),
+      api.get('/activities', { params: { ...base, bucket: 'today' } }),
+      api.get('/activities', { params: { ...base, bucket: 'overdue' } }),
+      api.get('/activities', { params: { ...base, bucket: 'upcoming' } }),
+    ]).then(([all, today, overdue, upcoming]) => setTaskSummary({
+      all: all.data?.total || 0,
+      today: today.data?.total || 0,
+      overdue: overdue.data?.total || 0,
+      upcoming: upcoming.data?.total || 0,
+    })).catch(() => {})
+  }, [effectiveAssigneeId])
+
+  useEffect(() => { fetchTaskSummary() }, [fetchTaskSummary])
+
   const fetchTasks = useCallback(() => {
     setLoading(true)
     api.get('/activities', {
@@ -145,6 +204,51 @@ export default function Tasks() {
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
+  // Export: GET /activities caps limit at 200/request (no dedicated no-limit
+  // export route like Companies/Deals have) — walk every page matching the
+  // current tab/bucket/search/assignee/showCompleted filters, same approach
+  // used for the Inbox and Calls exports.
+  const EXPORT_LIMIT = 200
+  const fetchAllForExport = useCallback(async () => {
+    const collected = []
+    let p = 1
+    while (true) {
+      const { data } = await api.get('/activities', {
+        params: {
+          type: 'task',
+          page: p,
+          limit: EXPORT_LIMIT,
+          ...(search.trim() && { search: search.trim() }),
+          ...(bucket && { bucket }),
+          ...(showCompleted && { showCompleted: 'true' }),
+          ...(effectiveAssigneeId && { assignedToId: effectiveAssigneeId }),
+        },
+      })
+      const batch = data.items || []
+      collected.push(...batch.map(t => ({
+        ...t,
+        companyName: t.company?.name || null,
+        country:     t.company?.country || null,
+        assignedToName: t.assignedTo?.name || 'Unassigned',
+        statusLabel: STATUS_PILL[deriveStatus(t)].label,
+      })))
+      if (batch.length === 0 || collected.length >= (data.total || 0)) break
+      p += 1
+    }
+    return collected
+  }, [search, bucket, showCompleted, effectiveAssigneeId])
+
+  const EXPORT_COLUMNS = [
+    { key: 'title',           header: 'Task' },
+    { key: 'companyName',     header: 'Company' },
+    { key: 'country',         header: 'Country' },
+    { key: 'dueDate',         header: 'Due Date & Time' },
+    { key: 'assignedToName',  header: 'Assigned To' },
+    { key: 'statusLabel',     header: 'Status' },
+    { key: 'body',            header: 'Description' },
+    { key: 'autoCompleteOverdue', header: 'Auto-complete when overdue' },
+  ]
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const handleDelete = async (taskId) => {
@@ -152,6 +256,7 @@ export default function Tasks() {
     try {
       await api.delete(`/activities/${taskId}`)
       fetchTasks()
+      fetchTaskSummary()
     } catch {
       // no-op — matches the lightweight error handling style already used on Deals/Companies
     }
@@ -166,182 +271,146 @@ export default function Tasks() {
   const clearFilters = () => { setSearch(''); setBucket('today'); setShowCompleted(false); setAssigneeFilter(''); setPage(1) }
   const filtersActive = search || bucket !== 'today' || showCompleted || assigneeFilter
 
-  const cellTh = { padding: '13px 18px', textAlign: 'left', fontWeight: 700, color: '#64748b', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.5px', whiteSpace: 'nowrap' }
-  // display must stay the default (table-cell) on a <td> — -webkit-box
-  // (needed for line-clamp) isn't compatible with table-cell and breaks the
-  // whole table's column layout. Line-clamp goes on an inner wrapper via
-  // cellClamp instead, never directly on the <td>.
-  const cellTd = { padding: '14px 18px', color: '#334155', whiteSpace: 'normal', overflowWrap: 'anywhere', maxWidth: 260, fontSize: 14 }
-  const cellClamp = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', overflowWrap: 'anywhere' }
-  const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 7, borderRadius: 7, display: 'flex', transition: 'background .12s' }
-  const filterSelect = { padding: '8px 11px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13.5, fontFamily: 'inherit', color: '#334155', background: '#fff', cursor: 'pointer', transition: 'border-color .12s' }
-  const pillStyle = (c) => ({ fontSize: 12, fontWeight: 700, color: c.text, background: c.bg, border: `1px solid ${c.border}`, borderRadius: 20, padding: '4px 11px', display: 'inline-block' })
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, background: '#fff', borderRadius: 12, padding: 28, boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 18, borderBottom: '1px solid #eef1f5' }}>
-        <div>
-          <h1 style={{ fontSize: 23, fontWeight: 700, color: '#0f172a', letterSpacing: '-.2px' }}>Tasks</h1>
-          <span style={{ fontSize: 13.5, color: '#94a3b8', fontWeight: 500 }}>{loading ? 'Loading…' : `${total} task${total === 1 ? '' : 's'}`}</span>
+    <div className="tasks-workspace">
+      <header className="tasks-hero">
+        <div className="tasks-hero-copy">
+          <span className="tasks-eyebrow"><ListTodo size={14} /> Task command center</span>
+          <h1>Turn every next step into progress</h1>
+          <p>Prioritize what matters, stay ahead of deadlines and keep every customer commitment moving.</p>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        <button
-          onClick={() => setShowImport(true)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#334155', cursor: 'pointer', fontFamily: 'inherit' }}
-        >
-          <UploadIcon size={13} /> Import
-        </button>
-        <DataExportMenu
-          filename="tasks"
-          sheetName="Tasks"
-          title="Tasks Export — NXT MarketingWiz"
-          columns={TASK_EXPORT_COLUMNS}
-          fetchRows={async () => {
-            const { data } = await api.get('/data/tasks/export')
-            return (data.rows || []).map(t => ({
-              ...t,
-              _company: t.company?.name || '',
-              _country: t.company?.country || '',
-              _assignedTo: t.assignedTo?.name || '',
-              _dueDate: isoDay(t.dueDate),
-              _createdAt: isoDay(t.createdAt),
-            }))
-          }}
-        />
-        <button
-          onClick={() => setShowCreate(true)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 8, border: 'none', background: '#e63329', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', boxShadow: '0 1px 2px rgba(230,51,41,0.25)', transition: 'background .12s, box-shadow .12s' }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#c0271e'; e.currentTarget.style.boxShadow = '0 2px 6px rgba(230,51,41,0.35)' }}
-          onMouseLeave={e => { e.currentTarget.style.background = '#e63329'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(230,51,41,0.25)' }}
-        >
-          <Plus size={14} /> Create task
-        </button>
+        <div className="tasks-hero-actions">
+          <button
+            className="tasks-secondary-btn"
+            onClick={() => setShowImport(true)}
+          >
+            <Upload size={14} /> Import
+          </button>
+          <TasksExportMenu fetchAllForExport={fetchAllForExport} columns={EXPORT_COLUMNS} />
+          <button
+            className="tasks-create-btn"
+            onClick={() => setShowCreate(true)}
+          >
+            <Plus size={15} /> Create task <ArrowRight size={14} />
+          </button>
         </div>
-      </div>
+      </header>
 
-      <div style={{ display: 'flex', gap: 20, alignItems: 'center', paddingBottom: 2, borderBottom: '1px solid #eef1f5' }}>
+      <section className="tasks-summary-grid" aria-label="Task overview">
+        {[
+          { key: 'all', label: 'Open tasks', value: taskSummary.all, Icon: ListTodo },
+          { key: 'today', label: 'Due today', value: taskSummary.today, Icon: Clock },
+          { key: 'overdue', label: 'Needs attention', value: taskSummary.overdue, Icon: AlertTriangle },
+          { key: 'upcoming', label: 'Coming up', value: taskSummary.upcoming, Icon: CalendarClock },
+        ].map(metric => <article key={metric.key} className={`tasks-summary-card ${metric.key}`}><span><metric.Icon size={16} /></span><div><small>{metric.label}</small><strong>{metric.value.toLocaleString()}</strong></div></article>)}
+      </section>
+
+      <section className="tasks-data-shell">
+      <div className="tasks-viewbar">
+      <div className="tasks-tabs" role="tablist">
         <button
+          role="tab" aria-selected={taskTab === 'all'}
           onClick={() => switchTab('all')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
-            color: taskTab === 'all' ? '#0f172a' : '#94a3b8', borderBottom: `2px solid ${taskTab === 'all' ? '#e63329' : 'transparent'}`, paddingBottom: 10, transition: 'color .12s, border-color .12s' }}
         >
-          All Tasks
+          All tasks <span>{taskTab === 'all' && !loading ? total : taskSummary.all}</span>
         </button>
         <button
+          role="tab" aria-selected={taskTab === 'mine'}
           onClick={() => switchTab('mine')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
-            color: taskTab === 'mine' ? '#0f172a' : '#94a3b8', borderBottom: `2px solid ${taskTab === 'mine' ? '#e63329' : 'transparent'}`, paddingBottom: 10, transition: 'color .12s, border-color .12s' }}
         >
           My Tasks
         </button>
       </div>
 
       {/* Today / Overdue / Upcoming / All — replaces the old status filter */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <div className="tasks-buckets">
         {BUCKETS.map(({ key, label, Icon }) => {
           const active = bucket === key
-          const c = key ? STATUS_PILL[key] : { bg: '#f1f5f9', text: '#475569', border: '#e2e8f0' }
           return (
             <button
               key={key || 'all'}
+              className={`${key || 'all'}${active ? ' active' : ''}`}
               onClick={() => switchBucket(key)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '7px 14px', borderRadius: 20, fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                fontFamily: 'inherit', transition: 'all .12s',
-                border: `1.5px solid ${active ? c.border : '#e2e8f0'}`,
-                background: active ? c.bg : '#fff',
-                color: active ? c.text : '#64748b',
-              }}
             >
-              {Icon && <Icon size={13} />} {label}
+              {Icon && <Icon size={12} />} {label}
             </button>
           )
         })}
       </div>
+      </div>
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ position: 'relative' }}>
-          <Search size={14} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+      <div className="tasks-filterbar">
+        <div className="tasks-search">
+          <Search size={13} />
           <input
             type="text"
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
-            placeholder="Search tasks…"
-            style={{ padding: '9px 13px 9px 33px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13.5, width: 240, fontFamily: 'inherit', transition: 'border-color .12s, box-shadow .12s' }}
-            onFocus={e => { e.currentTarget.style.borderColor = '#e63329'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(230,51,41,0.10)' }}
-            onBlur={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none' }}
+            placeholder="Search task, company or assignee…"
           />
         </div>
 
         {taskTab === 'all' && (
-          <select value={assigneeFilter} onChange={e => { setAssigneeFilter(e.target.value); setPage(1) }} style={filterSelect}>
+          <select className="tasks-assignee-select" value={assigneeFilter} onChange={e => { setAssigneeFilter(e.target.value); setPage(1) }}>
             <option value="">All assignees</option>
             {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         )}
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#334155', cursor: 'pointer', userSelect: 'none' }}>
-          <input type="checkbox" checked={showCompleted} onChange={e => { setShowCompleted(e.target.checked); setPage(1) }} style={{ width: 14, height: 14, accentColor: '#0d9488' }} />
+        <label className="tasks-completed-toggle">
+          <input type="checkbox" checked={showCompleted} onChange={e => { setShowCompleted(e.target.checked); setPage(1) }} />
           Show completed
         </label>
 
         {filtersActive && (
-          <button onClick={clearFilters} style={{ border: 'none', background: 'transparent', color: '#e63329', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button className="tasks-clear-filters" onClick={clearFilters}>
             Clear filters
           </button>
         )}
 
-        <div style={{ marginLeft: 'auto' }}>
+        <div className="tasks-columns-control">
           <EditColumnsMenu fields={taskFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} alwaysShownKey="title" />
         </div>
       </div>
 
-      <div style={{ overflowX: 'auto', border: '1px solid #eef1f5', borderRadius: 10 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-          <thead style={{ background: '#f8fafc', borderBottom: '1px solid #eef1f5' }}>
+      <div className="tasks-table-wrap">
+        <table className="tasks-table">
+          <thead>
             <tr>
-              <th style={cellTh}>Task</th>
-              <th style={cellTh}>Company</th>
-              <th style={cellTh}>Country</th>
-              <th style={cellTh}>Due date & time</th>
-              <th style={cellTh}>Assigned to</th>
-              <th style={cellTh}>Status</th>
-              {orderedVisibleFields.map(f => <th key={f.key} style={cellTh}>{f.label}</th>)}
-              <th style={cellTh}></th>
+              <th>Task</th><th>Company</th><th>Country</th><th>Due date & time</th><th>Assigned to</th><th>Status</th>
+              {orderedVisibleFields.map(f => <th key={f.key}>{f.label}</th>)}
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>Loading tasks…</td></tr>
+              <tr><td className="tasks-empty" colSpan={7 + orderedVisibleFields.length}>Loading tasks…</td></tr>
             ) : tasks.length === 0 ? (
-              <tr><td colSpan={7 + orderedVisibleFields.length} style={{ padding: 28, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+              <tr><td className="tasks-empty" colSpan={7 + orderedVisibleFields.length}>
                 {total === 0 ? 'No tasks yet.' : 'No tasks match your filters.'}
               </td></tr>
             ) : tasks.map((t, i) => {
               const status = deriveStatus(t)
               return (
-                <tr key={t.id} style={{ borderBottom: i < tasks.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                  <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenTask(t)}><div style={cellClamp}>{t.title || '(untitled)'}</div></td>
-                  <td style={cellTd}><div style={cellClamp}>{t.company?.name || '--'}</div></td>
-                  <td style={cellTd}><div style={cellClamp}>{t.company?.country || '--'}</div></td>
-                  <td style={cellTd}><div style={cellClamp}>{fmtDateTime(t.dueDate)}</div></td>
-                  <td style={cellTd}><div style={cellClamp}>{t.assignedTo?.name || 'Unassigned'}</div></td>
-                  <td style={cellTd}>
-                    <span style={pillStyle(STATUS_PILL[status])}>
+                <tr key={t.id} className={`task-row status-${status}`}>
+                  <td className="task-title-cell" data-label="Task" onClick={() => handleOpenTask(t)}><div>{t.title || '(untitled)'}</div></td>
+                  <td className="task-company-cell" data-label="Company"><div>{t.company?.name || '--'}</div></td>
+                  <td className="task-country-cell" data-label="Country"><div>{t.company?.country || '--'}</div></td>
+                  <td className="task-due-cell" data-label="Due"><div><Clock size={11} />{fmtDateTime(t.dueDate)}</div></td>
+                  <td className="task-assignee-cell" data-label="Assigned to"><div>{t.assignedTo?.name ? <><i>{t.assignedTo.name.slice(0,1).toUpperCase()}</i>{t.assignedTo.name}</> : <span>Unassigned</span>}</div></td>
+                  <td className="task-status-cell" data-label="Status">
+                    <span className={`task-status-pill ${status}`}>
                       {status === 'completed' && <CheckCircle2 size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}
                       {STATUS_PILL[status].label}
                     </span>
                   </td>
-                  {orderedVisibleFields.map(f => <td key={f.key} style={cellTd}><div style={cellClamp}>{renderTaskCell(f, t)}</div></td>)}
-                  <td style={{ ...cellTd, display: 'flex', gap: 4 }}>
+                  {orderedVisibleFields.map(f => <td className="task-optional-cell" data-label={f.label} key={f.key}><div>{renderTaskCell(f, t)}</div></td>)}
+                  <td className="task-actions-cell">
                     <button
-                      onClick={() => setEditTask(t)} title="Edit task" style={{ ...iconBtn, color: '#64748b' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      onClick={() => setEditTask(t)} title="Edit task"
                     ><Pencil size={14} /></button>
                     <button
-                      onClick={() => handleDelete(t.id)} title="Delete task" style={{ ...iconBtn, color: '#ef4444' }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#fef2f2'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      className="danger" onClick={() => handleDelete(t.id)} title="Delete task"
                     ><Trash2 size={14} /></button>
                   </td>
                 </tr>
@@ -352,7 +421,7 @@ export default function Tasks() {
       </div>
 
       {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="tasks-pagination">
           <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <button className="page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
             {pageWindow(page, totalPages).map((n, i, arr) => (
@@ -366,23 +435,25 @@ export default function Tasks() {
           <span className="per-page">{PAGE_SIZE} per page</span>
         </div>
       )}
+      </section>
 
       {showCreate && (
-        <TaskModal onClose={() => setShowCreate(false)} onSaved={() => fetchTasks()} />
+        <TaskModal onClose={() => setShowCreate(false)} onSaved={() => { fetchTasks(); fetchTaskSummary() }} />
       )}
 
       {editTask && (
-        <TaskModal activity={editTask} onClose={() => setEditTask(null)} onSaved={() => fetchTasks()} />
+        <TaskModal activity={editTask} onClose={() => setEditTask(null)} onSaved={() => { fetchTasks(); fetchTaskSummary() }} />
       )}
 
       <DataImportModal
         isOpen={showImport}
         onClose={() => setShowImport(false)}
-        onSuccess={() => fetchTasks()}
+        onSuccess={fetchTasks}
         entityLabel="Tasks"
-        fieldsUrl="/data/tasks/import-fields"
-        importUrl="/data/tasks/bulk"
-        payloadKey="rows"
+        fieldsUrl="/activities/task-import-fields"
+        importUrl="/activities/task-import"
+        payloadKey="tasks"
+        templateName="tasks"
       />
     </div>
   )

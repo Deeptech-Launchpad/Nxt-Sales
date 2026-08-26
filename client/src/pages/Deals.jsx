@@ -1,126 +1,88 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, Pencil, Trash2, Search, List, LayoutGrid, Upload, ChevronDown } from 'lucide-react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
 import CreateDealModal from '../components/modals/CreateDealModal'
 import ViewDealModal from '../components/modals/ViewDealModal'
+import DealImportModal from '../components/modals/DealImportModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
 import DealBoard from '../components/DealBoard'
 import FilterDropdown from '../components/filters/FilterDropdown'
+import DateFilterDropdown, { describeDateToken } from '../components/filters/DateFilterDropdown'
 import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import { renderCustomCell } from '../utils/customFieldRender'
 import { formatCurrency } from '../utils/formatCurrency'
 import { dealFlagsLabel } from '../utils/dealFlags'
 import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUtils'
-import DealImportModal from '../components/modals/DealImportModal'
+import '../styles/deals.css'
 
 const COLUMNS_STORAGE_KEY = 'mwz_deals_visible_columns'
 const VIEW_STORAGE_KEY = 'mwz_deals_view_mode'
-// Matches exactly what the table showed before this became dynamic — every
-// column already visible stays visible by default; nothing is hidden by
-// this change. 'title' is always shown (like Company's 'name'), so it's
-// deliberately not in this list.
+
 const DEFAULT_COLUMNS = [
   'companyName', 'clientType', 'contactPerson', 'serviceRequirement',
   'opportunityType', 'stage', 'strategicImportance', 'expectedOutcome',
   'value', '_flags',
 ]
 
-// Board view's Edit Columns is a SEPARATE selection from List's (Update 9) —
-// a card has far less room than a table row, so defaulting board to every
-// field List happens to show would clutter it. Default matches exactly what
-// the card already rendered before this became configurable, so existing
-// Board layout is unchanged until a user opts into more fields.
 const BOARD_COLUMNS_STORAGE_KEY = 'mwz_deals_board_visible_columns'
 const DEFAULT_BOARD_COLUMNS = ['companyName', 'contactPerson', '_flags', 'value', 'ownerId']
 
-// Deal Owner (ownerId) is intentionally excluded from the server's dynamic
-// Deal field list (same reasoning as Company's ownerId exclusion) — this is
-// a client-side-only column entry so Edit Columns can offer it.
 const DEAL_OWNER_COLUMN = { key: 'ownerId', label: 'Deal Owner' }
-
-// Combined display of the poc/proposalShared booleans (each of which is
-// also independently toggleable as its own Yes/No column via the server's
-// dynamic Deal field list) — client-side-only, same pattern as Deal Owner.
 const DEAL_FLAGS_COLUMN = { key: '_flags', label: 'POC / Proposal Shared' }
-
-// Deep-link targets used by the Deals Dashboard cards (/deals?focus=poc).
-// Kept as data so a new dashboard card only needs an entry here, and so the
-// same predicate drives both the filtering and the removable chip label.
-// Month/Year picker (Update 1) — generated around the current year so it
-// never goes stale.
-const DEAL_MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+const POC_OPTIONS      = [{ value: 'yes', label: 'POC done' }, { value: 'no', label: 'No POC' }]
+const PROPOSAL_OPTIONS = [{ value: 'yes', label: 'Proposal shared' }, { value: 'no', label: 'Not shared' }]
+const DATE_OPTIONS = [
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'this_week', label: 'This Week' },
+  { value: 'last_7', label: 'Last 7 Days' },
+  { value: 'last_14', label: 'Last 14 Days' },
+  { value: 'last_30', label: 'Last 30 Days' },
+  { value: 'last_90', label: 'Last 90 Days' },
+  { value: 'last_365', label: 'Last 12 Months' },
 ]
-const DEAL_CURRENT_YEAR = new Date().getFullYear()
-const DEAL_YEAR_OPTIONS = Array.from({ length: 7 }, (_, i) => DEAL_CURRENT_YEAR - 5 + i)
 
-// Deal Open Date is a CALENDAR date, not a moment in time. It is entered via
-// <input type="date"> ("2025-02-10") and stored by `new Date(...)` as UTC
-// midnight, so it arrives here as "2025-02-10T00:00:00.000Z".
-//
-// Reading that back with new Date(...).getFullYear()/.getMonth() applies the
-// VIEWER'S timezone, which silently shifts the date for anyone west of UTC:
-// 2025-02-01T00:00:00Z reads as 31 January in New York, so a deal opened on
-// the 1st vanishes from its own month. Parsing the ISO date portion textually
-// returns exactly the stored calendar date in every timezone.
-function dealOpenDateParts(value) {
+function dateRangeForToken(token) {
+  if (!token) return null
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const plusDays = (date, days) => new Date(date.getTime() + days * 86400000)
+  if (token === 'today') return [today, plusDays(today, 1)]
+  if (token === 'yesterday') return [plusDays(today, -1), today]
+  if (token === 'this_week') {
+    const mondayOffset = (today.getDay() + 6) % 7
+    const monday = plusDays(today, -mondayOffset)
+    return [monday, plusDays(monday, 7)]
+  }
+  const relative = token.match(/^last_(\d+)$/)
+  if (relative) return [new Date(now.getTime() - Number(relative[1]) * 86400000), new Date(now.getTime() + 1)]
+  const range = token.match(/^(\d{4})-(\d{2})-(\d{2})\.\.(\d{4})-(\d{2})-(\d{2})$/)
+  if (range) return [new Date(+range[1], +range[2] - 1, +range[3]), plusDays(new Date(+range[4], +range[5] - 1, +range[6]), 1)]
+  const day = token.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (day) { const start = new Date(+day[1], +day[2] - 1, +day[3]); return [start, plusDays(start, 1)] }
+  const month = token.match(/^(\d{4})-(\d{2})$/)
+  if (month) return [new Date(+month[1], +month[2] - 1, 1), new Date(+month[1], +month[2], 1)]
+  if (/^\d{4}$/.test(token)) return [new Date(+token, 0, 1), new Date(+token + 1, 0, 1)]
+  return null
+}
+// A deal's Open Date is a calendar date, but it is stored as a timestamp. Read
+// with local getters, 2025-02-01T00:00:00Z is 31 January in New York, so a deal
+// opened on the 1st vanishes from its own month. Parsing the ISO date portion
+// textually and rebuilding it as LOCAL midnight yields exactly the stored
+// calendar date in every timezone, and matches the boundaries that
+// dateRangeForToken produces.
+function dealOpenLocalDate(value) {
   if (!value) return null
-  const s = String(value)
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
-  if (m) return { year: Number(m[1]), month: Number(m[2]) }
-  // Fallback for any non-ISO shape (e.g. a real Date instance): use the UTC
-  // getters, never the local ones, for the same reason as above.
-  const d = new Date(s)
-  return Number.isNaN(d.getTime()) ? null : { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 }
+  const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  const d = new Date(String(value))
+  return Number.isNaN(d.getTime()) ? null : new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
 }
 
-const FOCUS_FILTERS = {
-  active:   { label: 'Active deals',    test: d => !/won|lost/i.test(d.stage || '') },
-  won:      { label: 'Won deals',       test: d => /won/i.test(d.stage || '') },
-  lost:     { label: 'Lost deals',      test: d => /lost/i.test(d.stage || '') },
-  poc:      { label: 'POC',             test: d => !!d.poc },
-  proposal: { label: 'Proposal Shared', test: d => !!d.proposalShared },
-}
+const MaterialIcon = ({ children }) => <span className="material-symbols-rounded" aria-hidden="true">{children}</span>
 
-// Columns written to every export format. Covers all Deal fields the system
-// stores, with the company/owner relations flattened to their names.
-const EXPORT_COLUMNS = [
-  { key: 'title',               header: 'Title' },
-  { key: '_companyName',        header: 'Company' },
-  { key: 'companyName',         header: 'Company Name (text)' },
-  { key: 'domainName',          header: 'Domain Name' },
-  { key: 'stage',               header: 'Stage' },
-  { key: 'value',               header: 'Value' },
-  { key: 'currency',            header: 'Currency' },
-  { key: 'country',             header: 'Country' },
-  { key: 'clientType',          header: 'Client Type' },
-  { key: 'contactPerson',       header: 'Contact Person' },
-  { key: 'contactPhone',        header: 'Contact Phone' },
-  { key: 'contactEmail',        header: 'Contact Email' },
-  { key: 'serviceRequirement',  header: 'Service Requirement' },
-  { key: 'clientWebsiteUrl',    header: 'Client Website URL' },
-  { key: 'opportunityType',     header: 'Opportunity Type' },
-  { key: 'strategicImportance', header: 'Strategic Importance' },
-  { key: 'expectedOutcome',     header: 'Expected Outcome' },
-  { key: '_poc',                header: 'POC' },
-  { key: '_proposalShared',     header: 'Proposal Shared' },
-  { key: '_openDate',           header: 'Deal Open Date' },
-  { key: '_pocReceivedDate',    header: 'POC Received Date' },
-  { key: '_pocDeliveredDate',   header: 'POC Delivered Date' },
-  { key: '_ownerName',          header: 'Deal Owner' },
-  { key: 'notes',               header: 'Notes' },
-  { key: '_createdAt',          header: 'Created Date' },
-]
-
-const dateOnly = (v) => (v ? String(v).slice(0, 10) : '')
-
-// Export menu — reuses the shared exportUtils helpers (the same ones the
-// Companies list uses), fed by GET /api/deals/export so it always covers every
-// deal, not just what happens to be loaded on screen.
-function DealExportMenu() {
+function DealExportMenu({ fetchAllForExport, columns }) {
   const [open, setOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
   const ref = useRef(null)
@@ -134,22 +96,10 @@ function DealExportMenu() {
   const run = async (fn, extraArgs = []) => {
     setOpen(false); setExporting(true)
     try {
-      const { data } = await api.get('/deals/export')
-      const records = (data.deals || []).map(d => ({
-        ...d,
-        _companyName: d.company?.name || '',
-        _ownerName: d.owner?.name || '',
-        _poc: d.poc ? 'Yes' : 'No',
-        _proposalShared: d.proposalShared ? 'Yes' : 'No',
-        _openDate: dateOnly(d.openDate),
-        _pocReceivedDate: dateOnly(d.pocReceivedDate),
-        _pocDeliveredDate: dateOnly(d.pocDeliveredDate),
-        _createdAt: dateOnly(d.createdAt),
-      }))
-      fn(records, 'deals', EXPORT_COLUMNS, ...extraArgs)
+      const records = await fetchAllForExport()
+      fn(records, 'deals', columns, ...extraArgs)
     } catch {
-      // fetch failed — nothing to export; same lightweight handling the
-      // Companies export menu uses.
+      // fetch failed
     } finally {
       setExporting(false)
     }
@@ -157,12 +107,8 @@ function DealExportMenu() {
 
   return (
     <div style={{ position: 'relative' }} ref={ref}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        disabled={exporting}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, padding: '7px 12px', fontSize: 12.5, fontWeight: 600, color: '#334155', cursor: exporting ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
-      >
-        <Upload size={13} /> {exporting ? 'Exporting…' : 'Export'} <ChevronDown size={11} />
+      <button className="deals-secondary-btn" onClick={() => setOpen(o => !o)} disabled={exporting}>
+        <MaterialIcon>download</MaterialIcon> {exporting ? 'Exporting…' : 'Export'} <MaterialIcon>keyboard_arrow_down</MaterialIcon>
       </button>
       {open && (
         <div style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 3000, minWidth: 170, overflow: 'hidden' }}>
@@ -170,7 +116,7 @@ function DealExportMenu() {
             { label: 'Export as CSV',   fn: () => run(exportCSV) },
             { label: 'Export as Excel', fn: () => run(exportXLSX, ['Deals']) },
             { label: 'Export as JSON',  fn: () => run(exportJSON) },
-            { label: 'Export as PDF',   fn: () => run(exportPDF, ['Deals Export — NXT MarketingWiz']) },
+            { label: 'Export as PDF',   fn: () => run(exportPDF, ['Deals Export — NXT Sales']) },
           ].map(item => (
             <button key={item.label} onClick={item.fn}
               style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', textAlign: 'left', fontSize: 13, color: '#334155', cursor: 'pointer', fontFamily: 'DM Sans,system-ui,sans-serif' }}
@@ -189,33 +135,37 @@ function DealExportMenu() {
 export default function Deals() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [deals, setDeals]         = useState([])
   const [loading, setLoading]     = useState(true)
   const [showCreate, setShowCreate] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [editDeal, setEditDeal]   = useState(null)
   const [viewDeal, setViewDeal]   = useState(null)
   const [dealFields, setDealFields] = useState([])
   const [search, setSearch]       = useState('')
   const [countryFilter, setCountryFilter] = useState([])
+  const [clientTypeFilter, setClientTypeFilter] = useState([])
+  const [stageFilter, setStageFilter] = useState([])
+  const [opportunityFilter, setOpportunityFilter] = useState([])
+  const [strategicFilter, setStrategicFilter] = useState([])
+  const [outcomeFilter, setOutcomeFilter] = useState([])
+  const [pocFilter, setPocFilter] = useState([])
+  const [proposalFilter, setProposalFilter] = useState([])
+  const [openDateFilter, setOpenDateFilter] = useState([])
+  const [remarksFilter, setRemarksFilter] = useState([])
+  const [noCompanyFilter, setNoCompanyFilter] = useState(false)
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false)
+  const moreFiltersRef = useRef(null)
   const [dealsTab, setDealsTab]   = useState('all') // 'all' | 'mine'
-  // Set by the Deals Dashboard cards. Lives in the URL (not state) so the
-  // filtered view is shareable, survives a browser refresh, and Back returns
-  // to the dashboard rather than silently dropping the filter.
-  const [searchParams, setSearchParams] = useSearchParams()
-  const focusKey  = searchParams.get('focus')
-  // Deal Open Date period, carried from the Deals Dashboard cards so the list
-  // shows exactly the deals the card counted.
-  const yearParam  = parseInt(searchParams.get('year'), 10)
-  const monthParam = parseInt(searchParams.get('month'), 10)
-  const hasPeriod  = Number.isFinite(yearParam)
-  const focus     = FOCUS_FILTERS[focusKey] || null
   const [viewMode, setViewMode]   = useState(() => localStorage.getItem(VIEW_STORAGE_KEY) || 'list')
-  const [showImport, setShowImport] = useState(false)
-  const [reloadKey, setReloadKey]   = useState(0)
 
   // Same shared 'company.country' dropdown list CreateDealModal already uses
   // for a Deal's own (denormalized) country field — not a separate list.
   const { options: countryValues } = useDropdownOptions('company.country')
+  // Same source as every other dropdown-backed filter on this page.
+  const { options: remarksValues } = useDropdownOptions('company.remarks')
+  const remarksOptions = remarksValues.map(o => ({ value: o.value, label: o.label }))
   const countryOptions = countryValues.map(o => ({ value: o.value, label: o.label }))
   // Client Type stores a stable value separate from its current display
   // label (Settings → Dropdown Lists can rename the label without touching
@@ -224,6 +174,10 @@ export default function Deals() {
   // <select> (which already resolves value -> current label). See the
   // matching fix/comment in ViewDealModal.jsx for the full explanation.
   const { options: clientTypeValues } = useDropdownOptions('deal.clientType')
+  const { options: stageValues } = useDropdownOptions('deal.stage')
+  const { options: opportunityValues } = useDropdownOptions('deal.opportunityType')
+  const { options: strategicValues } = useDropdownOptions('deal.strategicImportance')
+  const { options: outcomeValues } = useDropdownOptions('deal.expectedOutcome')
 
   const setView = (v) => { setViewMode(v); localStorage.setItem(VIEW_STORAGE_KEY, v) }
 
@@ -265,9 +219,34 @@ export default function Deals() {
       .finally(() => setLoading(false))
   }, [dealsTab])
 
-  // reloadKey bumps after a successful import so the newly-created deals show
-  // up without a manual refresh.
-  useEffect(() => { fetchDeals() }, [fetchDeals, reloadKey])
+  useEffect(() => { fetchDeals() }, [fetchDeals])
+
+  // Deep-link from Deals Dashboard's stat cards (?focus=active|won|lost|poc|proposal)
+  // — applied once stage options are loaded (needed to resolve "active" =
+  // every stage except Won/Lost) and then stripped from the URL so it
+  // doesn't reapply if the user later clears filters and navigates back
+  // via browser history.
+  useEffect(() => {
+    const focus = new URLSearchParams(location.search).get('focus')
+    if (!focus) return
+    if (focus === 'won') setStageFilter(['Won'])
+    else if (focus === 'lost') setStageFilter(['Lost'])
+    else if (focus === 'active') {
+      if (stageValues.length === 0) return // wait for the dropdown list to load
+      setStageFilter(stageValues.map(s => s.value).filter(v => v !== 'Won' && v !== 'Lost'))
+    }
+    else if (focus === 'poc') setPocFilter(['yes'])
+    else if (focus === 'proposal') setProposalFilter(['yes'])
+    else if (focus === 'no_company') setNoCompanyFilter(true)
+    navigate('/deals', { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, stageValues])
+
+  useEffect(() => {
+    const close = (event) => { if (moreFiltersRef.current && !moreFiltersRef.current.contains(event.target)) setMoreFiltersOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
 
   const handleDelete = async (dealId) => {
     if (!window.confirm('Delete this deal? This action cannot be undone.')) return
@@ -323,28 +302,50 @@ export default function Deals() {
       ].some(v => v && String(v).toLowerCase().includes(q))
       const matchesCountry = countryFilter.length === 0
         || countryFilter.some(c => (d.country || '').toLowerCase() === c.toLowerCase())
-      const matchesFocus = !focus || focus.test(d)
-      // Deals with no Deal Open Date cannot belong to a period, so they are
-      // excluded while a period filter is active - matching the dashboard.
-      let matchesPeriod = true
-      if (hasPeriod) {
-        const parts = dealOpenDateParts(d.openDate)
-        if (!parts) matchesPeriod = false
-        else {
-          matchesPeriod = parts.year === yearParam
-            && (!Number.isFinite(monthParam) || parts.month === monthParam)
-        }
-      }
-      return matchesSearch && matchesCountry && matchesFocus && matchesPeriod
+      const matchesClientType = clientTypeFilter.length === 0 || clientTypeFilter.includes(d.clientType)
+      const matchesStage = stageFilter.length === 0 || stageFilter.includes(d.stage)
+      const matchesOpportunity = opportunityFilter.length === 0 || opportunityFilter.includes(d.opportunityType)
+      const matchesStrategic = strategicFilter.length === 0 || strategicFilter.includes(d.strategicImportance)
+      const matchesOutcome = outcomeFilter.length === 0 || outcomeFilter.includes(d.expectedOutcome)
+      const matchesPoc = pocFilter.length === 0 || pocFilter[0] === (d.poc ? 'yes' : 'no')
+      const matchesProposal = proposalFilter.length === 0 || proposalFilter[0] === (d.proposalShared ? 'yes' : 'no')
+      const matchesRemarks = remarksFilter.length === 0 || remarksFilter.some(value =>
+        String(d.company?.remarks || '').toLowerCase() === String(value).toLowerCase()
+      )
+      const dateRange = dateRangeForToken(openDateFilter[0])
+      // Deal Open Date ONLY — never Created Date. A deal with no Open Date is
+      // undated and simply does not match any period; substituting createdAt
+      // would file it under a month it was never opened in. The count of such
+      // deals is surfaced below so an empty result is explained, not mysterious.
+      const dealDate = dealOpenLocalDate(d.openDate)
+      const matchesOpenDate = !dateRange || (dealDate && dealDate >= dateRange[0] && dealDate < dateRange[1])
+      const matchesNoCompany = !noCompanyFilter || (!d.companyId && !d.companyName)
+      return matchesSearch && matchesCountry && matchesClientType && matchesStage && matchesOpportunity && matchesStrategic && matchesOutcome && matchesPoc && matchesProposal && matchesRemarks && matchesOpenDate && matchesNoCompany
     })
   })()
 
-  // Deal Open Date was added as a new, nullable column with no backfill, so
-  // every deal created before it shipped has none. Those deals cannot belong
-  // to any month and are therefore hidden whenever a period filter is on —
-  // which, without this notice, looks exactly like "the filter is broken"
-  // rather than "these deals have no Open Date set yet".
-  const undatedDealCount = deals.filter(d => !dealOpenDateParts(d.openDate)).length
+  // Deals with no Deal Open Date can never match a period filter. The original
+  // "No deals found" report turned out to be exactly this — every deal had a
+  // null openDate — not a broken filter, so the number is shown rather than
+  // leaving the user to guess.
+  const hasPeriod = openDateFilter.length > 0
+  const undatedDealCount = deals.filter(d => !dealOpenLocalDate(d.openDate)).length
+
+  const filterConfigs = [
+    { label: 'Country', values: countryFilter, set: setCountryFilter, options: countryOptions },
+    { label: 'Client Type', values: clientTypeFilter, set: setClientTypeFilter, options: clientTypeValues },
+    { label: 'Stage', values: stageFilter, set: setStageFilter, options: stageValues },
+    { label: 'Remarks', values: remarksFilter, set: setRemarksFilter, options: remarksOptions },
+    { label: 'Opportunity Type', values: opportunityFilter, set: setOpportunityFilter, options: opportunityValues },
+    { label: 'Strategic Importance', values: strategicFilter, set: setStrategicFilter, options: strategicValues },
+    { label: 'Expected Outcome', values: outcomeFilter, set: setOutcomeFilter, options: outcomeValues },
+    { label: 'POC', values: pocFilter, set: setPocFilter, options: POC_OPTIONS },
+    { label: 'Proposal Shared', values: proposalFilter, set: setProposalFilter, options: PROPOSAL_OPTIONS },
+  ]
+  const hasActiveFilters = Boolean(search.trim()) || openDateFilter.length > 0 || noCompanyFilter || filterConfigs.some(f => f.values.length)
+  const clearFilters = () => {
+    setSearch(''); setOpenDateFilter([]); setNoCompanyFilter(false); filterConfigs.forEach(f => f.set([])); setMoreFiltersOpen(false)
+  }
 
   // All Deals can now show deals owned by any user, so initials must be
   // computed per-deal from its own owner (d.owner.name), not the logged-in
@@ -352,21 +353,23 @@ export default function Deals() {
   const initialsFor = (name) => (name || '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '—'
 
   const editColumnsFields = [...dealFields, DEAL_OWNER_COLUMN, DEAL_FLAGS_COLUMN]
-  const orderedVisibleFields = editColumnsFields.filter(f => visibleColumns.includes(f.key))
-  const orderedBoardFields = editColumnsFields.filter(f => boardVisibleColumns.includes(f.key))
+  const orderedVisibleFields = visibleColumns.map(key => editColumnsFields.find(f => f.key === key)).filter(Boolean)
+  const orderedBoardFields = boardVisibleColumns.map(key => editColumnsFields.find(f => f.key === key)).filter(Boolean)
 
   function renderDealCell(f, d) {
     if (f.key === 'companyName') {
       const name = d.companyName || d.company?.name || '--'
       return d.domainName ? `${name} / ${d.domainName}` : name
     }
-    if (f.key === 'ownerId') return initialsFor(d.owner?.name)
+    if (f.key === 'ownerId') return <span className="deal-owner-avatar" title={d.owner?.name || 'Unassigned'}>{initialsFor(d.owner?.name)}</span>
     if (f.key === 'clientType') {
       if (!d.clientType) return '--'
       return clientTypeValues.find(o => o.value === d.clientType)?.label ?? d.clientType
     }
-    if (f.key === 'value') return formatCurrency(d.value, d.currency)
-    if (f.key === '_flags') return dealFlagsLabel(d) || '--'
+    if (f.key === 'stage') return <span className={`deal-stage-badge stage-${String(d.stage || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}><i />{d.stage || 'Not set'}</span>
+    if (f.key === 'strategicImportance') return d.strategicImportance ? <span className={`deal-importance importance-${String(d.strategicImportance).toLowerCase()}`}>{d.strategicImportance}</span> : '--'
+    if (f.key === 'value') return <strong className="deal-value-cell">{formatCurrency(d.value, d.currency)}</strong>
+    if (f.key === '_flags') return (d.poc || d.proposalShared) ? <span className="deal-flags">{d.poc && <b>POC</b>}{d.proposalShared && <b>Proposal</b>}</span> : <span className="deal-muted">Not started</span>
     if (f.key === 'poc' || f.key === 'proposalShared') return d[f.key] ? 'Yes' : 'No'
     if (f.key === 'pocReceivedDate' || f.key === 'pocDeliveredDate') return renderCustomCell('date', d[f.key])
     if (f.key.startsWith('custom.')) return renderCustomCell(f.type, d[f.key])
@@ -375,197 +378,158 @@ export default function Deals() {
     return (v === null || v === undefined || v === '') ? '--' : String(v)
   }
 
-  const cellTh = { padding: '12px 16px', textAlign: 'left', fontWeight: 700, color: '#64748b', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '.4px', whiteSpace: 'nowrap' }
-  // display must stay the default (table-cell) on a <td> — -webkit-box
-  // (needed for line-clamp) isn't compatible with table-cell and breaks the
-  // whole table's column layout. Line-clamp goes on an inner wrapper via
-  // cellClamp instead, never directly on the <td>.
-  const cellTd = { padding: '13px 16px', color: '#334155', whiteSpace: 'normal', overflowWrap: 'anywhere', maxWidth: 260, fontSize: 13.5 }
-  const cellClamp = { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', overflowWrap: 'anywhere' }
-  const iconBtn = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 6, borderRadius: 6, display: 'flex', transition: 'background .12s' }
+  const activeDeals = deals.filter(d => !/won|lost/i.test(d.stage || '')).length
+  const wonDeals = deals.filter(d => /won/i.test(d.stage || '')).length
+  const summaryMetrics = [
+    { label: 'All deals', value: deals.length, icon: 'handshake', tone: 'blue' },
+    { label: 'Active pipeline', value: activeDeals, icon: 'trending_up', tone: 'green' },
+    { label: 'POC completed', value: deals.filter(d => d.poc).length, icon: 'target', tone: 'violet' },
+    { label: 'Proposals shared', value: deals.filter(d => d.proposalShared).length, icon: 'description', tone: 'amber' },
+    { label: 'Deals won', value: wonDeals, icon: 'verified', tone: 'success' },
+  ]
+
+  const exportColumns = [
+    { key: 'title', header: 'Deal Name' },
+    ...orderedVisibleFields.map(f => ({ key: f.key, header: f.label }))
+  ]
+
+  const fetchAllForExport = async () => {
+    const params = {
+      view: dealsTab === 'mine' ? 'mine' : undefined,
+      search: search || undefined,
+      country: countryFilter.length ? countryFilter.join(',') : undefined,
+      clientType: clientTypeFilter.length ? clientTypeFilter.join(',') : undefined,
+      stage: stageFilter.length ? stageFilter.join(',') : undefined,
+      opportunityType: opportunityFilter.length ? opportunityFilter.join(',') : undefined,
+      strategicImportance: strategicFilter.length ? strategicFilter.join(',') : undefined,
+      expectedOutcome: outcomeFilter.length ? outcomeFilter.join(',') : undefined,
+      remarksValues: remarksFilter.length ? remarksFilter : undefined,
+      openDate: openDateFilter[0] || undefined,
+    }
+    const r = await api.get('/deals/export', { params })
+    return r.data.deals || []
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, background: '#fff', borderRadius: 12, padding: 26, boxShadow: '0 1px 3px rgba(15,23,42,0.05)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: 18, borderBottom: '1px solid #eef1f5' }}>
-        <div>
-          <h1 style={{ fontSize: 23, fontWeight: 700, color: '#0f172a', letterSpacing: '-.2px', display: 'flex', alignItems: 'center', gap: 10 }}>
-            Deals
-            {/* Arrived from a Deals Dashboard card — show what's being filtered
-                and let the user clear it without going back. */}
-            {focus && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 600, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 99, padding: '3px 10px' }}>
-                {focus.label}
-                <button
-                  title="Clear this filter"
-                  onClick={() => { const p = new URLSearchParams(searchParams); p.delete('focus'); setSearchParams(p, { replace: true }) }}
-                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#1d4ed8', padding: 0, display: 'flex', fontSize: 14, lineHeight: 1 }}
-                >
-                  ×
-                </button>
-              </span>
-            )}
-          </h1>
-          <span style={{ fontSize: 13, color: '#94a3b8', fontWeight: 500 }}>
+    <div className="deals-workspace">
+      <header className="deals-header deals-hero">
+        <div className="deals-hero-copy">
+          <span className="deals-hero-eyebrow"><MaterialIcon>monitoring</MaterialIcon> Revenue workspace</span>
+          <h1>Move every deal forward</h1>
+          <span className="deals-meta">
             {loading ? 'Loading…' : (
               <>
-                {filteredDeals.length} record{filteredDeals.length === 1 ? '' : 's'}
-                {' · '}{filteredDeals.filter(d => d.poc).length} POC
-                {' · '}{filteredDeals.filter(d => d.proposalShared).length} Proposal Shared
+                Track {filteredDeals.length} deal{filteredDeals.length === 1 ? '' : 's'}, focus on the right opportunities and keep your pipeline moving.
               </>
             )}
           </span>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          {viewMode === 'list' && (
-            <EditColumnsMenu fields={editColumnsFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} alwaysShownKey="title" />
-          )}
-          {viewMode === 'board' && (
-            <EditColumnsMenu fields={editColumnsFields} visibleColumns={boardVisibleColumns} onSave={saveBoardVisibleColumns} alwaysShownKey="title" />
-          )}
-          {/* Import / Export live here on the Deals page only — not on the
-              Deals Dashboard, which stays focused on summary cards/charts. */}
-          <button
-            onClick={() => setShowImport(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#334155', cursor: 'pointer', fontFamily: 'inherit' }}
-          >
-            <Upload size={13} /> Import
+        <div className="deals-header-actions">
+          <div className="action-group">
+            {viewMode === 'list' && (
+              <EditColumnsMenu fields={editColumnsFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} alwaysShownKey="title" defaultColumns={DEFAULT_COLUMNS} />
+            )}
+            {viewMode === 'board' && (
+              <EditColumnsMenu fields={editColumnsFields} visibleColumns={boardVisibleColumns} onSave={saveBoardVisibleColumns} alwaysShownKey="title" defaultColumns={DEFAULT_BOARD_COLUMNS} />
+            )}
+            <DealExportMenu fetchAllForExport={fetchAllForExport} columns={exportColumns} />
+            <button className="deals-secondary-btn" onClick={() => setShowImport(true)}>
+              <MaterialIcon>upload</MaterialIcon> Import
+            </button>
+          </div>
+          <button className="deals-create-btn" onClick={() => setShowCreate(true)}>
+            <MaterialIcon>add</MaterialIcon> Create deal
           </button>
-          <DealExportMenu />
-          <button
-            onClick={() => setShowCreate(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 8, border: 'none', background: '#e63329', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', boxShadow: '0 1px 2px rgba(230,51,41,0.25)', transition: 'background .12s, box-shadow .12s' }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#c0271e'; e.currentTarget.style.boxShadow = '0 2px 6px rgba(230,51,41,0.35)' }}
-            onMouseLeave={e => { e.currentTarget.style.background = '#e63329'; e.currentTarget.style.boxShadow = '0 1px 2px rgba(230,51,41,0.25)' }}
-          >
-            <Plus size={14} /> Create deal
-          </button>
+        </div>
+      </header>
+
+      <section className="deals-summary" aria-label="Deal summary">
+        {summaryMetrics.map(metric => <div key={metric.label} className={`deals-metric tone-${metric.tone}`}><span className="deals-metric-icon"><MaterialIcon>{metric.icon}</MaterialIcon></span><span>{metric.label}</span><strong>{loading ? '—' : metric.value}</strong></div>)}
+      </section>
+
+      <section className="deals-data-shell">
+      <div className="deals-viewbar">
+        <div className="deals-tabs" role="tablist">
+          <button role="tab" aria-selected={dealsTab === 'all'} onClick={() => setDealsTab('all')}>All deals <span>{dealsTab === 'all' && !loading ? deals.length : ''}</span></button>
+          <button role="tab" aria-selected={dealsTab === 'mine'} onClick={() => setDealsTab('mine')} title="Deals on companies where you're the Lead Owner">My deals <span>{dealsTab === 'mine' && !loading ? deals.length : ''}</span></button>
+        </div>
+
+        <div className="deals-view-switch" aria-label="Deal view">
+          <button className={viewMode === 'list' ? 'active' : ''} onClick={() => setView('list')} title="List view"><MaterialIcon>view_list</MaterialIcon> List</button>
+          <button className={viewMode === 'board' ? 'active' : ''} onClick={() => setView('board')} title="Board view"><MaterialIcon>view_kanban</MaterialIcon> Board</button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, paddingBottom: 14, borderBottom: '1px solid #eef1f5', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-          <button
-            onClick={() => setDealsTab('all')}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
-              color: dealsTab === 'all' ? '#0f172a' : '#94a3b8', borderBottom: `2px solid ${dealsTab === 'all' ? '#e63329' : 'transparent'}`, paddingBottom: 10, transition: 'color .12s, border-color .12s' }}
-          >
-            All deals
-          </button>
-          <button
-            onClick={() => setDealsTab('mine')}
-            title="Deals on companies where you're the Lead Owner"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600,
-              color: dealsTab === 'mine' ? '#0f172a' : '#94a3b8', borderBottom: `2px solid ${dealsTab === 'mine' ? '#e63329' : 'transparent'}`, paddingBottom: 10, transition: 'color .12s, border-color .12s' }}
-          >
-            My deals
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', paddingBottom: 8 }}>
-          <div style={{ position: 'relative' }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+      <section className="deals-filter-area">
+        <div className="deals-filterbar">
+          <div className="deals-search">
+            <MaterialIcon>search</MaterialIcon>
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search deals…"
-              style={{ padding: '8px 12px 8px 32px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13.5, width: 230, fontFamily: 'inherit', transition: 'border-color .12s, box-shadow .12s' }}
-              onFocus={e => { e.currentTarget.style.borderColor = '#e63329'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(230,51,41,0.10)' }}
-              onBlur={e => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.boxShadow = 'none' }}
+              placeholder="Search deals, companies, contacts..."
             />
           </div>
 
-          <FilterDropdown
-            label="Country"
-            options={countryOptions}
-            selected={countryFilter}
-            onChange={setCountryFilter}
+          <FilterDropdown label="Country" options={countryOptions} selected={countryFilter} onChange={setCountryFilter} />
+          <FilterDropdown label="Client Type" options={clientTypeValues} selected={clientTypeFilter} onChange={setClientTypeFilter} />
+          <FilterDropdown label="Stage" options={stageValues} selected={stageFilter} onChange={setStageFilter} />
+          <FilterDropdown label="Remarks" options={remarksOptions} selected={remarksFilter} onChange={setRemarksFilter} />
+          <DateFilterDropdown
+            label="Deal date"
+            dayLabel="Deal dated"
+            yearLabel="Deal dated during"
+            presets={DATE_OPTIONS}
+            value={openDateFilter[0] || ''}
+            onChange={setOpenDateFilter}
           />
 
-          {/* Month/Year — filters on Deal Open Date (see FOCUS_FILTERS /
-              matchesPeriod above), not Created Date. Values live in the URL so
-              a Deals Dashboard card link (?year=&month=) and a manually picked
-              filter here behave identically and survive a refresh. */}
-          <select
-            value={Number.isFinite(yearParam) ? yearParam : ''}
-            onChange={e => {
-              const p = new URLSearchParams(searchParams)
-              if (e.target.value) p.set('year', e.target.value); else p.delete('year')
-              p.delete('month')
-              setSearchParams(p, { replace: true })
-            }}
-            style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', color: '#0f172a', background: '#fff' }}
-          >
-            <option value="">All years</option>
-            {DEAL_YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <select
-            value={Number.isFinite(monthParam) ? monthParam : ''}
-            onChange={e => {
-              const p = new URLSearchParams(searchParams)
-              if (e.target.value) p.set('month', e.target.value); else p.delete('month')
-              setSearchParams(p, { replace: true })
-            }}
-            disabled={!hasPeriod}
-            title={hasPeriod ? undefined : 'Choose a year first'}
-            style={{ padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', color: hasPeriod ? '#0f172a' : '#94a3b8', background: hasPeriod ? '#fff' : '#f8fafc' }}
-          >
-            <option value="">All months</option>
-            {DEAL_MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-          </select>
-          {hasPeriod && (
-            <button
-              onClick={() => {
-                const p = new URLSearchParams(searchParams)
-                p.delete('year'); p.delete('month')
-                setSearchParams(p, { replace: true })
-              }}
-              style={{ border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 11px', fontSize: 12.5, fontWeight: 600, color: '#64748b', cursor: 'pointer', fontFamily: 'inherit' }}
-            >
-              Clear period
-            </button>
-          )}
-
-          <div style={{ display: 'flex', border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-            <button
-              onClick={() => setView('list')}
-              title="List view"
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', border: 'none', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, transition: 'background .12s, color .12s',
-                background: viewMode === 'list' ? '#e63329' : '#fff', color: viewMode === 'list' ? '#fff' : '#64748b' }}
-            >
-              <List size={13} /> List
-            </button>
-            <button
-              onClick={() => setView('board')}
-              title="Board view"
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', border: 'none', borderLeft: '1px solid #e2e8f0', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, transition: 'background .12s, color .12s',
-                background: viewMode === 'board' ? '#e63329' : '#fff', color: viewMode === 'board' ? '#fff' : '#64748b' }}
-            >
-              <LayoutGrid size={13} /> Board
-            </button>
+          <div className="more-filters-wrap" ref={moreFiltersRef}>
+            <button className={`more-filters-btn${moreFiltersOpen ? ' active' : ''}`} onClick={() => setMoreFiltersOpen(v => !v)}><MaterialIcon>tune</MaterialIcon> More filters <MaterialIcon>keyboard_arrow_down</MaterialIcon></button>
+            {moreFiltersOpen && (
+              <div className="more-filters-panel">
+                <div className="more-filters-heading"><div><strong>More filters</strong><span>Refine the current deal view</span></div><button onClick={() => setMoreFiltersOpen(false)} aria-label="Close"><MaterialIcon>close</MaterialIcon></button></div>
+                <div className="more-filters-group"><p>Deal</p>
+                  <FilterDropdown label="Opportunity Type" options={opportunityValues} selected={opportunityFilter} onChange={setOpportunityFilter} />
+                  <FilterDropdown label="Expected Outcome" options={outcomeValues} selected={outcomeFilter} onChange={setOutcomeFilter} />
+                  <FilterDropdown label="Strategic Importance" options={strategicValues} selected={strategicFilter} onChange={setStrategicFilter} />
+                  <FilterDropdown label="POC" options={POC_OPTIONS} selected={pocFilter} onChange={setPocFilter} searchable={false} singleSelect />
+                  <FilterDropdown label="Proposal Shared" options={PROPOSAL_OPTIONS} selected={proposalFilter} onChange={setProposalFilter} searchable={false} singleSelect />
+                </div>
+                <div className="more-filters-footer"><button onClick={clearFilters}><MaterialIcon>restart_alt</MaterialIcon> Reset</button><button className="apply" onClick={() => setMoreFiltersOpen(false)}>Apply filters</button></div>
+              </div>
+            )}
           </div>
+          {hasActiveFilters && <button className="clear-filters-btn" onClick={clearFilters}>Clear all</button>}
         </div>
-      </div>
 
-      {/* A period filter can only ever match deals that HAVE a Deal Open Date.
-          Saying so explicitly is the difference between the user reading an
-          empty result as "the filter is broken" and as "these deals need an
-          Open Date" — the latter being what's actually true. */}
-      {hasPeriod && !loading && undatedDealCount > 0 && (
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '11px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 9, fontSize: 12.8, color: '#92400e', lineHeight: 1.5 }}>
-          <span style={{ fontSize: 14, lineHeight: 1.15 }}>⚠</span>
-          <span>
-            <strong>{undatedDealCount}</strong> of {deals.length} deal{deals.length === 1 ? '' : 's'}{' '}
-            {undatedDealCount === 1 ? 'has' : 'have'} no <strong>Deal Open Date</strong> and {undatedDealCount === 1 ? 'is' : 'are'} hidden
-            while a year/month filter is active. Deal Open Date is a newer field, so deals created before it was
-            added start empty — set it via <em>Edit Deal</em> for those deals to appear here.
-          </span>
-        </div>
-      )}
+        {(openDateFilter.length > 0 || noCompanyFilter || filterConfigs.some(f => f.values.length)) && (
+          <div className="active-filter-chips">
+            {noCompanyFilter && <button onClick={() => setNoCompanyFilter(false)} style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626' }}><span>Filter:</span> No company linked <MaterialIcon>close</MaterialIcon></button>}
+            {openDateFilter.length > 0 && <button onClick={() => setOpenDateFilter([])}><span>Deal date:</span> {describeDateToken(openDateFilter[0], DATE_OPTIONS)} <MaterialIcon>close</MaterialIcon></button>}
+            {filterConfigs.flatMap(f => f.values.map(value => {
+              const label = f.options.find(o => o.value === value)?.label || value
+              return <button key={`${f.label}-${value}`} onClick={() => f.set(f.values.filter(v => v !== value))}><span>{f.label}:</span> {label} <MaterialIcon>close</MaterialIcon></button>
+            }))}
+          </div>
+        )}
+
+        {hasPeriod && !loading && undatedDealCount > 0 && (
+          <div className="deals-undated-notice">
+            <MaterialIcon>info</MaterialIcon>
+            <span>
+              <strong>{undatedDealCount}</strong> of {deals.length} deal{deals.length === 1 ? '' : 's'}{' '}
+              {undatedDealCount === 1 ? 'has' : 'have'} no <strong>Deal Open Date</strong>, so {undatedDealCount === 1 ? 'it is' : 'they are'} not shown while a period filter is active.
+            </span>
+            <button type="button" onClick={() => setOpenDateFilter([])}>Clear period</button>
+          </div>
+        )}
+      </section>
 
       {viewMode === 'board' ? (
         loading ? (
-          <p style={{ padding: 20, textAlign: 'center', color: '#94a3b8', fontSize: 13.5 }}>Loading deals…</p>
+          <div className="deals-loading">Loading deals…</div>
         ) : (
           <DealBoard
             deals={filteredDeals}
@@ -579,33 +543,38 @@ export default function Deals() {
           />
         )
       ) : (
-      <div style={{ overflowX: 'auto', border: '1px solid #eef1f5', borderRadius: 10 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13.5 }}>
-          <thead style={{ background: '#f8fafc', borderBottom: '1px solid #eef1f5' }}>
+      <div className="deals-table-wrap">
+        <table className="deals-table">
+          <thead>
             <tr>
-              <th style={cellTh}>DEAL NAME</th>
-              {orderedVisibleFields.map(f => <th key={f.key} style={cellTh}>{f.label.toUpperCase()}</th>)}
-              <th style={cellTh}></th>
+              <th className="sticky-deal-col">Deal name</th>
+              {orderedVisibleFields.map(f => <th key={f.key} className={`${f.key === 'companyName' ? 'sticky-company-col ' : ''}deal-col-${f.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`}>{f.label}</th>)}
+              <th className="sticky-actions-col"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={2 + orderedVisibleFields.length} style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13.5 }}>Loading deals…</td></tr>
+              <tr><td colSpan={2 + orderedVisibleFields.length}><div className="deals-loading">Loading deals…</div></td></tr>
             ) : filteredDeals.length === 0 ? (
-              <tr><td colSpan={2 + orderedVisibleFields.length} style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13.5 }}>{deals.length === 0 ? (dealsTab === 'mine' ? 'No deals on companies you own yet.' : 'No deals yet.') : hasPeriod ? `No deals have a Deal Open Date in ${Number.isFinite(monthParam) ? DEAL_MONTH_NAMES[monthParam - 1] + ' ' : ''}${yearParam}.` : 'No deals match your search.'}</td></tr>
+              <tr><td colSpan={2 + orderedVisibleFields.length}>
+                <div className="deals-empty-state"><span className="deals-empty-icon"><MaterialIcon>handshake</MaterialIcon></span>
+                  <strong>{deals.length === 0 ? (dealsTab === 'mine' ? 'No deals on companies you own yet.' : 'No deals yet') : 'No deals match these filters'}</strong>
+                  <p>{deals.length === 0 ? 'Create your first deal to start building your sales pipeline.' : 'Try adjusting or clearing your filters.'}</p>
+                  {deals.length === 0 ? <button className="deals-create-btn compact" onClick={() => setShowCreate(true)}><MaterialIcon>add</MaterialIcon> Create deal</button> : <button className="deals-secondary-btn" onClick={clearFilters}>Clear filters</button>}
+                </div>
+              </td></tr>
             ) : filteredDeals.map((d, i) => (
-              <tr key={d.id} style={{ borderBottom: i < filteredDeals.length - 1 ? '1px solid #f4f6f8' : 'none', transition: 'background .1s' }} onMouseEnter={e => e.currentTarget.style.background = '#fafbfc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <td style={{ ...cellTd, color: '#e63329', fontWeight: 600, cursor: 'pointer' }} onClick={() => handleOpenDeal(d)}><div style={cellClamp}>{d.title}</div></td>
-                {orderedVisibleFields.map(f => <td key={f.key} style={cellTd}><div style={cellClamp}>{renderDealCell(f, d)}</div></td>)}
-                <td style={{ ...cellTd, display: 'flex', gap: 4 }}>
-                  <button
-                    onClick={() => setEditDeal(d)} title="Edit deal" style={{ ...iconBtn, color: '#64748b' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f1f5f9'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  ><Pencil size={14} /></button>
-                  <button
-                    onClick={() => handleDelete(d.id)} title="Delete deal" style={{ ...iconBtn, color: '#ef4444' }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#fef2f2'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                  ><Trash2 size={14} /></button>
+              <tr key={d.id}>
+                <td className="sticky-deal-col deal-title-cell" onClick={() => handleOpenDeal(d)}><div title={d.title}>{d.title}</div></td>
+                {orderedVisibleFields.map(f => {
+                  const content = renderDealCell(f, d)
+                  const title = typeof content === 'string' ? content : undefined
+                  const fieldClass = `deal-col-${f.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+                  return <td key={f.key} data-label={f.label} className={`${f.key === 'companyName' ? 'sticky-company-col ' : ''}${fieldClass}`}><div className={`deal-cell-clamp deal-field-${f.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`} title={title}>{content}</div></td>
+                })}
+                <td className="sticky-actions-col deal-row-actions">
+                  <button onClick={() => setEditDeal(d)} title="Edit deal"><MaterialIcon>edit</MaterialIcon></button>
+                  <button className="danger" onClick={() => handleDelete(d.id)} title="Delete deal"><MaterialIcon>delete</MaterialIcon></button>
                 </td>
               </tr>
             ))}
@@ -613,11 +582,20 @@ export default function Deals() {
         </table>
       </div>
       )}
+      </section>
 
       {showCreate && (
         <CreateDealModal
           onClose={() => setShowCreate(false)}
           onSaved={() => fetchDeals()}
+        />
+      )}
+
+      {showImport && (
+        <DealImportModal
+          isOpen={showImport}
+          onClose={() => setShowImport(false)}
+          onSuccess={() => fetchDeals()}
         />
       )}
 
@@ -635,12 +613,6 @@ export default function Deals() {
           onClose={() => setViewDeal(null)}
         />
       )}
-
-      <DealImportModal
-        isOpen={showImport}
-        onClose={() => setShowImport(false)}
-        onSuccess={() => setReloadKey(k => k + 1)}
-      />
     </div>
   )
 }
