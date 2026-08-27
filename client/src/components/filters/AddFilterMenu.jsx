@@ -30,13 +30,13 @@ export default function AddFilterMenu({ fields, activeKeys, onSave }) {
       {open && (
         <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 3000, minWidth: 200, padding: 8 }}>
           {fields.map(f => (
-            <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', fontSize: 13, color: '#334155', cursor: 'pointer', borderRadius: 4 }}>
+            <label key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', fontSize: 16, color: '#334155', cursor: 'pointer', borderRadius: 4 }}>
               <input type="checkbox" checked={draft.includes(f.key)} onChange={() => toggle(f.key)} />
               {f.label}
             </label>
           ))}
           <div style={{ borderTop: '1px solid #f1f5f9', marginTop: 6, paddingTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn-primary" style={{ fontSize: 12, padding: '6px 14px' }} onClick={save}>Save</button>
+            <button className="btn-primary" style={{ fontSize: 15, padding: '6px 14px' }} onClick={save}>Save</button>
           </div>
         </div>
       )}

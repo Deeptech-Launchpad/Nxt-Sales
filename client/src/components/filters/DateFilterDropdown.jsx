@@ -88,6 +88,20 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
   const [rangeFrom, setRangeFrom] = useState('')
   const [rangeTo, setRangeTo]     = useState('')
 
+  // Draft year for the Month tab, for the same reason the range tab keeps a
+  // draft: Month and Year are two controls that together make ONE token, and
+  // either can be picked first.
+  //
+  // The year select used to be driven straight off the applied token and did
+  // nothing at all unless a month was already chosen. With no month picked the
+  // onChange returned early, React re-rendered the select back to its
+  // controlled value, and choosing a year visibly snapped back to the current
+  // one — the reported "the selection does not work". Holding it here means a
+  // year chosen first is remembered until the month arrives, and a year changed
+  // afterwards re-applies immediately.
+  const [monthYear, setMonthYear] = useState(() =>
+    tabForValue(value) === 'month' ? String(value).slice(0, 4) : String(CURRENT_YEAR))
+
   useEffect(() => {
     const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
     document.addEventListener('mousedown', close)
@@ -102,9 +116,17 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
     const m = String(value || '').match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/)
     if (m) { setRangeFrom(m[1]); setRangeTo(m[2]) }
     else if (!value) { setRangeFrom(''); setRangeTo('') }
+    if (tabForValue(value) === 'month') setMonthYear(String(value).slice(0, 4))
+    else if (!value) setMonthYear(String(CURRENT_YEAR))
   }, [value])
 
-  const apply = (token) => { onChange(token ? [token] : []); setOpen(false) }
+  // close:false is used by the Month tab’s year select, which is one half of a
+  // two-part choice — closing the panel on it would make "try another year"
+  // mean "reopen the dropdown every time".
+  const apply = (token, { close = true } = {}) => {
+    onChange(token ? [token] : [])
+    if (close) setOpen(false)
+  }
   const clear = () => { onChange([]); setRangeFrom(''); setRangeTo('') }
 
   const active  = !!value
@@ -118,9 +140,9 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
 
   const inputStyle = {
     width: '100%', padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 6,
-    fontSize: 12.5, fontFamily: 'inherit', color: '#0f172a', background: '#fff',
+    fontSize: 15.5, fontFamily: 'inherit', color: '#0f172a', background: '#fff',
   }
-  const fieldLabel = { display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, letterSpacing: '.02em' }
+  const fieldLabel = { display: 'block', fontSize: 14, fontWeight: 600, color: '#344054', marginBottom: 4, letterSpacing: '.02em' }
 
   return (
     <div className="fdd-wrapper date-filter" ref={ref}>
@@ -180,8 +202,9 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
                     value={monthValue ? Number(monthValue.slice(5, 7)) : ''}
                     onChange={e => {
                       if (!e.target.value) return apply('')
-                      const y = monthValue ? monthValue.slice(0, 4) : CURRENT_YEAR
-                      apply(`${y}-${String(e.target.value).padStart(2, '0')}`)
+                      // monthYear, not the current year: a year picked before the
+                      // month must survive into the token, not be thrown away.
+                      apply(`${monthYear}-${String(e.target.value).padStart(2, '0')}`)
                     }}
                     style={inputStyle}
                   >
@@ -192,14 +215,21 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
                 <div style={{ width: 88 }}>
                   <label style={fieldLabel}>Year</label>
                   <select
-                    value={monthValue ? monthValue.slice(0, 4) : CURRENT_YEAR}
+                    value={monthYear}
                     onChange={e => {
+                      const year = e.target.value
+                      // Always record the choice, so the select shows what was
+                      // picked whether or not a month exists yet.
+                      setMonthYear(year)
+                      // Only a month AND a year make a filterable token. With a
+                      // month already chosen, re-apply at once so the results follow
+                      // the year; the panel stays open so another year can be tried.
                       const mm = monthValue ? monthValue.slice(5, 7) : ''
-                      if (mm) apply(`${e.target.value}-${mm}`)
+                      if (mm) apply(`${year}-${mm}`, { close: false })
                     }}
                     style={inputStyle}
                   >
-                    {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+                    {YEAR_OPTIONS.map(y => <option key={y} value={String(y)}>{y}</option>)}
                   </select>
                 </div>
               </div>
@@ -234,7 +264,7 @@ export default function DateFilterDropdown({ label = 'Create date', presets = []
                   onClick={() => apply(`${rangeFrom}..${rangeTo}`)}
                   style={{
                     marginTop: 10, width: '100%', padding: '8px 0', borderRadius: 6, border: 'none',
-                    fontSize: 12.5, fontWeight: 600, fontFamily: 'inherit',
+                    fontSize: 15.5, fontWeight: 600, fontFamily: 'inherit',
                     cursor: rangeFrom && rangeTo ? 'pointer' : 'not-allowed',
                     background: rangeFrom && rangeTo ? '#e63329' : '#f1f5f9',
                     color: rangeFrom && rangeTo ? '#fff' : '#94a3b8',
