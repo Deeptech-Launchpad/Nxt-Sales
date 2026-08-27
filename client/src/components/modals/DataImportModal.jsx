@@ -138,7 +138,7 @@ export default function DataImportModal({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '18px 22px', borderBottom: '1px solid #eef1f5' }}>
           <FileSpreadsheet size={18} color="#3b82f6" />
           <h2 style={{ fontSize: 17, fontWeight: 700, color: '#0f172a' }}>Import {entityLabel}</h2>
-          <button onClick={onClose} style={{ marginLeft: 'auto', border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b', display: 'flex' }}>
+          <button onClick={onClose} style={{ marginLeft: 'auto', border: 'none', background: 'transparent', cursor: 'pointer', color: '#344054', display: 'flex' }}>
             <X size={18} />
           </button>
         </div>
@@ -147,7 +147,7 @@ export default function DataImportModal({
           <button
             onClick={downloadTemplate}
             disabled={!fields.length}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 13px', fontSize: 13, fontWeight: 600, color: '#334155', cursor: fields.length ? 'pointer' : 'not-allowed', fontFamily: 'inherit', marginBottom: 16 }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 13px', fontSize: 16, fontWeight: 600, color: '#334155', cursor: fields.length ? 'pointer' : 'not-allowed', fontFamily: 'inherit', marginBottom: 16 }}
           >
             <Download size={13} /> Download template
           </button>
@@ -159,10 +159,10 @@ export default function DataImportModal({
             style={{ border: '2px dashed #cbd5e1', borderRadius: 10, padding: '26px 18px', textAlign: 'center', cursor: 'pointer', background: '#fafbfc' }}
           >
             <Upload size={22} color="#94a3b8" style={{ marginBottom: 8 }} />
-            <div style={{ fontSize: 13.5, color: '#334155', fontWeight: 600 }}>
+            <div style={{ fontSize: 16.5, color: '#334155', fontWeight: 600 }}>
               {fileName || 'Click to choose a CSV or Excel file'}
             </div>
-            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>.csv, .xlsx or .xls</div>
+            <div style={{ fontSize: 15, color: '#475467', marginTop: 4 }}>.csv, .xlsx or .xls</div>
             <input
               ref={inputRef}
               type="file"
@@ -172,13 +172,13 @@ export default function DataImportModal({
             />
           </div>
 
-          {parsing && <p style={{ fontSize: 13, color: '#64748b', marginTop: 12 }}>Reading file…</p>}
+          {parsing && <p style={{ fontSize: 16, color: '#344054', marginTop: 12 }}>Reading file…</p>}
 
           {rows.length > 0 && !result && (
-            <div style={{ marginTop: 14, fontSize: 13, color: '#334155' }}>
+            <div style={{ marginTop: 14, fontSize: 16, color: '#334155' }}>
               <strong>{rows.length}</strong> row{rows.length === 1 ? '' : 's'} ready to import.
               {ignored.length > 0 && (
-                <div style={{ fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 7, padding: '8px 11px', marginTop: 10 }}>
+                <div style={{ fontSize: 15, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 7, padding: '8px 11px', marginTop: 10 }}>
                   These columns matched no {entityLabel} field and will be ignored: {ignored.join(', ')}
                 </div>
               )}
@@ -186,19 +186,19 @@ export default function DataImportModal({
           )}
 
           {error && (
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 7, padding: '9px 12px', marginTop: 12 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 15.5, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 7, padding: '9px 12px', marginTop: 12 }}>
               <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{error}</span>
             </div>
           )}
 
           {result && (
             <div style={{ marginTop: 14 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13.5, color: '#166534', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 7, padding: '10px 12px' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 16.5, color: '#166534', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 7, padding: '10px 12px' }}>
                 <CheckCircle2 size={15} />
                 <span><strong>{result.created}</strong> record{result.created === 1 ? '' : 's'} imported{result.failed ? `, ${result.failed} failed` : ''}.</span>
               </div>
               {result.errors?.length > 0 && (
-                <div style={{ marginTop: 10, maxHeight: 160, overflowY: 'auto', fontSize: 12, color: '#7c2d12', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 7, padding: '9px 11px' }}>
+                <div style={{ marginTop: 10, maxHeight: 160, overflowY: 'auto', fontSize: 15, color: '#7c2d12', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 7, padding: '9px 11px' }}>
                   {result.errors.map((e, i) => <div key={i} style={{ padding: '2px 0' }}>{e}</div>)}
                 </div>
               )}
@@ -207,14 +207,14 @@ export default function DataImportModal({
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 22px', borderTop: '1px solid #eef1f5' }}>
-          <button onClick={onClose} style={{ border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '9px 16px', fontSize: 13.5, fontWeight: 600, color: '#334155', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={onClose} style={{ border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '9px 16px', fontSize: 16.5, fontWeight: 600, color: '#334155', cursor: 'pointer', fontFamily: 'inherit' }}>
             {result ? 'Close' : 'Cancel'}
           </button>
           {!result && (
             <button
               onClick={runImport}
               disabled={!rows.length || importing}
-              style={{ border: 'none', background: rows.length && !importing ? '#e63329' : '#e2e8f0', color: rows.length && !importing ? '#fff' : '#94a3b8', borderRadius: 8, padding: '9px 18px', fontSize: 13.5, fontWeight: 600, cursor: rows.length && !importing ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}
+              style={{ border: 'none', background: rows.length && !importing ? '#e63329' : '#e2e8f0', color: rows.length && !importing ? '#fff' : '#94a3b8', borderRadius: 8, padding: '9px 18px', fontSize: 16.5, fontWeight: 600, cursor: rows.length && !importing ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}
             >
               {importing ? 'Importing…' : `Import ${rows.length || ''}`}
             </button>

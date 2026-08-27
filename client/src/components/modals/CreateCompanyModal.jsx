@@ -189,16 +189,11 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
                 <label><MaterialIcon>business</MaterialIcon>Company name</label>
                 <input type="text" value={form.name} onChange={e => set('name', e.target.value)} autoFocus placeholder="" />
               </div>
-              {duplicate && (
-                <div className="company-modal-alert field-span-2">
-                  <MaterialIcon>warning</MaterialIcon>
-                  <div>
-                    <p>Duplicate company detected</p>
-                    <span><strong>{duplicate.name}</strong> already exists with the same name, email, phone, or company URL.</span>
-                    <a href={`/companies/${duplicate.id}`} onClick={() => { reset(); onClose() }}>View existing company →</a>
-                  </div>
-                </div>
-              )}
+              {/* The duplicate warning used to render here, as a full-width cell
+                  between Company name and Industry — so the moment it appeared it
+                  shoved every field below it down the page. It now docks to the
+                  bottom of the form instead (see below); the detection itself is
+                  untouched. */}
               <div className="form-group">
                 <label><MaterialIcon>category</MaterialIcon>Industry</label>
                 <SearchableSelect materialIcons value={form.industry} onChange={v => set('industry', v)} options={industryOptions} placeholder="Select an industry" />
@@ -273,6 +268,26 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
           </section>
 
           {error && <p className="company-modal-error"><MaterialIcon>error</MaterialIcon>{error}</p>}
+
+          {/* Docked to the bottom of the form rather than inserted between the
+              fields. As the LAST element in the scroll area it can only ever
+              extend the end of the form — no field above it can move, so nothing
+              jumps when it appears or clears. position:sticky then keeps it on
+              screen while the user is still up at Company name / Company URL,
+              so it is visible immediately without having to scroll for it.
+              Same markup, same link, same detection. */}
+          {duplicate && (
+            <div className="company-duplicate-dock" role="status" aria-live="polite">
+              <div className="company-modal-alert">
+                <MaterialIcon>warning</MaterialIcon>
+                <div>
+                  <p>Duplicate company detected</p>
+                  <span><strong>{duplicate.name}</strong> already exists with the same name, email, phone, or company URL.</span>
+                  <a href={`/companies/${duplicate.id}`} onClick={() => { reset(); onClose() }}>View existing company →</a>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="modal-footer company-modal-footer">

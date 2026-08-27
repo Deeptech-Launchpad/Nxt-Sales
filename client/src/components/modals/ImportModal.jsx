@@ -321,7 +321,7 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
           </div>
           <div className="import-stepper" style={{ display: 'flex', gap: 16, marginTop: 6 }}>
             {STEPS.map((s, i) => (
-              <span key={s} className={`${i === step ? 'active' : ''}${i < step ? ' complete' : ''}`} style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4,
+              <span key={s} className={`${i === step ? 'active' : ''}${i < step ? ' complete' : ''}`} style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 4,
                 color: i === step ? '#fff' : 'rgba(255,255,255,0.55)', fontWeight: i === step ? 700 : 400 }}>
                 <b>{i < step ? <MaterialIcon>check</MaterialIcon> : i + 1}</b>{s}
                 {i < STEPS.length - 1 && <MaterialIcon>chevron_right</MaterialIcon>}
@@ -339,14 +339,14 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
               <div className="import-template-card" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginBottom: 20 }}>
                 <div className="import-template-copy">
                   <span className="import-template-icon"><MaterialIcon>description</MaterialIcon></span>
-                  <div><p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>Download a sample template first:</p>
-                  <p style={{ margin: '10px 0 0', fontSize: 11, color: '#94a3b8' }}>Template columns are generated from the current company fields.</p></div>
+                  <div><p style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 600, color: '#0f172a' }}>Download a sample template first:</p>
+                  <p style={{ margin: '10px 0 0', fontSize: 14, color: '#475467' }}>Template columns are generated from the current company fields.</p></div>
                 </div>
                 <div className="import-template-actions" style={{ display: 'flex', gap: 8 }}>
-                  <button onClick={() => buildTemplateFromFields(templateFields, 'csv',  'companies_import_template')} className="btn-modal-secondary" style={{ fontSize: 12, padding: '6px 12px' }} disabled={!templateFields.length}>
+                  <button onClick={() => buildTemplateFromFields(templateFields, 'csv',  'companies_import_template')} className="btn-modal-secondary" style={{ fontSize: 15, padding: '6px 12px' }} disabled={!templateFields.length}>
                     <MaterialIcon>download</MaterialIcon> CSV Template
                   </button>
-                  <button onClick={() => buildTemplateFromFields(templateFields, 'xlsx', 'companies_import_template')} className="btn-modal-secondary" style={{ fontSize: 12, padding: '6px 12px' }} disabled={!templateFields.length}>
+                  <button onClick={() => buildTemplateFromFields(templateFields, 'xlsx', 'companies_import_template')} className="btn-modal-secondary" style={{ fontSize: 15, padding: '6px 12px' }} disabled={!templateFields.length}>
                     <MaterialIcon>download</MaterialIcon> Excel Template
                   </button>
                 </div>
@@ -361,19 +361,19 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
                 style={{ border: `2px dashed ${dragging ? '#3b82f6' : '#cbd5e1'}`, borderRadius: 8, padding: '40px 20px', textAlign: 'center', cursor: 'pointer', background: dragging ? '#eff6ff' : '#f8fafc', transition: 'all .15s' }}
               >
                 <span className="import-upload-icon"><MaterialIcon>upload_file</MaterialIcon></span>
-                <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600, color: '#334155' }}>
+                <p style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 600, color: '#334155' }}>
                   Drag &amp; drop your file here, or <span style={{ color: '#3b82f6' }}>browse</span>
                 </p>
-                <p style={{ margin: 0, fontSize: 12, color: '#94a3b8' }}>Supported: .CSV, .XLSX (max 5MB)</p>
+                <p style={{ margin: 0, fontSize: 15, color: '#475467' }}>Supported: .CSV, .XLSX (max 5MB)</p>
                 <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }}
                   onChange={e => e.target.files[0] && handleFile(e.target.files[0])} />
               </div>
 
-              {loading && <p className="import-loading" style={{ textAlign: 'center', color: '#64748b', fontSize: 13, marginTop: 16 }}>Parsing file...</p>}
+              {loading && <p className="import-loading" style={{ textAlign: 'center', color: '#344054', fontSize: 16, marginTop: 16 }}>Parsing file...</p>}
               {error && (
                 <div className="import-error" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: 12, marginTop: 16 }}>
                   <AlertCircle size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: 1 }} />
-                  <span style={{ fontSize: 13, color: '#991b1b' }}>{error}</span>
+                  <span style={{ fontSize: 16, color: '#991b1b' }}>{error}</span>
                 </div>
               )}
             </div>
@@ -384,20 +384,20 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
             <div className="import-preview-step">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                 <FileText size={16} color="#64748b" />
-                <span style={{ fontSize: 13, color: '#64748b' }}>
+                <span style={{ fontSize: 16, color: '#344054' }}>
                   <strong style={{ color: '#0f172a' }}>{file?.name}</strong> — {rows.length} records found
                 </span>
               </div>
 
               {missingRows > 0 && (
-                <div style={{ display: 'flex', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: 10, marginBottom: 14, fontSize: 12, color: '#92400e' }}>
+                <div style={{ display: 'flex', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: 10, marginBottom: 14, fontSize: 15, color: '#92400e' }}>
                   <AlertCircle size={14} color="#d97706" style={{ flexShrink: 0 }} />
                   {missingRows} row(s) are missing a required {requiredKey} and will be skipped.
                 </div>
               )}
 
               {dropdownMismatchCount > 0 && (
-                <div style={{ display: 'flex', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: 10, marginBottom: 14, fontSize: 12, color: '#92400e' }}>
+                <div style={{ display: 'flex', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: 10, marginBottom: 14, fontSize: 15, color: '#92400e' }}>
                   <AlertCircle size={14} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
                   <span>
                     {dropdownMismatchCount} row(s) have an Industry, Country, or Lead Status value that doesn't match
@@ -409,18 +409,18 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
 
               {duplicateCount > 0 && (
                 <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 6, padding: 10, marginBottom: 14 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#854d0e', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, color: '#854d0e', marginBottom: 8 }}>
                     <AlertCircle size={14} color="#ca8a04" style={{ flexShrink: 0 }} />
                     {duplicateCount} row(s) match an existing company (by name, email, phone, or company URL) — highlighted below.
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" className="btn-modal-secondary" style={{ fontSize: 12, padding: '5px 10px' }} onClick={skipAllDuplicates}>
+                    <button type="button" className="btn-modal-secondary" style={{ fontSize: 15, padding: '5px 10px' }} onClick={skipAllDuplicates}>
                       Skip all duplicates
                     </button>
                     <button
                       type="button"
                       className="btn-modal-secondary"
-                      style={{ fontSize: 12, padding: '5px 10px' }}
+                      style={{ fontSize: 15, padding: '5px 10px' }}
                       onClick={removeSelectedDuplicates}
                       disabled={selectedForRemoval.size === 0}
                     >
@@ -431,20 +431,20 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
               )}
 
               <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 6, maxHeight: 360 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 15 }}>
                   <thead style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
                     <tr>
                       {duplicateCount > 0 && (
                         <th style={{ padding: '8px 6px', borderBottom: '1px solid #e2e8f0', width: 30 }} />
                       )}
-                      <th style={{ padding: '8px 10px', textAlign: 'left', color: '#64748b', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>#</th>
+                      <th style={{ padding: '8px 10px', textAlign: 'left', color: '#344054', fontWeight: 700, fontSize: 14, textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>#</th>
                       {previewCols.map(f => (
-                        <th key={f.key} style={{ padding: '8px 10px', textAlign: 'left', color: '#64748b', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
+                        <th key={f.key} style={{ padding: '8px 10px', textAlign: 'left', color: '#344054', fontWeight: 700, fontSize: 14, textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
                           {f.label}{f.key === requiredKey && <span style={{ color: '#ef4444' }}>*</span>}
                         </th>
                       ))}
                       {duplicateCount > 0 && (
-                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#64748b', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Status</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', color: '#344054', fontWeight: 700, fontSize: 14, textTransform: 'uppercase', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Status</th>
                       )}
                     </tr>
                   </thead>
@@ -466,14 +466,14 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
                               )}
                             </td>
                           )}
-                          <td style={{ padding: '7px 10px', color: '#94a3b8' }}>{i + 1}</td>
+                          <td style={{ padding: '7px 10px', color: '#475467' }}>{i + 1}</td>
                           {previewCols.map(f => {
                             const isDropdownField = importDropdownFieldKeys.has(f.key)
                             const mismatch = isDropdownField && !matchesDropdown(dropdownOptionsByField[f.key], r[f.key])
                             return (
                               <td key={f.key} title={mismatch ? `"${r[f.key]}" doesn't match any current ${f.label} option` : undefined}
                                 style={{ padding: '7px 10px', color: f.key === requiredKey && !r[f.key] ? '#ef4444' : (mismatch ? '#b45309' : '#334155'), background: mismatch ? '#fffbeb' : 'transparent', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {r[f.key] || (f.key === requiredKey ? '⚠ missing' : <span style={{ color: '#cbd5e1' }}>--</span>)}
+                                {r[f.key] || (f.key === requiredKey ? '⚠ missing' : <span style={{ color: '#667085' }}>--</span>)}
                                 {mismatch && ' ⚠'}
                               </td>
                             )
@@ -481,7 +481,7 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
                           {duplicateCount > 0 && (
                             <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                               {dup?.isDuplicate && (
-                                <span style={{ fontSize: 11, fontWeight: 600, color: '#a16207' }}>
+                                <span style={{ fontSize: 14, fontWeight: 600, color: '#a16207' }}>
                                   Duplicate of {dup.existing?.name}
                                 </span>
                               )}
@@ -495,7 +495,7 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
               </div>
 
               {error && (
-                <div style={{ display: 'flex', gap: 8, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: 10, marginTop: 12, fontSize: 12, color: '#991b1b' }}>
+                <div style={{ display: 'flex', gap: 8, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: 10, marginTop: 12, fontSize: 15, color: '#991b1b' }}>
                   <AlertCircle size={14} color="#ef4444" style={{ flexShrink: 0 }} /> {error}
                 </div>
               )}
@@ -506,38 +506,38 @@ export default function ImportModal({ isOpen, onClose, onSuccess }) {
           {step === 2 && result && (
             <div className="import-result-step" style={{ textAlign: 'center', padding: '20px 0' }}>
               <CheckCircle size={48} color="#16a34a" style={{ marginBottom: 16 }} />
-              <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0f172a', margin: '0 0 8px' }}>Import Complete</h3>
+              <h3 style={{ fontSize: 21, fontWeight: 700, color: '#0f172a', margin: '0 0 8px' }}>Import Complete</h3>
               <div style={{ display: 'flex', gap: 20, justifyContent: 'center', marginBottom: 24 }}>
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '12px 24px', textAlign: 'center' }}>
                   <div style={{ fontSize: 28, fontWeight: 700, color: '#16a34a' }}>{result.created}</div>
-                  <div style={{ fontSize: 12, color: '#64748b' }}>Companies created</div>
+                  <div style={{ fontSize: 15, color: '#344054' }}>Companies created</div>
                 </div>
                 {result.updated > 0 && (
                   <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '12px 24px', textAlign: 'center' }}>
                     <div style={{ fontSize: 28, fontWeight: 700, color: '#2563eb' }}>{result.updated}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>Fields updated</div>
+                    <div style={{ fontSize: 15, color: '#344054' }}>Fields updated</div>
                   </div>
                 )}
                 {result.unchanged > 0 && (
                   <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 24px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 28, fontWeight: 700, color: '#64748b' }}>{result.unchanged}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>Matched existing (no changes)</div>
+                    <div style={{ fontSize: 28, fontWeight: 700, color: '#344054' }}>{result.unchanged}</div>
+                    <div style={{ fontSize: 15, color: '#344054' }}>Matched existing (no changes)</div>
                   </div>
                 )}
                 {result.failed > 0 && (
                   <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 24px', textAlign: 'center' }}>
                     <div style={{ fontSize: 28, fontWeight: 700, color: '#ef4444' }}>{result.failed}</div>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>Failed</div>
+                    <div style={{ fontSize: 15, color: '#344054' }}>Failed</div>
                   </div>
                 )}
               </div>
               {result.messages?.length > 0 && (
-                <div style={{ textAlign: 'left', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: 12, fontSize: 12, color: '#1e40af', maxHeight: 120, overflowY: 'auto', marginBottom: result.errors?.length > 0 ? 10 : 0 }}>
+                <div style={{ textAlign: 'left', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: 12, fontSize: 15, color: '#1e40af', maxHeight: 120, overflowY: 'auto', marginBottom: result.errors?.length > 0 ? 10 : 0 }}>
                   {result.messages.map((m, i) => <div key={i}>{m}</div>)}
                 </div>
               )}
               {result.errors?.length > 0 && (
-                <div style={{ textAlign: 'left', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: 12, fontSize: 12, color: '#991b1b', maxHeight: 120, overflowY: 'auto' }}>
+                <div style={{ textAlign: 'left', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: 12, fontSize: 15, color: '#991b1b', maxHeight: 120, overflowY: 'auto' }}>
                   {result.errors.map((e, i) => <div key={i}>{e}</div>)}
                 </div>
               )}
