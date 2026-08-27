@@ -126,7 +126,7 @@ export default function Sidebar({ collapsed, onToggleCollapsed }) {
           <span className="nav-label" style={{ flex: 1 }}>Team Chat</span>
           {unreadChat > 0 && (
             <span style={{
-              background: '#e11d48', color: '#fff', fontSize: 10, fontWeight: 700,
+              background: '#e11d48', color: '#fff', fontSize: 13, fontWeight: 700,
               minWidth: 18, height: 18, borderRadius: 9, padding: '0 4px',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
@@ -180,7 +180,7 @@ export default function Sidebar({ collapsed, onToggleCollapsed }) {
         })}
 
         {query && filteredMenuStructure.length === 0 && (
-          <div style={{ padding: '10px 16px', fontSize: 12, color: '#94a3b8' }}>No matches</div>
+          <div style={{ padding: '10px 16px', fontSize: 15, color: '#475467' }}>No matches</div>
         )}
       </nav>
 
