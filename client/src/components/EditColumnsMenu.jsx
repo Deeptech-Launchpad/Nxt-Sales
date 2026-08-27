@@ -11,6 +11,10 @@ const MaterialIcon = ({ children }) => <span className="material-symbols-rounded
 // defaults to 'name' to match Companies.jsx's original hardcoded behavior
 // exactly, so extracting this introduces zero behavior change there.
 export default function EditColumnsMenu({ fields, visibleColumns, onSave, alwaysShownKey = 'name', defaultColumns }) {
+  // Accepts one key or several. Deals pins two columns (Company name, then
+  // Deal name), and a pinned column must not also appear as a toggle that
+  // does nothing when unticked.
+  const alwaysShown = new Set([].concat(alwaysShownKey))
   const [open, setOpen]   = useState(false)
   const [draft, setDraft] = useState(visibleColumns)
   const ref = useRef(null)
@@ -31,7 +35,7 @@ export default function EditColumnsMenu({ fields, visibleColumns, onSave, always
   })
   const save   = () => { onSave(draft); setOpen(false) }
 
-  const toggleable = fields.filter(f => f.key !== alwaysShownKey)
+  const toggleable = fields.filter(f => !alwaysShown.has(f.key))
   const orderedToggleable = [
     ...draft.map(key => toggleable.find(f => f.key === key)).filter(Boolean),
     ...toggleable.filter(f => !draft.includes(f.key)),

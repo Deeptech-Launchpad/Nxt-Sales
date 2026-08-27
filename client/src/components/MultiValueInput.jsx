@@ -30,7 +30,7 @@ export default function MultiValueInput({
 
   const baseInput = {
     flex: 1, minWidth: 0, padding: '9px 12px',
-    border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: 14,
+    border: '1.5px solid #cbd5e1', borderRadius: 6, fontSize: 17,
     color: '#0f172a', outline: 'none', boxSizing: 'border-box',
     fontFamily: 'inherit',
     ...(inputStyle || {}),
@@ -59,7 +59,7 @@ export default function MultiValueInput({
           )}
           {i === 0 ? (
             <span className="multi-value-primary" style={{
-              fontSize: 10, fontWeight: 600, color: '#0d9488',
+              fontSize: 13, fontWeight: 600, color: '#0d9488',
               background: '#f0fdfa', border: '1px solid #99f6e4',
               borderRadius: 4, padding: '2px 6px', whiteSpace: 'nowrap',
             }}>
@@ -89,7 +89,7 @@ export default function MultiValueInput({
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 5,
           background: 'none', border: 'none', cursor: 'pointer',
-          color: '#0d9488', fontSize: 12, fontWeight: 600, padding: '2px 0',
+          color: '#0d9488', fontSize: 15, fontWeight: 600, padding: '2px 0',
           width: 'fit-content', fontFamily: 'inherit',
         }}
       >

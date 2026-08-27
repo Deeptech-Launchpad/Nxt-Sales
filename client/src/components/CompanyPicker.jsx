@@ -43,7 +43,7 @@ export default function CompanyPicker({ value, label, onChange, placeholder = 'S
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: 6, background: '#fff',
-          fontSize: 14, color: value ? '#0f172a' : '#94a3b8', cursor: 'pointer',
+          fontSize: 17, color: value ? '#0f172a' : '#94a3b8', cursor: 'pointer',
           fontFamily: 'DM Sans, system-ui, sans-serif', textAlign: 'left',
         }}
       >
@@ -65,15 +65,15 @@ export default function CompanyPicker({ value, label, onChange, placeholder = 'S
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Search companies…"
-              style={{ border: 'none', outline: 'none', fontSize: 13, flex: 1, fontFamily: 'DM Sans, system-ui, sans-serif', color: '#0f172a' }}
+              style={{ border: 'none', outline: 'none', fontSize: 16, flex: 1, fontFamily: 'DM Sans, system-ui, sans-serif', color: '#0f172a' }}
             />
           </div>
 
           <div style={{ maxHeight: 220, overflowY: 'auto' }}>
             {loading ? (
-              <div style={{ padding: '12px 14px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>Searching…</div>
+              <div style={{ padding: '12px 14px', fontSize: 16, color: '#475467', textAlign: 'center' }}>Searching…</div>
             ) : results.length === 0 ? (
-              <div style={{ padding: '12px 14px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No companies found</div>
+              <div style={{ padding: '12px 14px', fontSize: 16, color: '#475467', textAlign: 'center' }}>No companies found</div>
             ) : results.map(c => (
               <div
                 key={c.id}
@@ -87,7 +87,7 @@ export default function CompanyPicker({ value, label, onChange, placeholder = 'S
                 onMouseEnter={e => { if (c.id !== value) e.currentTarget.style.background = '#f8fafc' }}
                 onMouseLeave={e => { if (c.id !== value) e.currentTarget.style.background = 'transparent' }}
               >
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#0f172a' }}>{c.name}</div>
+                <div style={{ fontSize: 16, fontWeight: 500, color: '#0f172a' }}>{c.name}</div>
               </div>
             ))}
           </div>

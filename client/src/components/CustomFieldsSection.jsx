@@ -18,7 +18,7 @@ export function extractCustomFieldValues(record) {
 
 const INPUT_STYLE = {
   width: '100%', padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: 6,
-  fontSize: 14, color: '#0f172a', fontFamily: 'DM Sans, system-ui, sans-serif',
+  fontSize: 17, color: '#0f172a', fontFamily: 'DM Sans, system-ui, sans-serif',
   outline: 'none', boxSizing: 'border-box',
 }
 
@@ -65,17 +65,17 @@ export default function CustomFieldsSection({ entity, values, onChange }) {
 
   return (
     <div style={{ borderTop: '1px solid #f1f5f9', marginTop: 4, paddingTop: 16 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#475467', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 12 }}>
         Custom Fields
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {fields.map(def => (
           <div key={def.id} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            <label style={{ fontSize: 14, fontWeight: 600, color: '#344054', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
               {def.label}{def.required && <span style={{ color: '#ef4444' }}> *</span>}
             </label>
             <FieldInput def={def} value={(values || {})[def.key]} onChange={v => onChange(def.key, v)} />
-            {def.helpText && <span style={{ fontSize: 11, color: '#94a3b8' }}>{def.helpText}</span>}
+            {def.helpText && <span style={{ fontSize: 14, color: '#475467' }}>{def.helpText}</span>}
           </div>
         ))}
       </div>

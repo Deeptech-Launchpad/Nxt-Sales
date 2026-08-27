@@ -54,7 +54,7 @@ export default function EmailConflictWarning({ emails, excludeCompanyId }) {
         display: 'flex', gap: 8, alignItems: 'flex-start',
         marginTop: 8, padding: '8px 10px',
         background: '#fffbeb', border: '1px solid #fde68a',
-        borderRadius: 6, fontSize: 11.5, color: '#92400e', lineHeight: 1.5,
+        borderRadius: 6, fontSize: 14.5, color: '#92400e', lineHeight: 1.5,
       }}
     >
       <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />

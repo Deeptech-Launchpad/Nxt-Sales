@@ -8,7 +8,7 @@ import CustomFieldsSection, { extractCustomFieldValues } from './CustomFieldsSec
 import { cleanList, editList } from '../utils/multiValue'
 
 // Compact input styling so MultiValueInput matches this modal's .er-input look.
-const ER_INPUT_STYLE = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 13 }
+const ER_INPUT_STYLE = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 16 }
 
 // ── Company edit fields ───────────────────────────────────────
 function CompanyForm({ data, onChange, companyId }) {
@@ -85,7 +85,7 @@ function CompanyForm({ data, onChange, companyId }) {
 function FormRow({ label, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      <label style={{ fontSize: 14, fontWeight: 600, color: '#344054', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
         {label}
       </label>
       {children}
@@ -158,12 +158,12 @@ export default function EditRecordModal({ id, record, onClose, onSaved }) {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '16px 20px', borderBottom: '1px solid #e2e8f0',
         }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>
+          <span style={{ fontSize: 18, fontWeight: 700, color: '#0f172a' }}>
             Edit Company
           </span>
           <button
             onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 4, borderRadius: 4 }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475467', padding: 4, borderRadius: 4 }}
           >
             <X size={18} />
           </button>
@@ -173,7 +173,7 @@ export default function EditRecordModal({ id, record, onClose, onSaved }) {
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
           <CompanyForm data={data} onChange={handleChange} companyId={id} />
           {error && (
-            <p style={{ color: '#ef4444', fontSize: 12, marginTop: 12, fontWeight: 500 }}>{error}</p>
+            <p style={{ color: '#ef4444', fontSize: 15, marginTop: 12, fontWeight: 500 }}>{error}</p>
           )}
         </div>
 
@@ -186,7 +186,7 @@ export default function EditRecordModal({ id, record, onClose, onSaved }) {
             onClick={onClose}
             style={{
               padding: '8px 16px', borderRadius: 7, border: '1px solid #e2e8f0',
-              background: '#fff', fontSize: 13, cursor: 'pointer', color: '#64748b', fontWeight: 500,
+              background: '#fff', fontSize: 16, cursor: 'pointer', color: '#344054', fontWeight: 500,
             }}
           >
             Cancel
@@ -197,7 +197,7 @@ export default function EditRecordModal({ id, record, onClose, onSaved }) {
             style={{
               padding: '8px 20px', borderRadius: 7, border: 'none',
               background: saving ? '#93c5fd' : '#3b82f6', color: '#fff',
-              fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
+              fontSize: 16, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer',
               display: 'flex', alignItems: 'center', gap: 7,
             }}
           >

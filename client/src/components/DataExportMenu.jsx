@@ -41,7 +41,7 @@ export default function DataExportMenu({ fetchRows, columns, filename, title, sh
       <button
         onClick={() => setOpen(o => !o)}
         disabled={exporting}
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#334155', cursor: exporting ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 8, padding: '8px 14px', fontSize: 16, fontWeight: 600, color: '#334155', cursor: exporting ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
       >
         <Upload size={13} /> {exporting ? 'Exporting…' : 'Export'} <ChevronDown size={11} />
       </button>
@@ -54,7 +54,7 @@ export default function DataExportMenu({ fetchRows, columns, filename, title, sh
             { label: 'Export as PDF',   fn: () => run(exportPDF, [title || `${filename} Export — NXT MarketingWiz`]) },
           ].map(item => (
             <button key={item.label} onClick={item.fn}
-              style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', textAlign: 'left', fontSize: 13, color: '#334155', cursor: 'pointer', fontFamily: 'DM Sans,system-ui,sans-serif' }}
+              style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', textAlign: 'left', fontSize: 16, color: '#334155', cursor: 'pointer', fontFamily: 'DM Sans,system-ui,sans-serif' }}
               onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >

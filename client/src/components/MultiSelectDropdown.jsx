@@ -29,7 +29,7 @@ export default function MultiSelectDropdown({ value = [], onChange, options, pla
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '9px 12px', border: '1.5px solid #cbd5e1', borderRadius: 6, background: '#fff',
-          fontSize: 14, color: selectedLabels.length ? '#0f172a' : '#94a3b8', cursor: 'pointer',
+          fontSize: 17, color: selectedLabels.length ? '#0f172a' : '#94a3b8', cursor: 'pointer',
           fontFamily: 'DM Sans, system-ui, sans-serif', textAlign: 'left',
         }}
       >
@@ -46,9 +46,9 @@ export default function MultiSelectDropdown({ value = [], onChange, options, pla
           boxShadow: '0 8px 24px rgba(0,0,0,0.14)', maxHeight: 220, overflowY: 'auto',
         }}>
           {options.length === 0 ? (
-            <div style={{ padding: '12px 14px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No options yet</div>
+            <div style={{ padding: '12px 14px', fontSize: 16, color: '#475467', textAlign: 'center' }}>No options yet</div>
           ) : options.map(opt => (
-            <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', cursor: 'pointer', fontSize: 13, fontFamily: 'DM Sans, system-ui, sans-serif' }}>
+            <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', cursor: 'pointer', fontSize: 16, fontFamily: 'DM Sans, system-ui, sans-serif' }}>
               <input type="checkbox" checked={value.includes(opt.value)} onChange={() => toggle(opt.value)} />
               {opt.label}
             </label>

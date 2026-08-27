@@ -116,7 +116,7 @@ export default function RichTextEditor({ value, onChange, minHeight = 300, place
           onChange={e => { lastEmitted.current = e.target.value; onChange(e.target.value) }}
           style={{
             width: '100%', minHeight, border: 'none', outline: 'none', padding: 14,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 15.5,
             lineHeight: 1.6, resize: 'vertical', color: '#0f172a',
           }}
         />
@@ -129,7 +129,7 @@ export default function RichTextEditor({ value, onChange, minHeight = 300, place
           onBlur={emit}
           data-placeholder={placeholder}
           style={{
-            minHeight, padding: 14, outline: 'none', fontSize: 14, lineHeight: 1.6,
+            minHeight, padding: 14, outline: 'none', fontSize: 17, lineHeight: 1.6,
             color: '#0f172a', fontFamily: 'Verdana, Arial, sans-serif', overflowY: 'auto',
             maxHeight: 520,
           }}

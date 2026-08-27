@@ -22,7 +22,7 @@ export default function AiUsagePanel() {
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-        <p style={{ flex: 1, minWidth: 220, fontSize: 13, lineHeight: 1.55, color: 'var(--et-txt-s)', margin: 0 }}>
+        <p style={{ flex: 1, minWidth: 220, fontSize: 16, lineHeight: 1.55, color: 'var(--et-txt-s)', margin: 0 }}>
           Token consumption and estimated cost across every AI feature — Email AI, Deliverability and
           Customer Intelligence — with charts and per-feature breakdowns.
         </p>

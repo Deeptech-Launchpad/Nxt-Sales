@@ -101,16 +101,16 @@ function renderLine(line, key) {
       style={{
         display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 5,
         padding: '1.5px 0', paddingLeft: Math.min(indent, 8) * 2 + (bullet ? 10 : 0),
-        fontSize: 13, color: '#0f172a', lineHeight: 1.55,
+        fontSize: 16, color: '#0f172a', lineHeight: 1.55,
       }}
     >
-      {bullet && <span style={{ color: '#94a3b8', marginLeft: -10 }}>•</span>}
+      {bullet && <span style={{ color: '#475467', marginLeft: -10 }}>•</span>}
       {fieldMatch && <strong style={{ color: '#334155' }}>{fieldMatch[0]}</strong>}
       {pieces.map((p, i) => {
         const style = LABEL_STYLES[p]
         if (style) {
           return (
-            <span key={i} style={{ ...style, fontSize: 9, fontWeight: 700, borderRadius: 3, padding: '1px 5px', whiteSpace: 'nowrap' }}>
+            <span key={i} style={{ ...style, fontSize: 12, fontWeight: 700, borderRadius: 3, padding: '1px 5px', whiteSpace: 'nowrap' }}>
               {p.slice(1, -1)}
             </span>
           )
@@ -171,7 +171,7 @@ export default function CompanyIntelligence({ company }) {
             style={{
               marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5,
               padding: '5px 10px', borderRadius: 6, border: '1px solid #e2e8f0',
-              background: '#fff', color: '#475569', fontSize: 12, fontWeight: 600,
+              background: '#fff', color: '#475569', fontSize: 15, fontWeight: 600,
               cursor: 'pointer', fontFamily: 'inherit',
             }}
           >
@@ -187,7 +187,7 @@ export default function CompanyIntelligence({ company }) {
             padding: '5px 12px', borderRadius: 6, border: 'none', fontFamily: 'inherit',
             background: loading || !hasKey ? '#e2e8f0' : '#7c3aed',
             color: loading || !hasKey ? '#94a3b8' : '#fff',
-            fontSize: 12, fontWeight: 600, cursor: loading || !hasKey ? 'not-allowed' : 'pointer',
+            fontSize: 15, fontWeight: 600, cursor: loading || !hasKey ? 'not-allowed' : 'pointer',
           }}
         >
           {loading
@@ -200,27 +200,27 @@ export default function CompanyIntelligence({ company }) {
 
       <div style={{ padding: '12px 16px' }}>
         {!hasKey && (
-          <div style={{ fontSize: 12.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '9px 12px' }}>
+          <div style={{ fontSize: 15.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '9px 12px' }}>
             No AI API key configured. Add your Gemini API key once in <strong>Marketing → Email → Settings → AI API Key</strong> — this section reuses that same configuration.
           </div>
         )}
 
         {error && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '9px 12px', marginBottom: result ? 12 : 0 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 15.5, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '9px 12px', marginBottom: result ? 12 : 0 }}>
             <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
             <span>{error}</span>
           </div>
         )}
 
         {loading && (
-          <div style={{ fontSize: 12.5, color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ fontSize: 15.5, color: '#344054', display: 'flex', alignItems: 'center', gap: 8 }}>
             <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
             Reading the prospect's site and synced email, then building the sheet…
           </div>
         )}
 
         {hasKey && !result && !error && !loading && (
-          <div style={{ fontSize: 12.5, color: '#64748b' }}>
+          <div style={{ fontSize: 15.5, color: '#344054' }}>
             Build a one-page <strong>Sales Pitch Intelligence Sheet</strong> for this company — company snapshot,
             detected CMS/platform, enrichment opportunities, customer benefits, relationship context from synced
             email, and role-based call talking points. Reads in under a minute before you dial.
@@ -236,7 +236,7 @@ export default function CompanyIntelligence({ company }) {
               <span
                 title={src?.pageFetched ? src.pageUrl : (src?.pageReason || 'Page not fetched')}
                 style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600,
+                  display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 14, fontWeight: 600,
                   borderRadius: 5, padding: '3px 8px',
                   color: src?.pageFetched ? '#1d4ed8' : '#94a3b8',
                   background: src?.pageFetched ? '#eff6ff' : '#f8fafc',
@@ -248,7 +248,7 @@ export default function CompanyIntelligence({ company }) {
               </span>
               <span
                 style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600,
+                  display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 14, fontWeight: 600,
                   borderRadius: 5, padding: '3px 8px',
                   color: src?.emailThreads ? '#c2410c' : '#94a3b8',
                   background: src?.emailThreads ? '#fff7ed' : '#f8fafc',
@@ -267,7 +267,7 @@ export default function CompanyIntelligence({ company }) {
                 <div key={bi} style={{ borderTop: bi === 0 ? 'none' : '1px solid #f1f5f9' }}>
                   {b.heading && (
                     <div style={{
-                      fontSize: 11.5, fontWeight: 700, color: '#334155', letterSpacing: '.4px',
+                      fontSize: 14.5, fontWeight: 700, color: '#334155', letterSpacing: '.4px',
                       textTransform: 'uppercase', padding: '8px 13px', background: '#f8fafc',
                       borderBottom: '1px solid #f1f5f9',
                     }}>
@@ -281,7 +281,7 @@ export default function CompanyIntelligence({ company }) {
               ))}
             </div>
 
-            <div style={{ fontSize: 11, color: '#94a3b8', borderTop: '1px solid #f1f5f9', paddingTop: 8, marginTop: 10 }}>
+            <div style={{ fontSize: 14, color: '#475467', borderTop: '1px solid #f1f5f9', paddingTop: 8, marginTop: 10 }}>
               Generated {fmtGeneratedAt(result.generatedAt)} ({result.model}) from CRM data
               {src?.pageFetched ? `, a live read of ${src.pageUrl}` : ''}
               {src?.emailThreads ? ', and synced Gmail history' : ''}.
