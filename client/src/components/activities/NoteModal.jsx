@@ -51,7 +51,7 @@ export default function NoteModal({ isOpen = true, activity, companyId, onClose,
             className="act-input"
             style={{
               width: '100%', padding: '9px 12px', marginBottom: 10,
-              border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 14,
+              border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 17,
               color: '#0f172a', outline: 'none', boxSizing: 'border-box',
               fontFamily: 'inherit',
             }}
@@ -75,11 +75,11 @@ export default function NoteModal({ isOpen = true, activity, companyId, onClose,
             rows={5}
             autoFocus
           />
-          {error && <p style={{ color: '#ef4444', fontSize: 12, marginTop: 6, fontWeight: 500 }}>{error}</p>}
+          {error && <p style={{ color: '#ef4444', fontSize: 15, marginTop: 6, fontWeight: 500 }}>{error}</p>}
 
           <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
             <input type="checkbox" id="followup" style={{ width: 14, height: 14, accentColor: '#0d9488' }} />
-            <label htmlFor="followup" style={{ fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+            <label htmlFor="followup" style={{ fontSize: 16, color: '#334155', cursor: 'pointer' }}>
               Create a follow-up task
             </label>
           </div>
@@ -87,7 +87,7 @@ export default function NoteModal({ isOpen = true, activity, companyId, onClose,
 
         <div className="act-popup-footer">
           <div className="act-popup-footer-left">
-            <span style={{ fontSize: 12, color: '#94a3b8' }}>Associated with this company</span>
+            <span style={{ fontSize: 15, color: '#475467' }}>Associated with this company</span>
           </div>
           <div className="act-popup-footer-right">
             <button className="btn-act-cancel" onClick={onClose}>Cancel</button>

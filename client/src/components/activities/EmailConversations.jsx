@@ -194,7 +194,7 @@ export default function EmailConversations({ companyId, companyName, refreshKey 
           </span>
         )}
         {data && (
-          <span className="ec-toolbar-msg" style={{ marginLeft: 'auto', color: '#94a3b8' }}>
+          <span className="ec-toolbar-msg" style={{ marginLeft: 'auto', color: '#475467' }}>
             {data.totalMessages} email{data.totalMessages === 1 ? '' : 's'} across {groups.length} address{groups.length === 1 ? '' : 'es'}
           </span>
         )}
@@ -206,7 +206,7 @@ export default function EmailConversations({ companyId, companyName, refreshKey 
         {/* An address that is also the connected mailbox can't identify a
             counterpart, so it is excluded rather than matching everything. */}
         {ignoredOwn.length > 0 && (
-          <div style={{ margin: '8px 14px', padding: '8px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 11.5, color: '#92400e' }}>
+          <div style={{ margin: '8px 14px', padding: '8px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 14.5, color: '#92400e' }}>
             <strong>{ignoredOwn.join(', ')}</strong> {ignoredOwn.length === 1 ? 'is' : 'are'} your own connected Gmail address, so {ignoredOwn.length === 1 ? 'it is' : 'they are'} not used to match conversations. Save the client's address on this company instead.
           </div>
         )}

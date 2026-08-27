@@ -22,7 +22,7 @@ function ReachBadge({ status }) {
   if (!status) return null
   return (
     <span style={{
-      fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 99,
+      fontSize: 13.5, fontWeight: 700, padding: '2px 7px', borderRadius: 99,
       background: s.bg, color: s.color, border: `1px solid ${s.border}`, whiteSpace: 'nowrap',
     }}>
       {s.text}
@@ -81,13 +81,13 @@ export default function CompanyCalls({ companyId }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-        <span style={{ fontSize: 13, color: '#64748b' }}>
+        <span style={{ fontSize: 16, color: '#344054' }}>
           {loading ? 'Loading calls…' : `${total} call${total === 1 ? '' : 's'} for this company`}
         </span>
         <button
           onClick={load}
           disabled={loading}
-          style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, padding: '6px 11px', fontSize: 12.5, fontWeight: 600, color: '#334155', cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
+          style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, padding: '6px 11px', fontSize: 15.5, fontWeight: 600, color: '#334155', cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}
         >
           {loading ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={12} />}
           Refresh
@@ -95,7 +95,7 @@ export default function CompanyCalls({ companyId }) {
       </div>
 
       {error && (
-        <div style={{ fontSize: 12.5, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 7, padding: '9px 12px', marginBottom: 12 }}>
+        <div style={{ fontSize: 15.5, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 7, padding: '9px 12px', marginBottom: 12 }}>
           {error}
         </div>
       )}
@@ -110,9 +110,9 @@ export default function CompanyCalls({ companyId }) {
         <div key={g.number} style={{ border: '1px solid #eef1f5', borderRadius: 9, marginBottom: 12, overflow: 'hidden' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 13px', background: '#fafbfc', borderBottom: g.previous.length ? '1px solid #eef1f5' : 'none', flexWrap: 'wrap' }}>
             <Phone size={13} color="#64748b" />
-            <span style={{ fontSize: 13.5, fontWeight: 600, color: '#0f172a' }}>{g.number}</span>
+            <span style={{ fontSize: 16.5, fontWeight: 600, color: '#0f172a' }}>{g.number}</span>
             <ReachBadge status={g.latest.reachStatus} />
-            <span style={{ fontSize: 11.5, color: '#94a3b8', marginLeft: 'auto' }}>
+            <span style={{ fontSize: 14.5, color: '#475467', marginLeft: 'auto' }}>
               {g.calls.length} call{g.calls.length === 1 ? '' : 's'}
             </span>
           </div>
@@ -122,10 +122,10 @@ export default function CompanyCalls({ companyId }) {
             {g.latest.direction === 'inbound'
               ? <PhoneIncoming size={13} color="#8b5cf6" />
               : <PhoneOutgoing size={13} color="#3b82f6" />}
-            <span style={{ fontSize: 13, color: '#0f172a', fontWeight: 500 }}>{fmtDateTime(g.latest.callDate)}</span>
-            <span style={{ fontSize: 12.5, color: '#64748b' }}>{g.latest.status || '—'}</span>
-            <span style={{ fontSize: 12.5, color: '#64748b' }}>{fmtDuration(g.latest.duration)}</span>
-            {g.latest.agentName && <span style={{ fontSize: 12.5, color: '#94a3b8' }}>· {g.latest.agentName}</span>}
+            <span style={{ fontSize: 16, color: '#0f172a', fontWeight: 500 }}>{fmtDateTime(g.latest.callDate)}</span>
+            <span style={{ fontSize: 15.5, color: '#344054' }}>{g.latest.status || '—'}</span>
+            <span style={{ fontSize: 15.5, color: '#344054' }}>{fmtDuration(g.latest.duration)}</span>
+            {g.latest.agentName && <span style={{ fontSize: 15.5, color: '#475467' }}>· {g.latest.agentName}</span>}
             {g.latest.recordingUrl && (
               <audio controls src={g.latest.recordingUrl} style={{ height: 30, marginLeft: 'auto', maxWidth: 260 }} />
             )}
@@ -134,18 +134,18 @@ export default function CompanyCalls({ companyId }) {
           {/* Previous calls — only present for an AR (Already Reached) contact */}
           {g.previous.length > 0 && (
             <div style={{ borderTop: '1px dashed #e2e8f0', background: '#fcfcfd' }}>
-              <div style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.5px', padding: '8px 13px 4px' }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: '#475467', textTransform: 'uppercase', letterSpacing: '.5px', padding: '8px 13px 4px' }}>
                 Previous calls ({g.previous.length})
               </div>
               {g.previous.map(c => (
-                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 13px', fontSize: 12.5, color: '#475569', flexWrap: 'wrap' }}>
+                <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 13px', fontSize: 15.5, color: '#475569', flexWrap: 'wrap' }}>
                   {c.direction === 'inbound'
                     ? <PhoneIncoming size={12} color="#a78bfa" />
                     : <PhoneOutgoing size={12} color="#93c5fd" />}
                   <span>{fmtDateTime(c.callDate)}</span>
                   <span>{c.status || '—'}</span>
                   <span>{fmtDuration(c.duration)}</span>
-                  {c.agentName && <span style={{ color: '#94a3b8' }}>· {c.agentName}</span>}
+                  {c.agentName && <span style={{ color: '#475467' }}>· {c.agentName}</span>}
                   {c.recordingUrl && (
                     <audio controls src={c.recordingUrl} style={{ height: 26, marginLeft: 'auto', maxWidth: 220 }} />
                   )}

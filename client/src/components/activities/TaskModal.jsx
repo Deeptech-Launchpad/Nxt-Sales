@@ -154,7 +154,7 @@ export default function TaskModal({ isOpen = true, activity, companyId, contactN
                 </label>
               </div>
               {autoCompleteOverdue && (
-                <p className="field-span-2" style={{ margin: '-4px 0 0', fontSize: 9.5, color: '#94a3b8', lineHeight: 1.5 }}>
+                <p className="field-span-2" style={{ margin: '-4px 0 0', fontSize: 12.5, color: '#475467', lineHeight: 1.5 }}>
                   This task will be marked completed automatically after its due date/time passes. Off by default — only applies because you turned it on for this task.
                 </p>
               )}

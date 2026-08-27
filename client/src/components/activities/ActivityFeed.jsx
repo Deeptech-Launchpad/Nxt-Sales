@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   FileText, Mail, Phone, Calendar, CheckSquare,
   Search, SlidersHorizontal, AlertTriangle, ChevronDown, ChevronRight,
-  Video, ArrowUpRight, ArrowDownLeft, ExternalLink, RefreshCw, Eye, Play,
+  Video, ArrowUpRight, ArrowDownLeft, ExternalLink, RefreshCw, Eye, EyeOff, Play,
   Pencil, Trash2,
 } from 'lucide-react'
 import api from '../../api/client'
@@ -128,9 +128,21 @@ function OpenTracking({ act, showHistory = false }) {
   if (!act || act.direction !== 'outbound') return null
   const count = act.openCount || 0
 
+  // No trackingId means this email never carried a tracking pixel — it was
+  // written in Gmail and pulled in by sync, or sent before tracking existed.
+  // Saying "Not opened yet" about it states as fact something we have no way
+  // of knowing; it is untracked, which is a different thing.
+  if (!act.trackingId) {
+    return (
+      <div className="af-meta" style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#667085' }}>
+        <EyeOff size={12} /> Not tracked
+      </div>
+    )
+  }
+
   if (count === 0) {
     return (
-      <div className="af-meta" style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#94a3b8' }}>
+      <div className="af-meta" style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#475467' }}>
         <Eye size={12} /> Not opened yet
       </div>
     )
@@ -141,23 +153,23 @@ function OpenTracking({ act, showHistory = false }) {
   return (
     <div style={{ marginTop: 4 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#16a34a' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 14, fontWeight: 600, color: '#16a34a' }}>
           <Eye size={12} /> Opened {count}×
         </span>
         {act.firstOpenedAt && (
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>first {fmtDateTime(act.firstOpenedAt)}</span>
+          <span style={{ fontSize: 14, color: '#475467' }}>first {fmtDateTime(act.firstOpenedAt)}</span>
         )}
         {act.lastOpenedAt && count > 1 && (
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>· last {fmtDateTime(act.lastOpenedAt)}</span>
+          <span style={{ fontSize: 14, color: '#475467' }}>· last {fmtDateTime(act.lastOpenedAt)}</span>
         )}
       </div>
       {showHistory && history.length > 0 && (
         <div style={{ marginTop: 6, paddingLeft: 6, borderLeft: '2px solid #e2e8f0' }}>
-          <div style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px', margin: '0 0 3px 8px' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#475467', textTransform: 'uppercase', letterSpacing: '0.4px', margin: '0 0 3px 8px' }}>
             Open history
           </div>
           {history.slice().reverse().map((h, i) => (
-            <div key={i} style={{ fontSize: 11, color: '#64748b', padding: '2px 0 2px 8px' }}>
+            <div key={i} style={{ fontSize: 14, color: '#344054', padding: '2px 0 2px 8px' }}>
               {fmtDateTime(h.at)}{h.ip ? ` · ${h.ip}` : ''}
             </div>
           ))}
@@ -178,7 +190,7 @@ function EmailStatusBadge({ status }) {
   const c = colors[status] || { bg: '#f8fafc', text: '#64748b' }
   return (
     <span style={{
-      fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4,
+      fontSize: 13, fontWeight: 600, padding: '2px 6px', borderRadius: 4,
       background: c.bg, color: c.text, textTransform: 'uppercase', letterSpacing: '0.5px',
     }}>
       {status}
@@ -205,29 +217,29 @@ function ThreadMessage({ msg, isLast }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
           {open
-            ? <ChevronDown size={12} style={{ color: '#94a3b8', flexShrink: 0 }} />
-            : <ChevronRight size={12} style={{ color: '#94a3b8', flexShrink: 0 }} />}
+            ? <ChevronDown size={12} style={{ color: '#475467', flexShrink: 0 }} />
+            : <ChevronRight size={12} style={{ color: '#475467', flexShrink: 0 }} />}
           {isInbound
             ? <ArrowDownLeft size={12} style={{ color: '#8b5cf6', flexShrink: 0 }} />
             : <ArrowUpRight  size={12} style={{ color: '#3b82f6', flexShrink: 0 }} />}
           <span style={{
-            fontSize: 12, fontWeight: 500,
+            fontSize: 15, fontWeight: 500,
             color: isInbound ? '#8b5cf6' : '#3b82f6',
             flexShrink: 0,
           }}>
             {isInbound ? 'From:' : 'To:'}
           </span>
-          <span style={{ fontSize: 12, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 15, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {isInbound ? msg.fromEmail : msg.toEmail}
           </span>
           <EmailStatusBadge status={msg.emailStatus} />
           {!isInbound && msg.openCount > 0 && (
-            <span title={`Opened ${msg.openCount}×`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 600, color: '#16a34a', flexShrink: 0 }}>
+            <span title={`Opened ${msg.openCount}×`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 14, fontWeight: 600, color: '#16a34a', flexShrink: 0 }}>
               <Eye size={11} /> {msg.openCount}
             </span>
           )}
         </div>
-        <span style={{ fontSize: 11, color: '#94a3b8', flexShrink: 0 }}>
+        <span style={{ fontSize: 14, color: '#475467', flexShrink: 0 }}>
           {formatDate(msg.createdAt)} {formatTime(msg.createdAt)}
         </span>
       </div>
@@ -235,7 +247,7 @@ function ThreadMessage({ msg, isLast }) {
       {/* Message body */}
       {open && msg.body && (
         <div style={{
-          marginTop: 8, fontSize: 13, color: '#374151',
+          marginTop: 8, fontSize: 16, color: '#374151',
           whiteSpace: 'pre-wrap', lineHeight: 1.6,
           paddingLeft: 20,
           maxHeight: 200, overflowY: 'auto',
@@ -244,7 +256,7 @@ function ThreadMessage({ msg, isLast }) {
         </div>
       )}
       {open && !msg.body && (
-        <div style={{ marginTop: 6, fontSize: 12, color: '#94a3b8', paddingLeft: 20 }}>
+        <div style={{ marginTop: 6, fontSize: 15, color: '#475467', paddingLeft: 20 }}>
           (no message body)
         </div>
       )}
@@ -283,14 +295,14 @@ function EmailThreadCard({ thread }) {
           <div className="af-header">
             <div className="af-title" style={{ alignItems: 'flex-start' }}>
               {expanded
-                ? <ChevronDown  size={13} style={{ color: '#94a3b8', flexShrink: 0, marginTop: 2 }} />
-                : <ChevronRight size={13} style={{ color: '#94a3b8', flexShrink: 0, marginTop: 2 }} />}
+                ? <ChevronDown  size={13} style={{ color: '#475467', flexShrink: 0, marginTop: 2 }} />
+                : <ChevronRight size={13} style={{ color: '#475467', flexShrink: 0, marginTop: 2 }} />}
               <span style={{ fontWeight: 600, color: '#0f172a' }}>{subject}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
               <span className="af-time">{formatDate(latestDate)} at {formatTime(latestDate)}</span>
               {latest.user?.name && (
-                <span style={{ fontSize: 11, color: '#94a3b8' }}>{latest.user.name}</span>
+                <span style={{ fontSize: 14, color: '#475467' }}>{latest.user.name}</span>
               )}
             </div>
           </div>
@@ -298,18 +310,18 @@ function EmailThreadCard({ thread }) {
           {/* Thread summary line */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
             <span style={{
-              fontSize: 11, fontWeight: 600, color: '#64748b',
+              fontSize: 14, fontWeight: 600, color: '#344054',
               background: '#f1f5f9', padding: '2px 7px', borderRadius: 10,
             }}>
               {count} message{count !== 1 ? 's' : ''}
             </span>
             {outbound > 0 && (
-              <span style={{ fontSize: 11, color: '#3b82f6', display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontSize: 14, color: '#3b82f6', display: 'flex', alignItems: 'center', gap: 3 }}>
                 <ArrowUpRight size={11} /> {outbound} sent
               </span>
             )}
             {inbound > 0 && (
-              <span style={{ fontSize: 11, color: '#8b5cf6', display: 'flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontSize: 14, color: '#8b5cf6', display: 'flex', alignItems: 'center', gap: 3 }}>
                 <ArrowDownLeft size={11} /> {inbound} received
               </span>
             )}
@@ -322,7 +334,7 @@ function EmailThreadCard({ thread }) {
           {/* Preview of latest message when collapsed */}
           {!expanded && latest.body && (
             <div style={{
-              marginTop: 5, fontSize: 12, color: '#64748b',
+              marginTop: 5, fontSize: 15, color: '#344054',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               maxWidth: '100%',
             }}>
@@ -379,7 +391,7 @@ function ActivityCard({ act, onEditNote, onDeleteNote, onEditTask }) {
             <a href={act.recordingUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5,
-                fontSize: 12, color: '#16a34a', fontWeight: 500,
+                fontSize: 15, color: '#16a34a', fontWeight: 500,
                 textDecoration: 'none', padding: '3px 8px',
                 background: '#f0fdf4', borderRadius: 4, width: 'fit-content',
               }}>
@@ -401,7 +413,7 @@ function ActivityCard({ act, onEditNote, onDeleteNote, onEditTask }) {
             <a href={act.meetLink} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5,
-                fontSize: 12, color: '#1a73e8', fontWeight: 500,
+                fontSize: 15, color: '#1a73e8', fontWeight: 500,
                 textDecoration: 'none', padding: '3px 8px',
                 background: '#eff6ff', borderRadius: 4, width: 'fit-content',
               }}>
@@ -432,8 +444,8 @@ function ActivityCard({ act, onEditNote, onDeleteNote, onEditTask }) {
         <div className="af-header">
           <div className="af-title">
             {expanded
-              ? <ChevronDown  size={13} style={{ color: '#94a3b8', flexShrink: 0 }} />
-              : <ChevronRight size={13} style={{ color: '#94a3b8', flexShrink: 0 }} />}
+              ? <ChevronDown  size={13} style={{ color: '#475467', flexShrink: 0 }} />
+              : <ChevronRight size={13} style={{ color: '#475467', flexShrink: 0 }} />}
             {act.title || act.type}
             {isOverdue && <span className="af-badge overdue" style={{ marginLeft: 6 }}><AlertTriangle size={10} /> Overdue</span>}
             {isDone    && <span className="af-badge done"    style={{ marginLeft: 6 }}>✓ Done</span>}
@@ -469,11 +481,11 @@ function ActivityCard({ act, onEditNote, onDeleteNote, onEditTask }) {
               </div>
             )}
             <span className="af-time">{formatDate(act.createdAt)} at {formatTime(act.createdAt)}</span>
-            {act.user?.name && <span style={{ fontSize: 11, color: '#94a3b8' }}>{act.user.name}</span>}
+            {act.user?.name && <span style={{ fontSize: 14, color: '#475467' }}>{act.user.name}</span>}
           </div>
         </div>
         {subtitle && (
-          <div style={{ fontSize: 12, color: '#475569', marginBottom: 3 }}>{subtitle}</div>
+          <div style={{ fontSize: 15, color: '#475569', marginBottom: 3 }}>{subtitle}</div>
         )}
         {renderMeta()}
         {act.type === 'email' && <OpenTracking act={act} showHistory={expanded} />}
@@ -481,7 +493,7 @@ function ActivityCard({ act, onEditNote, onDeleteNote, onEditTask }) {
           <div className="af-body">{act.body}</div>
         )}
         {expanded && act.type === 'meeting' && act.participants && (
-          <div className="af-body" style={{ color: '#64748b' }}>Participants: {act.participants}</div>
+          <div className="af-body" style={{ color: '#344054' }}>Participants: {act.participants}</div>
         )}
       </div>
     </div>
@@ -580,7 +592,7 @@ export default function ActivityFeed({ companyId, companyName, contactEmail, onA
           <button className="btn-af-action"><SlidersHorizontal size={12} /> Filters</button>
         </div>
         <div className="af-toolbar-right">
-          <span style={{ fontSize: 12, color: '#64748b', cursor: 'pointer' }}>Collapse all ▾</span>
+          <span style={{ fontSize: 15, color: '#344054', cursor: 'pointer' }}>Collapse all ▾</span>
           {actions.map(a => (
             <button
               key={a.label}

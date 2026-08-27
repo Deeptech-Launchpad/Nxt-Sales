@@ -183,8 +183,8 @@ export default function MeetingModal({
             <div style={{ width: 64, height: 64, background: '#dcfce7', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
               <CheckCircle size={32} color="#16a34a" />
             </div>
-            <h3 style={{ margin: '0 0 8px', fontSize: 17, color: '#0f172a', fontWeight: 700 }}>Meeting scheduled!</h3>
-            <p style={{ color: '#64748b', fontSize: 13, marginBottom: 24, lineHeight: 1.6 }}>
+            <h3 style={{ margin: '0 0 8px', fontSize: 20, color: '#0f172a', fontWeight: 700 }}>Meeting scheduled!</h3>
+            <p style={{ color: '#344054', fontSize: 16, marginBottom: 24, lineHeight: 1.6 }}>
               Google Calendar event created. Invitations sent to all attendees.
             </p>
             <a
@@ -194,12 +194,12 @@ export default function MeetingModal({
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
                 background: '#1a73e8', color: '#fff', padding: '11px 22px',
-                borderRadius: 8, textDecoration: 'none', fontSize: 14, fontWeight: 600,
+                borderRadius: 8, textDecoration: 'none', fontSize: 17, fontWeight: 600,
               }}
             >
               <Video size={16} /> Join Google Meet <ExternalLink size={13} />
             </a>
-            <div style={{ marginTop: 12, fontSize: 11, color: '#94a3b8', wordBreak: 'break-all' }}>{savedMeetLink}</div>
+            <div style={{ marginTop: 12, fontSize: 14, color: '#475467', wordBreak: 'break-all' }}>{savedMeetLink}</div>
           </div>
           <div className="act-popup-footer">
             <div className="act-popup-footer-right" style={{ marginLeft: 'auto' }}>
@@ -342,7 +342,7 @@ export default function MeetingModal({
             <div className="mm-section">
               <div className="mm-field-icon"><Users size={14} /></div>
               <div className="mm-field-content">
-                <label className="mm-label">Attendees <span style={{ fontWeight: 400, textTransform: 'none', fontSize: 11 }}>(email addresses, comma-separated)</span></label>
+                <label className="mm-label">Attendees <span style={{ fontWeight: 400, textTransform: 'none', fontSize: 14 }}>(email addresses, comma-separated)</span></label>
                 <input
                   type="text"
                   className="mm-input"
@@ -417,7 +417,7 @@ export default function MeetingModal({
         <div className="act-popup-footer">
           <div className="act-popup-footer-left">
             {!isEdit && !gmailConnected && (
-              <span style={{ fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ fontSize: 14, color: '#475467', display: 'flex', alignItems: 'center', gap: 5 }}>
                 <Video size={12} /> Connect Gmail to use Google Meet
               </span>
             )}

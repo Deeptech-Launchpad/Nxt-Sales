@@ -62,7 +62,7 @@ export default function CallModal({ isOpen = true, companyId, contactName, onClo
         <div className="act-popup-body">
           {/* Direction */}
           <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Direction</label>
+            <label style={{ fontSize: 14, fontWeight: 700, color: '#344054', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Direction</label>
             <div className="act-radio-group">
               <button className={`act-radio-btn ${direction === 'outbound' ? 'active' : ''}`} onClick={() => setDirection('outbound')}>
                 <PhoneOutgoing size={14} /> Outbound
@@ -83,7 +83,7 @@ export default function CallModal({ isOpen = true, companyId, contactName, onClo
 
           {/* Duration */}
           <div style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Duration</label>
+            <label style={{ fontSize: 14, fontWeight: 700, color: '#344054', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Duration</label>
             <div className="duration-picker">
               <input type="number" min="0" max="999" value={durMin} onChange={e => setDurMin(e.target.value)} />
               <span className="duration-label">min</span>
@@ -98,7 +98,7 @@ export default function CallModal({ isOpen = true, companyId, contactName, onClo
             <label>Call notes</label>
             <textarea rows={4} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add notes about this call…" />
           </div>
-          {error && <p style={{ color: '#ef4444', fontSize: 12, marginTop: 6, fontWeight: 500 }}>{error}</p>}
+          {error && <p style={{ color: '#ef4444', fontSize: 15, marginTop: 6, fontWeight: 500 }}>{error}</p>}
         </div>
 
         <div className="act-popup-footer">

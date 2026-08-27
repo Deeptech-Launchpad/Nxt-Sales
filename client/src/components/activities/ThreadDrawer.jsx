@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { X, Paperclip, Eye, ArrowUpRight, ArrowDownLeft, Reply, ReplyAll, Forward, Mail } from 'lucide-react'
+import { X, Paperclip, Eye, EyeOff, ArrowUpRight, ArrowDownLeft, Reply, ReplyAll, Forward, Mail } from 'lucide-react'
+import { sanitizeEmailBody, hasRenderableHtml } from '../../utils/emailHtml'
 import api from '../../api/client'
 import { threadCache } from '../../utils/emailCache'
 import '../../styles/modal.css'
@@ -129,7 +130,14 @@ function ThreadMessage({ msg, index, total }) {
   const [expanded, setExpanded] = useState(false)
   const isOutbound = msg.direction === 'outbound'
   const body = msg.body || ''
-  const isLong = body.length > 900
+
+  // Show the email the way it was actually sent whenever we have the real
+  // markup for it. Sanitised first — this is untrusted content from whoever
+  // sent the mail (see utils/emailHtml.js for the allowlist). Emails stored
+  // before the HTML was kept, and genuinely plain-text ones, fall through to
+  // the original text rendering below, which handles line breaks properly.
+  const safeHtml = hasRenderableHtml(msg.bodyHtml) ? sanitizeEmailBody(msg.bodyHtml) : ''
+  const isLong = safeHtml ? safeHtml.length > 2200 : body.length > 900
 
   return (
     <div className={`ec-msg ${isOutbound ? 'outbound' : 'inbound'}`}>
@@ -159,7 +167,11 @@ function ThreadMessage({ msg, index, total }) {
       </div>
 
       <div className={`ec-msg-body ${isLong && !expanded ? 'clamped' : ''}`}>
-        {body || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>(no message body)</span>}
+        {safeHtml ? (
+          <div className="ec-msg-html" dangerouslySetInnerHTML={{ __html: safeHtml }} />
+        ) : (
+          body || <span style={{ color: '#475467', fontStyle: 'italic' }}>(no message body)</span>
+        )}
       </div>
       {isLong && (
         <button className="ec-msg-more" onClick={() => setExpanded(e => !e)}>
@@ -178,11 +190,19 @@ function ThreadMessage({ msg, index, total }) {
         </div>
       )}
 
-      {/* Tracking is sender-private — the API omits it entirely for received
-          mail and for mail sent by another user, so this simply never renders. */}
+      {/* Three distinct states, never conflated: an email that cannot report
+          opens at all (no pixel — written in Gmail, not composed here) says so;
+          one that can but has not been opened says "not opened yet"; one that
+          has been opened shows the count. The API omits this block entirely for
+          received mail, so inbound simply never renders it. */}
       {msg.tracking && (
         <div className="ec-track">
-          {msg.tracking.openCount > 0 ? (
+          {!msg.tracking.tracked ? (
+            <>
+              <span className="ec-track-badge untracked"><EyeOff size={11} /> Not tracked</span>
+              <span className="ec-track-meta">sent outside the CRM composer</span>
+            </>
+          ) : msg.tracking.openCount > 0 ? (
             <>
               <span className="ec-track-badge opened"><Eye size={11} /> Opened {msg.tracking.openCount}×</span>
               {msg.tracking.firstOpenedAt && (
