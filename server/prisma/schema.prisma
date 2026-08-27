@@ -175,6 +175,11 @@ model Activity {
   userId        String
   title         String?
   body          String?
+  // The email as it was actually sent/received. `body` above stays exactly as
+  // it is (plain text, used for search, snippets and quoting on reply) — this
+  // is purely additive, so nothing that reads `body` today changes. Null for
+  // every non-email activity, and for email stored before this existed.
+  bodyHtml      String?   @db.Text
   toEmail       String?
   fromEmail     String?
   subject       String?
