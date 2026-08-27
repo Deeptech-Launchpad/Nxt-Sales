@@ -22,6 +22,30 @@ function builtInColumnNames(entity) {
   return new Set(model ? model.fields.filter(f => f.kind === 'scalar').map(f => f.name) : [])
 }
 
+// The exact-name guard above stops `openDate`, but not `dealOpenDate` — and
+// that near-miss is what actually happened: a Deal custom field labelled
+// "deal open date" slugified to `dealOpenDate`, which sailed past the check,
+// put a SECOND Deal Open Date input on the form, and collected the values
+// everyone typed while the real Deal.openDate column stayed empty. The Deals
+// date filter reads the real column, so it correctly matched nothing and the
+// page reported "No deals found".
+//
+// So a key is also rejected when stripping the entity name off the front of
+// it lands on a built-in column. The rule is deliberately narrow — it only
+// fires on <entity><BuiltInName> exactly — so a genuinely different field
+// like "Deal Open Date Confirmed By" (dealOpenDateConfirmedBy) is unaffected.
+function shadowedBuiltIn(entity, key) {
+  const builtIns = builtInColumnNames(entity)
+  if (builtIns.has(key)) return key
+  const prefix = entity.toLowerCase()
+  if (key.toLowerCase().startsWith(prefix)) {
+    const rest = key.slice(prefix.length)
+    const camel = rest.charAt(0).toLowerCase() + rest.slice(1)
+    if (builtIns.has(camel)) return camel
+  }
+  return null
+}
+
 // "GST Number" -> "gstNumber". Only used to auto-generate `key` from `label`
 // at creation — key is immutable after that, so this never runs again for
 // an existing field.
@@ -76,8 +100,13 @@ router.post('/', auth, async (req, res) => {
     if (!key || !/^[a-zA-Z][a-zA-Z0-9]*$/.test(key)) {
       return res.status(400).json({ message: 'Could not derive a valid field key from that label — try a different label or a shorter, letters-only key.' })
     }
-    if (builtInColumnNames(entity).has(key)) {
-      return res.status(409).json({ message: `"${key}" is already a built-in ${entity} field and can't be used as a custom field key.` })
+    const shadows = shadowedBuiltIn(entity, key)
+    if (shadows) {
+      return res.status(409).json({
+        message: shadows === key
+          ? `"${key}" is already a built-in ${entity} field and can't be used as a custom field key.`
+          : `This would create a second "${shadows}" on ${entity}. That field already exists as a built-in one, so use it instead — a duplicate would split the data between two places and stop filters and reports finding it.`,
+      })
     }
 
     const max = await prisma.customFieldDefinition.aggregate({ where: { entity }, _max: { order: true } })

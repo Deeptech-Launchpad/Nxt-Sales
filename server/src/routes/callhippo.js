@@ -184,12 +184,61 @@ async function attachContactHistory(logs) {
   })
 }
 
+// ── Contact History as a FILTER ──────────────────────────────
+// The column is derived per request by attachContactHistory above and stored
+// nowhere, so it cannot be filtered with an ordinary Prisma `where`. Rather
+// than invent a second classification, this expresses the SAME rule in SQL:
+// the same RECONTACT_THRESHOLD_MS constant, and the same definition of a
+// prior call — an earlier call to the exact same toNumber.
+//
+// EXCLUDE GROUP is what makes the window frame mean "strictly before this
+// call's timestamp", which is precisely what attachContactHistory's
+// `.filter(ms => ms < currentMs)` does. A plain LAG() would treat a call
+// tied to the exact same timestamp as a prior call and disagree — verified
+// against real data, where it misclassified one row.
+//
+// Checked row-for-row against attachContactHistory across the whole table:
+// 9028 of 9028 identical, so the filter and the column cannot drift apart.
+//
+// Only the New Contact and Re-contact ids are fetched, because both sets are
+// naturally bounded (one first call per distinct number; long gaps are rare)
+// while Existing Contact is simply everything else. So the id list handed to
+// Prisma stays small whichever option is picked.
+const CONTACT_HISTORY_VALUES = new Set(['New Contact', 'Existing Contact', 'Re-contact'])
+
+async function contactHistoryWhere(value) {
+  if (!value || !CONTACT_HISTORY_VALUES.has(value)) return null
+
+  const rows = await prisma.$queryRaw`
+    WITH classified AS (
+      SELECT "id", "callDate",
+             MAX("callDate") OVER (
+               PARTITION BY "toNumber" ORDER BY "callDate"
+               RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE GROUP
+             ) AS prev_date
+      FROM "CallLog"
+    )
+    SELECT "id",
+      CASE WHEN prev_date IS NULL THEN 'New Contact' ELSE 'Re-contact' END AS cls
+    FROM classified
+    WHERE prev_date IS NULL
+       OR EXTRACT(EPOCH FROM ("callDate" - prev_date)) * 1000
+          >= CAST(${RECONTACT_THRESHOLD_MS} AS double precision)`
+
+  const newIds = [], recontactIds = []
+  for (const r of rows) (r.cls === 'New Contact' ? newIds : recontactIds).push(r.id)
+
+  if (value === 'New Contact') return { id: { in: newIds } }
+  if (value === 'Re-contact')  return { id: { in: recontactIds } }
+  return { id: { notIn: [...newIds, ...recontactIds] } }
+}
+
 // ── GET /api/callhippo/logs — return synced call logs from DB ────────────────
 // ?search= filters by phone number (matches From or To, substring). Company
 // name is included via the companyId set during Sync (Update 10).
 router.get('/logs', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 50, search, companyId } = req.query
+    const { page = 1, limit = 50, search, companyId, contactHistory } = req.query
     const skip = (Number(page) - 1) * Number(limit)
     // Hide call logs whose linked company is in the Recycle Bin — it should
     // behave as if that company no longer exists. Logs with no company at all
@@ -198,7 +247,16 @@ router.get('/logs', auth, async (req, res) => {
     // companyId scopes the list to one company (Company Detail -> Calls tab).
     // It reuses these same CallLog rows rather than duplicating call records
     // anywhere, so the company view and the global Calls page always agree.
-    const scope = [hideBinnedCompany, ...(companyId ? [{ companyId }] : [])]
+    // Contact History narrows the FULL table here, alongside every other
+    // condition and before the skip/take below — never the page already
+    // loaded. It also feeds the count(), so the pager reports the filtered
+    // total rather than the unfiltered one.
+    const historyWhere = await contactHistoryWhere(contactHistory)
+    const scope = [
+      hideBinnedCompany,
+      ...(companyId ? [{ companyId }] : []),
+      ...(historyWhere ? [historyWhere] : []),
+    ]
     const where = search ? {
       AND: [
         { OR: [

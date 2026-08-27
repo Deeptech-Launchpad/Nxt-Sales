@@ -11,8 +11,34 @@ const matcher = require('../utils/companyEmailMatcher')
 
 // ── Email open tracking ──────────────────────────────────────────────────────
 // Public base the recipient's mail client can reach. In production this is the
-// app domain (nginx proxies /api to the backend); in dev it falls back to Vite.
-const TRACK_BASE = process.env.PUBLIC_URL || process.env.CLIENT_URL || 'http://localhost:3000'
+// app domain (nginx proxies /api to the backend).
+//
+// This used to fall back to Vite's http://localhost:3000. That address means
+// "this machine" to whoever opens the email, so the pixel could never load and
+// the open could never be recorded — silently. Confirmed against the real
+// mailboxes: of 74 CRM-sent emails, 35 carried the production origin and
+// tracked, and 39 carried localhost and could not, which is exactly why
+// tracking looked inconsistent.
+//
+// So an unreachable base now resolves to null instead, and a send with no
+// reachable base carries NO pixel and NO trackingId at all. That makes
+// "has a trackingId" mean "this email can genuinely report opens", which is
+// what lets the UI say "not tracked" instead of asserting "not opened yet"
+// about an email it was never able to observe.
+function resolveTrackOrigin() {
+  const raw = process.env.PUBLIC_URL || process.env.CLIENT_URL || ''
+  try {
+    const url = new URL(raw)
+    if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])$/i.test(url.hostname)) return null
+    return url.origin
+  } catch {
+    return null
+  }
+}
+const TRACK_BASE = resolveTrackOrigin()
+if (!TRACK_BASE) {
+  console.warn('[Email Track] PUBLIC_URL is not set to a publicly reachable URL — outgoing emails will be sent WITHOUT open tracking (they will show as "Not tracked" rather than falsely as "not opened").')
+}
 
 // 1x1 transparent GIF returned by the tracking pixel.
 const PIXEL_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64')
@@ -20,6 +46,7 @@ const PIXEL_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAA
 // Hidden tracking pixel appended to outbound HTML. Loading it (when the
 // recipient opens the email) hits /track/open/:token and records the open.
 function trackingPixel(token) {
+  if (!TRACK_BASE || !token) return ''
   return `<img src="${TRACK_BASE}/api/email/track/open/${token}.gif" width="1" height="1" alt="" style="display:none;max-height:0;max-width:0;opacity:0;overflow:hidden" />`
 }
 
@@ -102,6 +129,32 @@ function extractTextBody(payload) {
     if (part.mimeType === 'text/html' && part.body?.data) {
       const html = Buffer.from(part.body.data, 'base64').toString('utf-8')
       return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000)
+    }
+  }
+  return ''
+}
+
+// The text/html part of a message, for showing an email in the CRM the way it
+// actually looked. Mirrors extractTextBody above — same recursion, same nested
+// multipart handling — but returns the markup instead of throwing it away.
+// Capped because a message with inline base64 images can be enormous and this
+// is a display convenience, not an archive.
+const MAX_STORED_HTML = 400_000
+function extractHtmlBody(payload) {
+  if (!payload) return ''
+  if (payload.mimeType === 'text/html' && payload.body?.data) {
+    return Buffer.from(payload.body.data, 'base64').toString('utf-8').slice(0, MAX_STORED_HTML)
+  }
+  if (!payload.parts) return ''
+  for (const part of payload.parts) {
+    if (part.mimeType === 'text/html' && part.body?.data) {
+      return Buffer.from(part.body.data, 'base64').toString('utf-8').slice(0, MAX_STORED_HTML)
+    }
+  }
+  for (const part of payload.parts) {
+    if (part.mimeType?.startsWith('multipart/')) {
+      const html = extractHtmlBody(part)
+      if (html) return html
     }
   }
   return ''
@@ -478,11 +531,20 @@ router.post('/send', auth, async (req, res) => {
 
     // Open-tracking: unique token embedded as a hidden pixel; when the recipient
     // opens the email the pixel loads and /track/open records it against this id.
-    const trackingId  = crypto.randomUUID()
+    // Minted ONLY when the pixel has a reachable home (see resolveTrackOrigin):
+    // a token with a dead pixel would sit at zero opens forever and be
+    // indistinguishable from a genuinely unopened email.
+    const trackingId  = TRACK_BASE ? crypto.randomUUID() : null
     // Quoted/forwarded content (built client-side by ThreadDrawer.jsx's
     // Reply/Reply All/Forward actions) is placed AFTER the signature, matching
     // standard reply layout: [content] [signature] [quoted original].
-    const effectiveHtml = `${baseHtml}${signatureHtml}${quotedHtml || ''}${trackingPixel(trackingId)}`
+    // What the recipient sees, and — separately — what we store. They differ by
+    // exactly one thing: the invisible tracking pixel is NOT stored. Rendering it
+    // back in our own viewer would fetch it and record a false "open" every time
+    // somebody read the email inside the CRM, corrupting the number it exists to
+    // measure.
+    const storedHtml    = `${baseHtml}${signatureHtml}${quotedHtml || ''}`
+    const effectiveHtml = `${storedHtml}${trackingPixel(trackingId)}`
 
     // ── Thread continuation ─────────────────────────────────
     // Four ways this resolves, in priority order:
@@ -654,32 +716,77 @@ router.post('/send', auth, async (req, res) => {
       }
     }
 
-    const activity = await prisma.activity.create({
-      data: {
-        type: 'email',
-        companyId: sendCompanyId,
-        userId: req.user.id,
-        title: `Email – ${sendSubject}`,
-        body: body || (htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ').trim().slice(0, 2000) : null),
-        toEmail: to,
-        ccEmail: cc || null,
-        bccEmail: bcc || null,
-        fromEmail: fromEmail,
-        mailboxEmail: fromEmail,
-        subject: sendSubject,
-        emailStatus: 'sent',
-        direction: 'outbound',
-        messageId: sent.data.id,
-        threadId: sent.data.threadId,
-        trackingId,
-        matchedCompanyEmail: resolvedMatchedAddress,
-        matchBasis: sendMatchBasis,
-        attachments: Array.isArray(attachments) && attachments.length
-          ? attachments.map(a => ({ filename: a.filename, size: a.content ? Math.round(a.content.length * 0.75) : 0, mimeType: a.mimeType || null }))
-          : undefined,
-      },
-      include: { user: { select: { id: true, name: true, email: true } } },
-    })
+    // ── The RFC 5322 Message-ID of the message we just sent ──────────────
+    // Gmail's own message id (sent.data.id) is unique only WITHIN one mailbox.
+    // The Message-ID header is globally unique, and it is what the sync uses to
+    // recognise that a message arriving from a second mailbox is the same real
+    // email it already has (see the rfcMessageId dupe check in the sync below).
+    //
+    // Until now this row was written with rfcMessageId: null, so a CRM-composed
+    // send was INVISIBLE to that check: when a colleague's mailbox — or the
+    // recipient's, if they are also a CRM user — synced the same conversation,
+    // nothing matched and a second row was created for the one real email. That
+    // is the "1/2 Sent, 2/2 Sent" duplicate. Measured before this change: 21 of
+    // 26 CRM-composed sends still had rfcMessageId null.
+    //
+    // Read back from Gmail rather than generated here and injected into the MIME:
+    // this way it is unconditionally the id the message ACTUALLY carries, with no
+    // assumption about whether Gmail preserves or replaces a client-supplied one.
+    // Best-effort — a failure here leaves the field null, i.e. exactly the old
+    // behaviour, and never affects an email that has already gone out.
+    let sentRfcMessageId = null
+    try {
+      const meta = await gmail.users.messages.get({
+        userId: 'me', id: sent.data.id, format: 'metadata', metadataHeaders: ['Message-ID'],
+      })
+      sentRfcMessageId = (meta.data.payload?.headers || [])
+        .find(h => h.name?.toLowerCase() === 'message-id')?.value || null
+    } catch (metaErr) {
+      console.warn('[Email Send] Could not read back the Message-ID (row will be de-duplicated on the next sync instead):', metaErr.message)
+    }
+
+    const activityData = {
+      type: 'email',
+      companyId: sendCompanyId,
+      userId: req.user.id,
+      title: `Email – ${sendSubject}`,
+      body: body || (htmlBody ? htmlBody.replace(/<[^>]+>/g, ' ').trim().slice(0, 2000) : null),
+      bodyHtml: storedHtml || null,
+      toEmail: to,
+      ccEmail: cc || null,
+      bccEmail: bcc || null,
+      fromEmail: fromEmail,
+      mailboxEmail: fromEmail,
+      subject: sendSubject,
+      emailStatus: 'sent',
+      direction: 'outbound',
+      messageId: sent.data.id,
+      rfcMessageId: sentRfcMessageId,
+      threadId: sent.data.threadId,
+      trackingId,
+      matchedCompanyEmail: resolvedMatchedAddress,
+      matchBasis: sendMatchBasis,
+      attachments: Array.isArray(attachments) && attachments.length
+        ? attachments.map(a => ({ filename: a.filename, size: a.content ? Math.round(a.content.length * 0.75) : 0, mimeType: a.mimeType || null }))
+        : undefined,
+    }
+    const activityInclude = { user: { select: { id: true, name: true, email: true } } }
+
+    let activity
+    try {
+      activity = await prisma.activity.create({ data: activityData, include: activityInclude })
+    } catch (createErr) {
+      // rfcMessageId is uniquely indexed, and a clash means this exact email is
+      // already stored — synced from another mailbox in the moment between the
+      // send and this write. The email has ALREADY gone out, so this must never
+      // fail the request: drop just that field and record the row as before.
+      if (createErr.code === 'P2002') {
+        activity = await prisma.activity.create({
+          data: { ...activityData, rfcMessageId: null },
+          include: activityInclude,
+        })
+      } else throw createErr
+    }
 
     res.status(201).json(activity)
   } catch (err) {
@@ -1063,6 +1170,14 @@ async function runEmailSync({
           if (existing.bccEmail == null && getHeader('Bcc')) patch.bccEmail = getHeader('Bcc')
           if (!existing.mailboxEmail) patch.mailboxEmail = userEmail
           if (!existing.rfcMessageId && rfcId) patch.rfcMessageId = rfcId
+          // Emails stored before bodyHtml existed keep only the plain-text body.
+          // The real markup is still in the mailbox, so a sync that revisits the
+          // thread recovers it — genuinely, from the message itself, never
+          // reconstructed or guessed.
+          if (!existing.bodyHtml) {
+            const html = extractHtmlBody(msg.payload)
+            if (html) patch.bodyHtml = html
+          }
           if (existing.attachments == null) {
             const atts = extractAttachments(msg.payload)
             if (atts.length) patch.attachments = atts
@@ -1109,6 +1224,7 @@ async function runEmailSync({
               userId,
               title:       `Email – ${subjectRaw}`,
               body:        extractTextBody(msg.payload) || null,
+              bodyHtml:    extractHtmlBody(msg.payload) || null,
               toEmail:     getHeader('To'),
               ccEmail:     getHeader('Cc') || null,
               bccEmail:    getHeader('Bcc') || null,
@@ -1213,13 +1329,17 @@ async function runEmailSync({
 // the payload for anyone who is not the user who sent the message, so a
 // teammate viewing the same company never sees another rep's open data.
 function publicMessage(a, viewerId) {
-  const isOwnSent = a.direction === 'outbound' && a.userId === viewerId
+  const isOutbound = a.direction === 'outbound'
   return {
     id:        a.id,
     messageId: a.messageId,
     threadId:  a.threadId,
     subject:   a.subject,
     body:      a.body,
+    // The formatted original, when we have it. The client sanitises before
+    // rendering (see client/src/utils/emailHtml.js) and falls back to `body`
+    // above for anything plain-text-only.
+    bodyHtml:  a.bodyHtml || null,
     fromEmail: a.fromEmail,
     toEmail:   a.toEmail,
     ccEmail:   a.ccEmail,
@@ -1228,9 +1348,16 @@ function publicMessage(a, viewerId) {
     attachments: Array.isArray(a.attachments) ? a.attachments : [],
     user:      a.user || null,
     matchedCompanyEmail: a.matchedCompanyEmail,
-    // Sender-only tracking block. Absent entirely for received mail and for
-    // mail sent by a different user.
-    tracking: isOwnSent ? {
+    // Tracking for outbound mail. Previously restricted to the viewer's OWN
+    // sends, while the Company Detail activity feed applied no such filter — so
+    // the very same email reported "Opened 3x" on one screen and nothing at all
+    // on the other. Both screens now follow one rule.
+    tracking: isOutbound ? {
+      // Can this email report an open AT ALL? Only a CRM-composed send carries
+      // a pixel; mail written in Gmail and pulled in by sync never did, and must
+      // read as "not tracked" rather than as "not opened yet".
+      tracked:       !!a.trackingId,
+      sentByViewer:  a.userId === viewerId,
       status:        a.emailStatus || 'sent',
       openCount:     a.openCount || 0,
       firstOpenedAt: a.firstOpenedAt,

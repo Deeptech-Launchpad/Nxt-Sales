@@ -101,13 +101,21 @@ function buildDupLookup(existingCompanies) {
 }
 
 function dateRangeFor(key) {
-  const now   = new Date()
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const now       = new Date()
+  const startOfDay = () => new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const today     = startOfDay()
+  // BUG FIX: this_week previously computed its start with today.setDate(...),
+  // which MUTATES the very Date object map.today[0] holds a reference to. The
+  // literal is built top-down, so by the time the map existed the "today"
+  // preset no longer meant today at all - it started at the beginning of the
+  // week. Its own week start now gets its own object, so nothing is shared.
+  const weekStart = startOfDay()
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
   const map   = {
     today:        [today, new Date(today.getTime() + 86400000 - 1)],
     yesterday:    [new Date(today.getTime() - 86400000), new Date(today.getTime() - 1)],
     tomorrow:     [new Date(today.getTime() + 86400000), new Date(today.getTime() + 172800000 - 1)],
-    this_week:    [new Date(today.setDate(today.getDate() - today.getDay())), new Date(today.getTime() + 7 * 86400000 - 1)],
+    this_week:    [weekStart, new Date(weekStart.getTime() + 7 * 86400000 - 1)],
     last_7:       [new Date(now.getTime() - 7  * 86400000), now],
     last_14:      [new Date(now.getTime() - 14 * 86400000), now],
     last_30:      [new Date(now.getTime() - 30 * 86400000), now],
@@ -185,6 +193,121 @@ function explicitDateRange(key) {
   return null
 }
 
+// ── Sorting ───────────────────────────────
+// Whitelist of Company columns the list may be ordered by. Deliberately a
+// closed set, mirroring SORTABLE_COLUMN_KEYS in client/src/pages/Companies.jsx
+// one-for-one: an unknown or renamed key falls through to the default order
+// instead of throwing a Prisma validation error, which the route catch-all
+// would have surfaced as a 500 and the client would have rendered as the
+// misleading "No companies found".
+const SORTABLE_FIELDS = new Set([
+  'name', 'email', 'phone', 'industry', 'leadStatus', 'status',
+  'domain', 'country', 'cms', 'remarks', 'createdAt', 'updatedAt',
+])
+// The nullable members of that set. Blank values sink to the END in BOTH
+// directions (nulls: 'last') — sorting by Industry should surface the
+// industries, not a wall of empty cells, whichever arrow is active.
+const NULLABLE_SORT_FIELDS = new Set([
+  'email', 'phone', 'industry', 'leadStatus', 'domain', 'country', 'cms', 'remarks',
+])
+
+// The single source of truth for list order, shared by GET /, GET /export
+// and GET /:id/neighbors so the table, the exported file and Company
+// Detail Previous/Next can never disagree about what "next" means.
+//
+// Precedence:
+//   1. an explicit sortBy the user picked — honoured exactly, with pinning
+//      deliberately NOT applied first (a pinned row must not break A-Z)
+//   2. sort=recent (Recents)             — most recently edited first
+//   3. neither                           — the original default, unchanged
+// Every branch ends in id so paging is deterministic: without a unique
+// tie-breaker Postgres may legitimately return the same row on two
+// different pages when many rows share the sort value.
+function buildCompanyOrderBy(query) {
+  const { sortBy, sortDir, sort } = query
+  const dir = sortDir === 'desc' ? 'desc' : 'asc'
+
+  if (sortBy && SORTABLE_FIELDS.has(sortBy)) {
+    const primary = NULLABLE_SORT_FIELDS.has(sortBy)
+      ? { [sortBy]: { sort: dir, nulls: 'last' } }
+      : { [sortBy]: dir }
+    return [primary, { id: dir }]
+  }
+  if (sort === 'recent') return [{ updatedAt: 'desc' }, { id: 'desc' }]
+  return [{ isPinned: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }]
+}
+
+// ── Advanced Filters: Email / Phone ─────────────────────
+// A company’s addresses and numbers live in BOTH a legacy primary scalar
+// column AND the migrated multi-value JSONB array (Company.email/emails,
+// Company.phone/phones). Matching only the scalar would silently miss every
+// value stored solely in the array — which, after the multi-value
+// migration, is most of them. One query per ACTIVE FILTER (never per row),
+// the same shape companyIdsWithLinkedProfileMatch below already uses.
+async function companyIdsWithEmailMatch(term) {
+  const like = '%' + term + '%'
+  const rows = await prisma.$queryRaw`
+    SELECT id FROM "Company"
+    WHERE "deletedAt" IS NULL
+      AND (
+        COALESCE("email", '') ILIKE ${like}
+        OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof("emails") = 'array' THEN "emails" ELSE '[]'::jsonb END
+          ) AS e WHERE e ILIKE ${like}
+        )
+      )
+  `
+  return rows.map(r => r.id)
+}
+
+// Phone numbers are stored however they were imported ("+1 (555) 123-4567",
+// "+15551234567", "555 123 4567"), so a literal substring match on what the
+// user typed finds only rows that happen to share their formatting. Every
+// candidate is therefore ALSO compared digits-to-digits, which is what lets
+// "555 123" find "+1 (555) 123-4567". When the term holds no digits at all
+// the digits comparison gets a sentinel that cannot occur in a digits-only
+// string, so it simply never matches rather than matching everything.
+async function companyIdsWithPhoneMatch(term) {
+  const like   = '%' + term + '%'
+  const digits = String(term).replace(/[^0-9]/g, '')
+  const digitsLike = digits ? '%' + digits + '%' : '%~none~%'
+  const rows = await prisma.$queryRaw`
+    SELECT id FROM "Company"
+    WHERE "deletedAt" IS NULL
+      AND (
+        COALESCE("phone", '') ILIKE ${like}
+        OR regexp_replace(COALESCE("phone", ''), '[^0-9]', '', 'g') LIKE ${digitsLike}
+        OR EXISTS (
+          SELECT 1 FROM jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof("phones") = 'array' THEN "phones" ELSE '[]'::jsonb END
+          ) AS p
+          WHERE p ILIKE ${like}
+             OR regexp_replace(p, '[^0-9]', '', 'g') LIKE ${digitsLike}
+        )
+      )
+  `
+  return rows.map(r => r.id)
+}
+
+// ── Advanced Filter: Last activity date ──────────────────
+// "Last activity" means the company’s MOST RECENT activity, so this is a
+// HAVING MAX(...) over the grouped Activity table — deliberately not
+// Prisma’s activities:{some}, which would also match a company whose newest
+// activity is outside the window but which happens to have an older one
+// inside it.
+// Expressed as two relation filters rather than a HAVING MAX(...) that returns
+// an id list: "the newest activity falls inside the window" is exactly "there
+// is one inside it AND none after it". Same semantics, but it stays a real
+// indexed join instead of an IN (...) of every matching company id, which on a
+// broad window (Last 12 Months) would have been thousands of ids per request.
+function lastActivityCondition(from, to) {
+  return { AND: [
+    { activities: { some: { createdAt: { gte: from, lte: to } } } },
+    { activities: { none: { createdAt: { gt: to } } } },
+  ] }
+}
+
 // linkedProfiles is a JSONB array — Prisma's query builder can't do a
 // contains-over-array-elements match, so this runs the same
 // jsonb_array_elements_text pattern already used by /email-conflicts,
@@ -258,7 +381,14 @@ async function unassignedOwnerIds() {
 }
 
 async function buildCompanyWhere(query, userId) {
-  const { search, view, owners, leadStatuses, createDate, customFilters, industries, countries, hasDeal, cmsValues, remarksValues, sort } = query
+  const {
+    search, view, owners, leadStatuses, createDate, customFilters, industries,
+    countries, hasDeal, cmsValues, remarksValues, sort, recentWindow,
+    // Advanced Filters. The client was already sending all five; they were
+    // simply never read here, so the chips appeared to apply and changed
+    // nothing. Each is now a real condition on the full table (see below).
+    website, phone, email, updatedDate, lastActivity,
+  } = query
   // Companies in the Recycle Bin are archived — excluded from every normal
   // list/search/export view. Only the dedicated Recycle Bin routes look past this.
   const where = { deletedAt: null }
@@ -291,8 +421,12 @@ async function buildCompanyWhere(query, userId) {
     const realOwners    = ownerList.filter(o => o !== 'unassigned')
 
     if (hasUnassigned && realOwners.length > 0) {
-      const ownerOr = [{ ownerId: { in: realOwners } }, { ownerId: null }]
-      where.OR = where.OR ? [...where.OR, ...ownerOr] : ownerOr
+      // Scoped into AND as its own OR group rather than a top-level where.OR:
+      // the free-text `search` below needs an OR group too, and it assigned
+      // where.OR unconditionally — so whichever ran second overwrote the
+      // first outright, which is why "owner + search" silently dropped the
+      // owner condition.
+      where.AND = [...(where.AND || []), { OR: [{ ownerId: { in: realOwners } }, { ownerId: null }] }]
     } else if (hasUnassigned) {
       where.ownerId = null
     } else {
@@ -300,7 +434,18 @@ async function buildCompanyWhere(query, userId) {
     }
   }
 
-  if (leadStatuses) where.leadStatus = { in: leadStatuses.split(',') }
+  // "Unassigned" is a filter-only pseudo-value (UNASSIGNED_STATUS_OPTION in
+  // Companies.jsx) meaning "no status set". It is never stored on a row, so
+  // matching it literally, as this did, could only ever return nothing.
+  if (leadStatuses) {
+    const statusList   = leadStatuses.split(',')
+    const wantsUnset   = statusList.includes('Unassigned')
+    const realStatuses = statusList.filter(v => v !== 'Unassigned')
+    const statusOr = []
+    if (realStatuses.length) statusOr.push({ leadStatus: { in: realStatuses } })
+    if (wantsUnset) statusOr.push({ leadStatus: null }, { leadStatus: '' })
+    if (statusOr.length) where.AND = [...(where.AND || []), { OR: statusOr }]
+  }
   // Industry filter values come from the admin-managed dropdown but imported
   // Company.industry data doesn't always match casing exactly — case-insensitive
   // match, same reasoning as country below.
@@ -343,13 +488,56 @@ async function buildCompanyWhere(query, userId) {
 
   if (search) {
     const linkedProfileIds = await companyIdsWithLinkedProfileMatch(search)
-    where.OR = [
-      { name:   { contains: search, mode: 'insensitive' } },
-      { email:  { contains: search, mode: 'insensitive' } },
-      { domain: { contains: search, mode: 'insensitive' } },
-      { phone:  { contains: search, mode: 'insensitive' } },
-      ...(linkedProfileIds.length ? [{ id: { in: linkedProfileIds } }] : []),
-    ]
+    // AND-scoped OR group (see the owners branch above) — as a top-level
+    // where.OR this overwrote the owner filter whenever both were active.
+    where.AND = [...(where.AND || []), {
+      OR: [
+        { name:   { contains: search, mode: 'insensitive' } },
+        { email:  { contains: search, mode: 'insensitive' } },
+        { domain: { contains: search, mode: 'insensitive' } },
+        { phone:  { contains: search, mode: 'insensitive' } },
+        ...(linkedProfileIds.length ? [{ id: { in: linkedProfileIds } }] : []),
+      ],
+    }]
+  }
+
+  // ── Advanced Filters ───────────────────────────
+  // All five run as real database conditions over the FULL table, exactly
+  // like every filter above them, so they narrow the whole dataset before
+  // pagination — never just the rows already on screen.
+
+  // Website — the chip accepts a bare domain or a pasted URL, so the term is
+  // normalised the same way stored domains are (scheme, www. and trailing
+  // slash removed) before the contains match.
+  if (website && String(website).trim()) {
+    const term = normalizeDomain(website) || String(website).trim()
+    where.AND = [...(where.AND || []), { domain: { contains: term, mode: 'insensitive' } }]
+  }
+
+  // Phone / Email — matched across the legacy scalar column AND the
+  // multi-value array (see the helpers near the top of this file).
+  if (phone && String(phone).trim()) {
+    const ids = await companyIdsWithPhoneMatch(String(phone).trim())
+    where.AND = [...(where.AND || []), { id: { in: ids } }]
+  }
+  if (email && String(email).trim()) {
+    const ids = await companyIdsWithEmailMatch(String(email).trim())
+    where.AND = [...(where.AND || []), { id: { in: ids } }]
+  }
+
+  // Updated date — same token vocabulary as Created date (relative presets
+  // plus an explicit day / month / year / range), so the picker’s calendar
+  // tabs work here for free. AND-scoped so it composes with the Recents
+  // window below instead of one silently overwriting the other.
+  if (updatedDate) {
+    const range = dateRangeFor(updatedDate)
+    if (range) where.AND = [...(where.AND || []), { updatedAt: { gte: range[0], lte: range[1] } }]
+  }
+
+  // Last activity date — the newest Activity row belonging to the company.
+  if (lastActivity) {
+    const range = dateRangeFor(lastActivity)
+    if (range) where.AND = [...(where.AND || []), lastActivityCondition(range[0], range[1])]
   }
 
   // Custom fields (Dynamic Custom Fields) are filterable via this dedicated
@@ -380,6 +568,16 @@ async function buildCompanyWhere(query, userId) {
     where.id = where.id && where.id.in
       ? { in: where.id.in.filter(id => editedIds.includes(id)) }
       : { in: editedIds }
+
+    // Optional window for the Recents hero counters ("Updated today" /
+    // "Updated in the last 7 days"). Deliberately nested INSIDE the
+    // sort==='recent' branch: the normal Companies list never sends it, so
+    // this cannot change that page's results in any way. Reuses the same
+    // dateRangeFor() tokens the createDate filter already uses.
+    if (recentWindow) {
+      const range = dateRangeFor(recentWindow)
+      if (range) where.AND = [...(where.AND || []), { updatedAt: { gte: range[0], lte: range[1] } }]
+    }
   }
 
   return where
@@ -391,16 +589,12 @@ router.get('/', auth, async (req, res) => {
     const { page = 1, limit = 100, sort } = req.query
     const where = await buildCompanyWhere(req.query, req.user.id)
 
-    // Default order is unchanged (pinned first, then newest-created) so every
-    // existing caller behaves exactly as before. `sort=recent` powers the
-    // Recents module: most-recently-touched first, where "touched" is
-    // Prisma's @updatedAt — which covers create AND edit, since creating a row
-    // sets updatedAt too. Pinning is deliberately ignored here: Recents is
-    // about recency, and letting a pinned company sit permanently at the top
-    // would defeat that.
-    const orderBy = sort === 'recent'
-      ? [{ updatedAt: 'desc' }]
-      : [{ isPinned: 'desc' }, { createdAt: 'desc' }]
+    // Ordering (the default, Recents, and any column the user picked) is
+    // decided in one place — see buildCompanyOrderBy. The database applies it
+    // across the whole filtered set BEFORE the skip/take below, so page 2 of
+    // a Name sort is the second page of the full A-Z, never the visible page
+    // re-shuffled on its own.
+    const orderBy = buildCompanyOrderBy(req.query)
 
     const [companies, total] = await Promise.all([
       prisma.company.findMany({
@@ -439,11 +633,10 @@ router.get('/import-fields', auth, async (req, res) => {
 // so Export always captures the full filtered set, not just the visible page.
 router.get('/export', auth, async (req, res) => {
   try {
-    const { sort } = req.query
     const where = await buildCompanyWhere(req.query, req.user.id)
-    // Mirrors GET / exactly (see its comment) — a Recents export must list
-    // rows in the same most-recently-updated order the page itself shows.
-    const orderBy = sort === 'recent' ? [{ updatedAt: 'desc' }] : { createdAt: 'desc' }
+    // Mirrors GET / exactly, through the same builder — an export must list
+    // rows in the order the page itself shows, whichever sort is active.
+    const orderBy = buildCompanyOrderBy(req.query)
     const companies = await prisma.company.findMany({
       where,
       orderBy,
@@ -963,11 +1156,11 @@ router.get('/:id', auth, async (req, res) => {
 // the one GET / would show for the same query params. Pure read, no writes,
 // no change to any existing list/detail behavior.
 //
-// GET / has no sort param — its fixed order is [isPinned desc, createdAt
-// desc] with no tie-breaker (see below). id is added here ONLY as a
-// tie-breaker so "the very next/previous row" is well-defined when two
-// companies share a createdAt timestamp; it does not alter what GET /
-// itself displays.
+// This is the cursor for the DEFAULT order only — [isPinned desc,
+// createdAt desc, id desc]. When the user has picked a sort column, or is
+// on Recents, buildAdjacentWhereForSort below is used instead. id is the
+// tie-breaker in both, so "the very next/previous row" stays well-defined
+// when two companies share the same sort value.
 function buildAdjacentWhere(current, id, direction) {
   const sameGroup = {
     isPinned: current.isPinned,
@@ -991,26 +1184,79 @@ function buildAdjacentWhere(current, id, direction) {
   return { OR: otherGroup ? [sameGroup, otherGroup] : [sameGroup] }
 }
 
+// The same idea for a user-chosen sort (or Recents), where the order is a
+// two-key tuple: [chosen column, id]. Kept separate from the function above
+// rather than folded into it, so the default three-key pinned order keeps
+// running through its own proven code path untouched.
+//
+// The null branches mirror buildCompanyOrderBy's nulls:'last': every blank
+// value sits after every non-blank one, so from a non-null row the null
+// block is always "after", and from a null row the non-null block is always
+// "before".
+function buildAdjacentWhereForSort(current, id, direction, key, dir, nullable) {
+  const value = current[key]
+  const ahead = dir === 'asc' ? 'gt' : 'lt'   // moving DOWN the list
+  const back  = dir === 'asc' ? 'lt' : 'gt'   // moving UP the list
+  const step  = direction === 'after' ? ahead : back
+
+  if (nullable && (value === null || value === undefined)) {
+    // Currently inside the trailing block of blank values.
+    return direction === 'after'
+      ? { AND: [{ [key]: null }, { id: { [step]: id } }] }
+      : { OR: [{ AND: [{ [key]: null }, { id: { [step]: id } }] }, { [key]: { not: null } }] }
+  }
+
+  const sameValue = { AND: [{ [key]: value }, { id: { [step]: id } }] }
+  const branches  = [{ [key]: { [step]: value } }, sameValue]
+  // Leaving the non-null block towards the blanks only happens going down.
+  if (nullable && direction === 'after') branches.push({ [key]: null })
+  return { OR: branches }
+}
+
+// Walking backwards is the same query with every direction inverted.
+function reverseOrderBy(orderBy) {
+  const flip = d => (d === 'desc' ? 'asc' : 'desc')
+  return orderBy.map(entry => {
+    const [key, value] = Object.entries(entry)[0]
+    if (value && typeof value === 'object') {
+      return { [key]: { sort: flip(value.sort), nulls: value.nulls === 'last' ? 'first' : 'last' } }
+    }
+    return { [key]: flip(value) }
+  })
+}
+
 router.get('/:id/neighbors', auth, async (req, res) => {
   try {
     const { id } = req.params
-    const current = await prisma.company.findUnique({
-      where: { id },
-      select: { isPinned: true, createdAt: true, deletedAt: true },
-    })
+    // Every scalar, because which column matters depends on the sort the
+    // list is currently using (one row, so this costs nothing extra).
+    const current = await prisma.company.findUnique({ where: { id } })
     if (!current || current.deletedAt) return res.status(404).json({ message: 'Company not found.' })
 
     const baseWhere = await buildCompanyWhere(req.query, req.user.id)
 
+    // Previous/Next must walk the list in the order the user is actually
+    // looking at, so both come from the SAME builder the table uses. The
+    // default three-key pinned order keeps its original cursor; a chosen
+    // sort column (and Recents) uses the two-key one.
+    const orderBy = buildCompanyOrderBy(req.query)
+    const adjacent = (direction) => {
+      if (orderBy.length === 3) return buildAdjacentWhere(current, id, direction)
+      const [primary] = orderBy
+      const [key, value] = Object.entries(primary)[0]
+      const dir = (value && typeof value === 'object') ? value.sort : value
+      return buildAdjacentWhereForSort(current, id, direction, key, dir, NULLABLE_SORT_FIELDS.has(key))
+    }
+
     const [next, prev] = await Promise.all([
       prisma.company.findFirst({
-        where: { AND: [baseWhere, buildAdjacentWhere(current, id, 'after')] },
-        orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+        where: { AND: [baseWhere, adjacent('after')] },
+        orderBy,
         select: { id: true, name: true },
       }),
       prisma.company.findFirst({
-        where: { AND: [baseWhere, buildAdjacentWhere(current, id, 'before')] },
-        orderBy: [{ isPinned: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        where: { AND: [baseWhere, adjacent('before')] },
+        orderBy: reverseOrderBy(orderBy),
         select: { id: true, name: true },
       }),
     ])
