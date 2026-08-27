@@ -7,10 +7,10 @@
   display: flex; align-items: center; gap: 10px;
   padding: 8px 14px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0;
 }
-.ec-toolbar-msg { font-size: 11px; }
+.ec-toolbar-msg { font-size:14px; }
 .ec-btn {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 12px; padding: 5px 10px; border-radius: 6px;
+  font-size:15px; padding: 5px 10px; border-radius: 6px;
   border: 1px solid #e2e8f0; background: #fff; color: #334155; cursor: pointer;
 }
 .ec-btn:hover:not(:disabled) { background: #f8fafc; }
@@ -28,20 +28,20 @@
 }
 .ec-group-header:hover { background: #f8fafc; }
 .ec-group-addr {
-  font-size: 13px; font-weight: 600; color: #0f172a;
+  font-size:16px; font-weight: 600; color: #0f172a;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ec-tag {
-  font-size: 9px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  font-size:12px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
   padding: 2px 6px; border-radius: 4px; background: #ecfeff; color: #0891b2; flex-shrink: 0;
 }
 .ec-count {
-  font-size: 11px; font-weight: 600; color: #64748b;
+  font-size:14px; font-weight: 600; color:#344054;
   background: #f1f5f9; padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
 }
-.ec-group-meta { margin-left: auto; font-size: 11px; color: #94a3b8; flex-shrink: 0; }
+.ec-group-meta { margin-left: auto; font-size:14px; color:#475467; flex-shrink: 0; }
 
-.ec-empty-addr { padding: 8px 14px 12px 44px; font-size: 12px; color: #94a3b8; font-style: italic; }
+.ec-empty-addr { padding: 8px 14px 12px 44px; font-size:15px; color:#475467; font-style: italic; }
 
 /* ── Conversation row ──────────────────────────────────────── */
 .ec-thread {
@@ -53,19 +53,19 @@
 .ec-thread-main { flex: 1; min-width: 0; }
 .ec-thread-top { display: flex; align-items: center; gap: 7px; }
 .ec-thread-subject {
-  font-size: 13px; font-weight: 600; color: #0f172a;
+  font-size:16px; font-weight: 600; color: #0f172a;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ec-thread-snippet {
-  font-size: 12px; color: #64748b; margin-top: 2px;
+  font-size:15px; color:#344054; margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ec-thread-right {
   display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0;
 }
-.ec-thread-date { font-size: 11px; color: #94a3b8; white-space: nowrap; }
+.ec-thread-date { font-size:14px; color:#475467; white-space: nowrap; }
 .ec-msgcount {
-  font-size: 10px; font-weight: 700; color: #475569;
+  font-size:13px; font-weight: 700; color: #475569;
   background: #f1f5f9; padding: 1px 7px; border-radius: 9px;
 }
 
@@ -75,7 +75,7 @@
    ring, tab underline). ── */
 .thread-view-modal .company-modal-title-icon { border-color: #fecaca; background: #fff1f0; color: #ef1b16; }
 .thread-view-modal .company-modal-header h2 { font-size: 14.5px; line-height: 1.3; }
-.thread-view-modal .company-modal-header p { font-size: 9px; }
+.thread-view-modal .company-modal-header p { font-size:12px; }
 .ec-thread-body { padding-top: 14px; padding-bottom: 14px; }
 
 /* ── Message card (all messages rendered, chronological) ───── */
@@ -89,18 +89,18 @@
 .ec-msg-head { padding: 8px 11px; border-bottom: 1px solid #f1f5f9; }
 .ec-msg-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .ec-msg-dir {
-  font-size: 8.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+  font-size:11.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
   padding: 2px 6px; border-radius: 4px; flex-shrink: 0;
 }
 .ec-msg-dir.outbound { background: #eff6ff; color: #2563eb; }
 .ec-msg-dir.inbound  { background: #f5f3ff; color: #7c3aed; }
-.ec-msg-seq { font-size: 9px; font-weight: 700; color: #94a3b8; flex-shrink: 0; }
-.ec-msg-addr { font-size: 10.5px; color: #0f172a; word-break: break-all; }
-.ec-msg-label { font-size: 9.5px; color: #94a3b8; flex-shrink: 0; }
-.ec-msg-time { margin-left: auto; font-size: 9.5px; color: #94a3b8; white-space: nowrap; flex-shrink: 0; }
+.ec-msg-seq { font-size:12px; font-weight: 700; color:#475467; flex-shrink: 0; }
+.ec-msg-addr { font-size:13.5px; color: #0f172a; word-break: break-all; }
+.ec-msg-label { font-size:12.5px; color:#475467; flex-shrink: 0; }
+.ec-msg-time { margin-left: auto; font-size:12.5px; color:#475467; white-space: nowrap; flex-shrink: 0; }
 
 .ec-msg-body {
-  padding: 10px 11px; font-size: 11px; color: #334155;
+  padding: 10px 11px; font-size:14px; color: #334155;
   line-height: 1.5; white-space: pre-wrap; word-break: break-word;
 }
 .ec-msg-body.clamped { max-height: 260px; overflow: hidden; position: relative; }
@@ -110,14 +110,14 @@
 }
 .ec-msg-more {
   display: block; width: 100%; padding: 6px; border: 0; border-top: 1px solid #f1f5f9;
-  background: #fff; color: #ef1b16; font-size: 10.5px; font-weight: 600; cursor: pointer;
+  background: #fff; color: #ef1b16; font-size:13.5px; font-weight: 600; cursor: pointer;
 }
 .ec-msg-more:hover { background: #f8fafc; }
 
 .ec-atts { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 11px 9px; }
 .ec-att {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 10.5px; color: #475569; background: #f8fafc;
+  font-size:13.5px; color: #475569; background: #f8fafc;
   border: 1px solid #e2e8f0; border-radius: 5px; padding: 3px 8px;
 }
 
@@ -125,7 +125,7 @@
 .ec-track {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 7px 11px; background: #f8fafc; border-top: 1px solid #f1f5f9;
-  font-size: 10.5px;
+  font-size:13.5px;
 }
 .ec-track-badge {
   display: inline-flex; align-items: center; gap: 4px;
@@ -133,8 +133,44 @@
 }
 .ec-track-badge.opened { background: #dcfce7; color: #15803d; }
 .ec-track-badge.sent   { background: #eff6ff; color: #2563eb; }
-.ec-track-meta { color: #94a3b8; }
+/* An email that never carried a tracking pixel: deliberately the quietest of
+   the three states, so it reads as "no information" rather than as bad news. */
+.ec-track-badge.untracked { background: #f1f5f9; color:#475467; }
+.ec-track-meta { color:#475467; }
 
 .ec-loading, .ec-empty {
-  padding: 32px 16px; text-align: center; color: #94a3b8; font-size: 12.5px;
+  padding: 32px 16px; text-align: center; color:#475467; font-size:15.5px;
 }
+
+
+/* -- Rendered email body ------------------------------------------
+   The sender wrote this markup, so it must be allowed to look like itself
+   (their colours, sizes, tables) while being unable to affect the app around
+   it. `contain` is what enforces that boundary: `layout` makes this element
+   the containing block for any position:fixed descendant, so a stray style
+   cannot escape the drawer and cover the page; `style` stops counters and
+   quotes leaking out. Overflow scrolls rather than stretching the drawer,
+   because plenty of real emails are fixed-width table layouts. */
+.ec-msg-html {
+  contain: layout style;
+  overflow-x: auto;
+  max-width: 100%;
+  font-size:16px;
+  line-height: 1.55;
+  color: #1f2937;
+}
+.ec-msg-html img { max-width: 100%; height: auto; }
+.ec-msg-html table { max-width: 100%; border-collapse: collapse; }
+.ec-msg-html td, .ec-msg-html th { padding: 4px 6px; }
+.ec-msg-html a { color: #2563eb; text-decoration: underline; }
+.ec-msg-html blockquote {
+  margin: 8px 0; padding-left: 10px;
+  border-left: 2px solid #e2e8f0; color:#344054;
+}
+.ec-msg-html p { margin: 0 0 8px; }
+.ec-msg-html ul, .ec-msg-html ol { margin: 0 0 8px; padding-left: 20px; }
+.ec-msg-html pre {
+  white-space: pre-wrap; word-break: break-word;
+  background: #f8fafc; padding: 8px; border-radius: 6px;
+}
+.ec-msg-html .gmail_quote { color:#344054; }

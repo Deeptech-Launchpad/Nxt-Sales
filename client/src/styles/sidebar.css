@@ -69,7 +69,7 @@
 }
 
 .app-name-modern {
-  font-size: 14px;
+  font-size:17px;
   font-weight: 700;
   color: #fff;
   letter-spacing: 0.5px;
@@ -103,7 +103,7 @@
   background: transparent;
   outline: none;
   color: #fff;
-  font-size: 13px;
+  font-size:16px;
   font-family: 'DM Sans', system-ui, sans-serif;
   width: 100%;
 }
@@ -137,7 +137,7 @@
   background: none;
   border: 1px solid transparent;
   color: rgba(255, 255, 255, 0.6);
-  font-size: 13px;
+  font-size:16px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -195,7 +195,7 @@
   padding: 8px 10px;
   border-radius: 6px;
   color: rgba(255, 255, 255, 0.5);
-  font-size: 12.5px;
+  font-size:15.5px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
@@ -231,7 +231,7 @@
   padding: 8px 12px;
   border-radius: 8px;
   color: rgba(255, 255, 255, 0.5);
-  font-size: 13px;
+  font-size:16px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s;
@@ -272,7 +272,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size:15px;
   font-weight: 700;
   color: #fff;
   flex-shrink: 0;
@@ -288,7 +288,7 @@
 }
 
 .user-name-modern {
-  font-size: 12px;
+  font-size:15px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.9);
   white-space: nowrap;
@@ -297,7 +297,7 @@
 }
 
 .user-email-modern {
-  font-size: 10.5px;
+  font-size:13.5px;
   color: rgba(255, 255, 255, 0.35);
   white-space: nowrap;
   overflow: hidden;
@@ -312,7 +312,7 @@
   padding: 8px 12px;
   border-radius: 8px;
   color: rgba(255, 255, 255, 0.4);
-  font-size: 12.5px;
+  font-size:15.5px;
   font-weight: 500;
   background: none;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -414,7 +414,7 @@
   }
 
   .app-name-modern {
-    font-size: 13px;
+    font-size:16px;
   }
 }
 

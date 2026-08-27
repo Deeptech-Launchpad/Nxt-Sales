@@ -15,7 +15,7 @@
   border:1px solid #d8dee8;
   background: #fff;
   color: #334155;
-  font-size:10px;
+  font-size:13px;
   font-weight:600;
   cursor: pointer;
   white-space: nowrap;
@@ -28,7 +28,7 @@
 .fdd-clear-x {
   background: none;
   border: none;
-  color: #64748b;
+  color:#344054;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -71,7 +71,7 @@
 .fdd-search input {
   border: none;
   outline: none;
-  font-size:10.5px;
+  font-size:13.5px;
   color: #0f172a;
   font-family:Inter,system-ui,sans-serif;
   flex: 1;
@@ -105,14 +105,14 @@
 }
 
 .fdd-option-label {
-  font-size:10.5px;
+  font-size:13.5px;
   color: #334155;
   flex: 1;
 }
 
 .fdd-option-count {
-  font-size: 11px;
-  color: #94a3b8;
+  font-size:14px;
+  color:#475467;
   background: #f1f5f9;
   padding: 1px 6px;
   border-radius: 10px;
@@ -121,8 +121,8 @@
 .fdd-empty {
   padding:14px;
   text-align: center;
-  font-size:10.5px;
-  color: #94a3b8;
+  font-size:13.5px;
+  color:#475467;
 }
 
 /* ── footer ── */
@@ -138,7 +138,7 @@
   background: none;
   border: none;
   color: #3b82f6;
-  font-size: 12px;
+  font-size:15px;
   font-weight: 500;
   cursor: pointer;
   font-family:Inter,system-ui,sans-serif;
@@ -147,8 +147,8 @@
 .fdd-clear-all:hover { text-decoration: underline; }
 
 .fdd-count-badge {
-  font-size: 11px;
-  color: #64748b;
+  font-size:14px;
+  color:#344054;
 }
 
 /* Clear, task-focused calendar filtering */
@@ -158,4 +158,4 @@
 .date-filter-tabs button{min-height:31px;padding:0 3px;border:0;border-radius:7px;color:#758195;background:transparent;cursor:pointer;font:650 9.5px Inter,system-ui,sans-serif}
 .date-filter-tabs button:hover{color:#071b52;background:#edf1f7}.date-filter-tabs button.active{color:#071b52;background:#fff;box-shadow:0 1px 4px rgba(7,27,82,.1)}
 .date-filter-content{padding:13px}.date-filter-content .fdd-options{padding:0;max-height:245px}.date-filter-content .fdd-option{min-height:34px;padding-inline:8px;border-radius:7px}.date-filter-content input[type="date"],.date-filter-content select{height:38px!important;border-color:#d8dee8!important;border-radius:8px!important;outline:0}.date-filter-content input[type="date"]:focus,.date-filter-content select:focus{border-color:#071b52!important;box-shadow:0 0 0 3px rgba(7,27,82,.07)}
-.date-filter-panel .fdd-footer{padding:10px 13px;background:#fafbfd}.date-filter-panel .fdd-clear-all{color:#d43d46;font-size:10px;font-weight:650}.date-filter-panel .fdd-count-badge{max-width:205px;overflow:hidden;color:#536078;font-size:9.5px;text-overflow:ellipsis;white-space:nowrap}
+.date-filter-panel .fdd-footer{padding:10px 13px;background:#fafbfd}.date-filter-panel .fdd-clear-all{color:#d43d46;font-size:13px;font-weight:650}.date-filter-panel .fdd-count-badge{max-width:205px;overflow:hidden;color:#536078;font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}

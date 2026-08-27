@@ -28,12 +28,12 @@
   box-shadow:0 17px 38px rgba(7,27,82,.14);
 }
 .inbox-hero-copy{max-width:640px}
-.inbox-eyebrow{display:flex;align-items:center;gap:7px;margin-bottom:12px;color:#bcd1ff;font-size:9px;font-weight:760;letter-spacing:.12em;text-transform:uppercase}
+.inbox-eyebrow{display:flex;align-items:center;gap:7px;margin-bottom:12px;color:#bcd1ff;font-size:12px;font-weight:760;letter-spacing:.12em;text-transform:uppercase}
 .inbox-hero h1{margin:0;color:#fff;font-size:29px;font-weight:730;line-height:1.12;letter-spacing:-.042em}
-.inbox-hero p{max-width:590px;margin:10px 0 0;color:rgba(255,255,255,.72);font-size:10.5px;line-height:1.6}
+.inbox-hero p{max-width:590px;margin:10px 0 0;color:rgba(255,255,255,.72);font-size:13.5px;line-height:1.6}
 .inbox-hero-side{display:flex;align-items:center;gap:12px;position:relative;z-index:2}
 .inbox-total-card{min-width:160px;padding:14px 16px;border:1px solid rgba(255,255,255,.17);border-radius:13px;background:rgba(255,255,255,.10);backdrop-filter:blur(9px)}
-.inbox-total-card span,.inbox-total-card small{display:block;color:#bdd1f8;font-size:8px;font-weight:680;letter-spacing:.04em;text-transform:uppercase}
+.inbox-total-card span,.inbox-total-card small{display:block;color:#bdd1f8;font-size:11px;font-weight:680;letter-spacing:.04em;text-transform:uppercase}
 .inbox-total-card strong{display:block;margin:5px 0;color:#fff;font-size:24px;line-height:1;font-variant-numeric:tabular-nums}
 .inbox-total-card small{color:rgba(255,255,255,.56);font-weight:550;letter-spacing:0;text-transform:none}
 .inbox-hero-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;min-width:205px}
@@ -48,7 +48,7 @@
   border:1px solid #d8dee8;
   border-radius:8px;
   background:#fff;
-  color:#344054;
+  color:#1d2939;
   font:650 9.5px/1 Inter,system-ui,sans-serif;
   cursor:pointer;
   transition:transform 150ms ease,background 170ms ease,border-color 170ms ease,box-shadow 170ms ease;
@@ -62,16 +62,16 @@
 .inbox-export-wrap{position:relative}
 .inbox-export-wrap>.inbox-secondary-btn{width:100%}
 .inbox-export-menu{position:absolute;top:calc(100% + 5px);right:0;z-index:3200;min-width:150px;overflow:hidden;border:1px solid #e1e7ef;border-radius:10px;background:#fff;box-shadow:0 16px 38px rgba(7,27,82,.16)}
-.inbox-export-menu button{display:block;width:100%;padding:9px 12px;border:0;background:transparent;color:#344054;font:550 9.5px/1 Inter,system-ui,sans-serif;text-align:left;cursor:pointer}
+.inbox-export-menu button{display:block;width:100%;padding:9px 12px;border:0;background:transparent;color:#1d2939;font:550 9.5px/1 Inter,system-ui,sans-serif;text-align:left;cursor:pointer}
 .inbox-export-menu button:hover{background:#f6f8fb;color:#071b52}
 
 .inbox-data-shell{min-width:0;overflow:visible;border:1px solid #e2e8f0;border-radius:17px;background:#fff;box-shadow:0 6px 20px rgba(31,47,82,.045)}
 .inbox-list-toolbar{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:0 16px;border-bottom:1px solid #e7ebf1}
 .inbox-tabs{display:flex;align-items:center;gap:4px;height:62px}
-.inbox-tabs button{height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:#7b8798;font:650 9.5px/1 Inter,system-ui,sans-serif;cursor:pointer}
+.inbox-tabs button{height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:#3f4a5a;font:650 9.5px/1 Inter,system-ui,sans-serif;cursor:pointer}
 .inbox-tabs button:hover{background:#f5f7fa;color:#071b52}
 .inbox-tabs button[aria-selected="true"]{background:#edf3ff;color:#071b52}
-.inbox-tabs button span{min-width:20px;padding:3px 6px;border-radius:999px;background:#fff;color:#53627a;font-size:8px;font-variant-numeric:tabular-nums}
+.inbox-tabs button span{min-width:20px;padding:3px 6px;border-radius:999px;background:#fff;color:#53627a;font-size:11px;font-variant-numeric:tabular-nums}
 .inbox-toolbar-actions{display:flex;align-items:center;gap:6px}
 .inbox-date-control{position:relative;flex:0 0 auto}
 .inbox-date-control .fdd-btn{min-height:35px;padding:0 10px;border-color:#d8dee8;border-radius:8px;background:#fafbfd;color:#526174;font:650 9.5px/1 Inter,system-ui,sans-serif}
@@ -82,9 +82,9 @@
 .inbox-search:focus-within{border-color:#3267e3;background:#fff;box-shadow:0 0 0 3px rgba(50,103,227,.08)}
 .inbox-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:#26344c;font:500 9.5px/1 Inter,system-ui,sans-serif}
 .inbox-search input::placeholder{color:#9aa5b4}
-.inbox-refresh-btn{width:35px;padding:0;background:#fafbfd;color:#64748b}
+.inbox-refresh-btn{width:35px;padding:0;background:#fafbfd;color:#344054}
 .inbox-refresh-btn:hover{background:#edf3ff;color:#3267e3}
-.inbox-list-head{min-height:34px;display:grid;grid-template-columns:260px minmax(0,1fr) 58px;align-items:center;gap:12px;padding:0 16px 0 58px;border-bottom:1px solid #e4e9f0;background:#f8fafc;color:#8c97a8;font-size:7.5px;font-weight:760;letter-spacing:.075em;text-transform:uppercase}
+.inbox-list-head{min-height:34px;display:grid;grid-template-columns:260px minmax(0,1fr) 58px;align-items:center;gap:12px;padding:0 16px 0 58px;border-bottom:1px solid #e4e9f0;background:#f8fafc;color:#8c97a8;font-size:10.5px;font-weight:760;letter-spacing:.075em;text-transform:uppercase}
 .inbox-list{overflow:hidden;border-radius:0 0 17px 17px}
 .inbox-row{min-width:0;min-height:50px;display:grid;grid-template-columns:26px 30px 210px minmax(0,1fr) 58px;align-items:center;gap:10px;padding:5px 16px;border-bottom:1px solid #eef1f5;cursor:pointer;transition:background 150ms ease,box-shadow 150ms ease}
 .inbox-row:last-child{border-bottom:0}
@@ -92,17 +92,17 @@
 .inbox-direction{width:25px;height:25px;display:grid;place-items:center;border-radius:7px}
 .inbox-direction.outbound{background:#edf3ff;color:#3267e3}
 .inbox-direction.inbound{background:#f2effd;color:#8065de}
-.inbox-contact-avatar{width:29px;height:29px;display:grid;place-items:center;border-radius:9px;background:linear-gradient(145deg,#153c85,#071b52);color:#fff;font-size:7.5px;font-weight:760;letter-spacing:-.02em}
+.inbox-contact-avatar{width:29px;height:29px;display:grid;place-items:center;border-radius:9px;background:linear-gradient(145deg,#153c85,#071b52);color:#fff;font-size:10.5px;font-weight:760;letter-spacing:-.02em}
 .inbox-participant{min-width:0}
-.inbox-participant>div{overflow:hidden;color:#17243e;font-size:9.5px;font-weight:680;text-overflow:ellipsis;white-space:nowrap}
-.inbox-participant small{display:block;overflow:hidden;margin-top:3px;color:#929dad;font-size:8px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}
-.inbox-extra{margin-left:5px;color:#8d98a8;font-size:8px;font-weight:720}
+.inbox-participant>div{overflow:hidden;color:#17243e;font-size:12.5px;font-weight:680;text-overflow:ellipsis;white-space:nowrap}
+.inbox-participant small{display:block;overflow:hidden;margin-top:3px;color:#929dad;font-size:11px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}
+.inbox-extra{margin-left:5px;color:#8d98a8;font-size:11px;font-weight:720}
 .inbox-message-preview{min-width:0;display:flex;align-items:center;gap:5px;overflow:hidden}
-.inbox-message-preview strong{max-width:53%;flex:0 1 auto;overflow:hidden;color:#2e3a50;font-size:9.5px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}
-.inbox-message-preview>span{min-width:0;overflow:hidden;color:#98a2b3;font-size:9px;text-overflow:ellipsis;white-space:nowrap}
+.inbox-message-preview strong{max-width:53%;flex:0 1 auto;overflow:hidden;color:#2e3a50;font-size:12.5px;font-weight:620;text-overflow:ellipsis;white-space:nowrap}
+.inbox-message-preview>span{min-width:0;overflow:hidden;color:#475467;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 .inbox-attachment{flex:0 0 auto;color:#8e99a9}
-.inbox-row-date{color:#8d98a8;font-size:8.5px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-.inbox-empty{padding:40px 16px;color:#98a2b3;font-size:10px;text-align:center}
+.inbox-row-date{color:#8d98a8;font-size:11.5px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.inbox-empty{padding:40px 16px;color:#475467;font-size:13px;text-align:center}
 .inbox-pagination{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-top:1px solid #e7ebf1;background:#fafbfd}
 
 @media(max-width:1050px){
@@ -116,7 +116,7 @@
   .inbox-workspace{padding:0 0 22px;gap:13px}
   .inbox-hero{min-height:390px;padding:25px 20px;border-radius:18px}
   .inbox-hero h1{font-size:27px}
-  .inbox-hero p{font-size:10px}
+  .inbox-hero p{font-size:13px}
   .inbox-hero-side{align-items:stretch;flex-direction:column}
   .inbox-total-card{min-width:0}
   .inbox-hero-actions{width:100%;min-width:0}

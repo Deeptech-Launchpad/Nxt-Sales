@@ -21,17 +21,17 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 13.5px;
+  font-size:16.5px;
   font-weight: 600;
   color: #334155;
   min-width: 0;
 }
 .dv-hero-company span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dv-hero-company svg { color: #94a3b8; flex-shrink: 0; }
+.dv-hero-company svg { color:#475467; flex-shrink: 0; }
 
 .dv-stage-pill {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size:14px;
   font-weight: 700;
   color: #ef1b16;
   background: #fff1f0;
@@ -62,13 +62,13 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size:14.5px;
   font-weight: 600;
   border-radius: 20px;
   padding: 4px 10px;
 }
 .dv-flag-pill.is-yes { color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; }
-.dv-flag-pill.is-no  { color: #94a3b8; background: #f8fafc; border: 1px solid #e2e8f0; }
+.dv-flag-pill.is-no  { color:#475467; background: #f8fafc; border: 1px solid #e2e8f0; }
 
 .dv-section { margin-bottom: 22px; }
 .dv-section:last-child { margin-bottom: 4px; }
@@ -77,7 +77,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size:15px;
   font-weight: 800;
   color: #1e293b;
   text-transform: uppercase;
@@ -86,7 +86,7 @@
   padding-bottom: 8px;
   border-bottom: 1px solid #f1f5f9;
 }
-.dv-section-title svg { color: #64748b; }
+.dv-section-title svg { color:#344054; }
 
 .dv-grid {
   display: grid;
@@ -100,25 +100,25 @@
 .dv-field-label {
   display: flex;
   align-items: center;
-  font-size: 12.5px;
+  font-size:15.5px;
   font-weight: 700;
   color: #475569;
   margin-bottom: 4px;
   position: relative;
   padding-left: 17px;
 }
-.dv-field-label svg { position: absolute; left: 0; color: #cbd5e1; flex-shrink: 0; }
+.dv-field-label svg { position: absolute; left: 0; color:#667085; flex-shrink: 0; }
 
 .dv-field-value {
   padding-left: 17px;
-  font-size: 14px;
+  font-size:17px;
   color: #0f172a;
   font-weight: 500;
   line-height: 1.5;
   word-break: break-word;
   white-space: pre-wrap;
 }
-.dv-field-value.is-empty { color: #cbd5e1; font-weight: 400; }
+.dv-field-value.is-empty { color:#667085; font-weight: 400; }
 
 .dv-field-value a {
   color: #3b82f6;
@@ -132,10 +132,10 @@
   border: 1px solid #eef1f5;
   border-radius: 8px;
   padding: 12px 14px;
-  font-size: 13.5px;
+  font-size:16.5px;
   color: #334155;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
 }
-.dv-notes-box.is-empty { color: #cbd5e1; }
+.dv-notes-box.is-empty { color:#667085; }
