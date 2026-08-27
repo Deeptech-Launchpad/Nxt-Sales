@@ -123,7 +123,7 @@ export default function CompanyRecycleBin() {
 
       {message && (
         <div style={{
-          margin: '0 0 14px', padding: '10px 14px', borderRadius: 6, fontSize: 13,
+          margin: '0 0 14px', padding: '10px 14px', borderRadius: 6, fontSize: 16,
           background: message.type === 'error' ? '#fef2f2' : '#f0fdf4',
           border: `1px solid ${message.type === 'error' ? '#fecaca' : '#bbf7d0'}`,
           color: message.type === 'error' ? '#991b1b' : '#166534',
@@ -144,9 +144,9 @@ export default function CompanyRecycleBin() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={4} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Loading...</td></tr>
+              <tr><td colSpan={4} style={{ textAlign: 'center', padding: '40px', color: '#475467' }}>Loading...</td></tr>
             ) : companies.length === 0 ? (
-              <tr><td colSpan={4} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>Recycle Bin is empty</td></tr>
+              <tr><td colSpan={4} style={{ textAlign: 'center', padding: '40px', color: '#475467' }}>Recycle Bin is empty</td></tr>
             ) : companies.map(c => {
               const remaining = daysRemaining(c.deletedAt)
               return (

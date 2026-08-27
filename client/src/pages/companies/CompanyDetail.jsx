@@ -23,7 +23,7 @@ import '../../styles/activity-modals.css'
 
 // Small "Primary" tag shown next to the first value when there are several.
 const PRIMARY_TAG = {
-  fontSize: 9, fontWeight: 700, color: '#0d9488', background: '#f0fdfa',
+  fontSize: 12, fontWeight: 700, color: '#0d9488', background: '#f0fdfa',
   border: '1px solid #99f6e4', borderRadius: 3, padding: '1px 4px', marginLeft: 6,
 }
 
@@ -182,9 +182,9 @@ function OverviewTab({ company, recentActs }) {
         {recentActs.length === 0 ? (
           <div className="empty-assoc"><p>No recent activities. Log a note, call, or email below.</p></div>
         ) : recentActs.slice(0, 5).map(a => (
-          <div key={a.id} style={{ padding: '10px 16px', borderBottom: '1px solid #f8fafc', fontSize: 13 }}>
+          <div key={a.id} style={{ padding: '10px 16px', borderBottom: '1px solid #f8fafc', fontSize: 16 }}>
             <span style={{ fontWeight: 600, color: '#0f172a' }}>{a.title || a.type}</span>
-            <span style={{ marginLeft: 8, color: '#94a3b8', fontSize: 11 }}>
+            <span style={{ marginLeft: 8, color: '#475467', fontSize: 14 }}>
               {new Date(a.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
             </span>
           </div>
@@ -392,14 +392,14 @@ export default function CompanyDetail() {
   }
 
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 10, color: '#94a3b8' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 10, color: '#475467' }}>
       <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} /> Loading company…
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 
   if (notFound || !company) return (
-    <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+    <div style={{ padding: 40, textAlign: 'center', color: '#475467', fontSize: 17 }}>
       Company not found.{' '}
       <span style={{ color: '#3b82f6', cursor: 'pointer', fontWeight: 500 }} onClick={() => navigate('/companies')}>
         ← Back to Companies
