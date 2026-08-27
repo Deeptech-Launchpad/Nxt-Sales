@@ -60,7 +60,7 @@ function fileIconFor(mimeType) {
   if (mimeType === 'application/pdf') return { Icon: FileText, color: '#ef4444' }
   if (mimeType?.includes('word')) return { Icon: FileText, color: '#2563eb' }
   if (mimeType?.includes('sheet') || mimeType?.includes('excel')) return { Icon: FileText, color: '#16a34a' }
-  return { Icon: FileIcon, color: '#64748b' }
+  return { Icon: FileIcon, color: '#344054' }
 }
 
 // ── Create Group modal ──────────────────────────────────────
@@ -94,33 +94,33 @@ function CreateGroupModal({ users, onClose, onCreated }) {
     <div className="chat-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 14, width: 440, maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid #e2e8f0' }}>
-          <span className="chat-modal-title" style={{ fontSize: 16.5, fontWeight: 700, color: '#0f172a' }}>Create Group</span>
-          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={19} /></button>
+          <span className="chat-modal-title" style={{ fontSize: 19.5, fontWeight: 700, color: '#0f172a' }}>Create Group</span>
+          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475467', display: 'flex' }}><X size={19} /></button>
         </div>
         <div style={{ padding: '20px 22px', overflowY: 'auto', flex: 1 }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 7 }}>Group Name</label>
+          <label style={{ display: 'block', fontSize: 15, fontWeight: 600, color: '#344054', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 7 }}>Group Name</label>
           <input
             autoFocus value={name} onChange={e => setName(e.target.value)}
             placeholder="e.g. Sales Team"
-            style={{ width: '100%', padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 14.5, boxSizing: 'border-box', marginBottom: 18 }}
+            style={{ width: '100%', padding: '10px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 17.5, boxSizing: 'border-box', marginBottom: 18 }}
           />
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 7 }}>
+          <label style={{ display: 'block', fontSize: 15, fontWeight: 600, color: '#344054', textTransform: 'uppercase', letterSpacing: '0.3px', marginBottom: 7 }}>
             Members ({selected.size} selected)
           </label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 260, overflowY: 'auto' }}>
             {users.map(u => (
               <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '8px 9px', borderRadius: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggle(u.id)} />
-                <div className="chat-user-avatar" style={{ width: 30, height: 30, fontSize: 12.5 }}>{initials(u.name)}</div>
-                <span style={{ fontSize: 14.5, color: '#0f172a' }}>{u.name}</span>
+                <div className="chat-user-avatar" style={{ width: 30, height: 30, fontSize: 15.5 }}>{initials(u.name)}</div>
+                <span style={{ fontSize: 17.5, color: '#0f172a' }}>{u.name}</span>
               </label>
             ))}
           </div>
-          {error && <p style={{ color: '#ef4444', fontSize: 13, marginTop: 12 }}>{error}</p>}
+          {error && <p style={{ color: '#ef4444', fontSize: 16, marginTop: 12 }}>{error}</p>}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 22px', borderTop: '1px solid #e2e8f0' }}>
-          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 9, border: '1px solid #e2e8f0', background: '#fff', fontSize: 14, cursor: 'pointer', color: '#64748b' }}>Cancel</button>
-          <button onClick={create} disabled={saving} style={{ padding: '9px 22px', borderRadius: 9, border: 'none', background: '#1d4ed8', color: '#fff', fontSize: 14, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>
+          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 9, border: '1px solid #e2e8f0', background: '#fff', fontSize: 17, cursor: 'pointer', color: '#344054' }}>Cancel</button>
+          <button onClick={create} disabled={saving} style={{ padding: '9px 22px', borderRadius: 9, border: 'none', background: '#1d4ed8', color: '#fff', fontSize: 17, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer' }}>
             {saving ? 'Creating…' : 'Create Group'}
           </button>
         </div>
@@ -138,19 +138,19 @@ function NewChatModal({ users, onClose, onPicked }) {
     <div className="chat-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 14, width: 380, maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid #e2e8f0' }}>
-          <span className="chat-modal-title" style={{ fontSize: 16.5, fontWeight: 700, color: '#0f172a' }}>New Chat</span>
-          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={19} /></button>
+          <span className="chat-modal-title" style={{ fontSize: 19.5, fontWeight: 700, color: '#0f172a' }}>New Chat</span>
+          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475467', display: 'flex' }}><X size={19} /></button>
         </div>
         <div style={{ padding: '14px 22px 0' }}>
           <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Search teammates…"
-            style={{ width: '100%', padding: '9px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 14.5, boxSizing: 'border-box' }} />
+            style={{ width: '100%', padding: '9px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 17.5, boxSizing: 'border-box' }} />
         </div>
         <div style={{ padding: '12px 14px 18px', overflowY: 'auto', flex: 1 }}>
           {filtered.map(u => (
             <button key={u.id} onClick={() => onPicked(u.id)} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', padding: '9px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: 8, textAlign: 'left' }}
               onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-              <div className="chat-user-avatar" style={{ width: 34, height: 34, fontSize: 13 }}>{initials(u.name)}</div>
-              <span style={{ fontSize: 14.5, color: '#0f172a' }}>{u.name}</span>
+              <div className="chat-user-avatar" style={{ width: 34, height: 34, fontSize: 16 }}>{initials(u.name)}</div>
+              <span style={{ fontSize: 17.5, color: '#0f172a' }}>{u.name}</span>
             </button>
           ))}
           {filtered.length === 0 && <div className="chat-list-empty">No teammates found</div>}
@@ -190,23 +190,23 @@ function AttachRecordModal({ onClose, onPicked }) {
     <div className="chat-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 14, width: 380, maxHeight: '70vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid #e2e8f0' }}>
-          <span className="chat-modal-title" style={{ fontSize: 16.5, fontWeight: 700, color: '#0f172a' }}>Attach a Record</span>
-          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={19} /></button>
+          <span className="chat-modal-title" style={{ fontSize: 19.5, fontWeight: 700, color: '#0f172a' }}>Attach a Record</span>
+          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475467', display: 'flex' }}><X size={19} /></button>
         </div>
         <div style={{ display: 'flex', gap: 9, padding: '14px 22px 0' }}>
-          <button onClick={() => setType('company')} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: '1px solid #e2e8f0', background: type === 'company' ? '#eff6ff' : '#fff', color: type === 'company' ? '#1d4ed8' : '#64748b', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>Company</button>
-          <button onClick={() => setType('deal')} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: '1px solid #e2e8f0', background: type === 'deal' ? '#eff6ff' : '#fff', color: type === 'deal' ? '#1d4ed8' : '#64748b', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>Deal</button>
+          <button onClick={() => setType('company')} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: '1px solid #e2e8f0', background: type === 'company' ? '#eff6ff' : '#fff', color: type === 'company' ? '#1d4ed8' : '#64748b', fontSize: 16.5, fontWeight: 600, cursor: 'pointer' }}>Company</button>
+          <button onClick={() => setType('deal')} style={{ flex: 1, padding: '8px 0', borderRadius: 9, border: '1px solid #e2e8f0', background: type === 'deal' ? '#eff6ff' : '#fff', color: type === 'deal' ? '#1d4ed8' : '#64748b', fontSize: 16.5, fontWeight: 600, cursor: 'pointer' }}>Deal</button>
         </div>
         <div style={{ padding: '14px 22px 0' }}>
           <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder={`Search ${type === 'company' ? 'companies' : 'deals'}…`}
-            style={{ width: '100%', padding: '9px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 14.5, boxSizing: 'border-box' }} />
+            style={{ width: '100%', padding: '9px 14px', border: '1px solid #e2e8f0', borderRadius: 9, fontSize: 17.5, boxSizing: 'border-box' }} />
         </div>
         <div style={{ padding: '12px 14px 18px', overflowY: 'auto', flex: 1 }}>
           {results.map(r => (
             <button key={r.id} onClick={() => onPicked({ type, id: r.id, label: r.label })} style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', padding: '9px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: 8, textAlign: 'left' }}
               onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
               {type === 'company' ? <Building2 size={17} color="#64748b" /> : <Briefcase size={17} color="#64748b" />}
-              <span style={{ fontSize: 14.5, color: '#0f172a' }}>{r.label}</span>
+              <span style={{ fontSize: 17.5, color: '#0f172a' }}>{r.label}</span>
             </button>
           ))}
           {results.length === 0 && <div className="chat-list-empty">No matches</div>}
@@ -687,10 +687,10 @@ export default function Chat() {
                 {selectedConv.isGroup ? <Users size={15} /> : initials(selectedConv.members[0]?.name)}
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 16.5, color: '#0f172a', letterSpacing: '-0.2px' }}>
+                <div style={{ fontWeight: 700, fontSize: 19.5, color: '#0f172a', letterSpacing: '-0.2px' }}>
                   {conversationLabel(selectedConv)}
                 </div>
-                <div style={{ fontSize: 13, color: typingUserId ? '#0d9488' : '#94a3b8', fontStyle: typingUserId ? 'italic' : 'normal', marginTop: 1 }}>
+                <div style={{ fontSize: 16, color: typingUserId ? '#0d9488' : '#94a3b8', fontStyle: typingUserId ? 'italic' : 'normal', marginTop: 1 }}>
                   {typingUserId
                     ? `${typingUserName || 'Someone'} typing…`
                     : selectedConv.isGroup
@@ -706,9 +706,9 @@ export default function Chat() {
             {showPinned && (
               <div style={{ borderBottom: '1px solid #e2e8f0', background: '#fffbeb', padding: '12px 24px', maxHeight: 160, overflowY: 'auto' }}>
                 {pinnedMessages.length === 0 ? (
-                  <p style={{ margin: 0, fontSize: 13.5, color: '#92400e' }}>No pinned messages in this conversation.</p>
+                  <p style={{ margin: 0, fontSize: 16.5, color: '#92400e' }}>No pinned messages in this conversation.</p>
                 ) : pinnedMessages.map(m => (
-                  <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '7px 0', fontSize: 13.5 }}>
+                  <div key={m.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '7px 0', fontSize: 16.5 }}>
                     <span style={{ color: '#78350f' }}><strong>{m.fromUser?.name}:</strong> {m.body}</span>
                     <button onClick={() => togglePin(m.id)} title="Unpin" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#b45309', flexShrink: 0 }}><X size={14} /></button>
                   </div>
@@ -751,10 +751,10 @@ export default function Chat() {
                           <input
                             autoFocus value={editText} onChange={e => setEditText(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') saveEdit(msg.id); if (e.key === 'Escape') setEditingId(null) }}
-                            style={{ fontSize: 14.5, padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 10, minWidth: 200 }}
+                            style={{ fontSize: 17.5, padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: 10, minWidth: 200 }}
                           />
                           <button onClick={() => saveEdit(msg.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a', display: 'flex' }}><Check size={17} /></button>
-                          <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={17} /></button>
+                          <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475467', display: 'flex' }}><X size={17} /></button>
                         </div>
                       ) : (
                         <>
@@ -776,8 +776,8 @@ export default function Chat() {
                                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, textDecoration: 'none', maxWidth: 240 }}>
                                   {(() => { const { Icon, color } = fileIconFor(a.mimeType); return <Icon size={20} color={color} /> })()}
                                   <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.filename}</div>
-                                    <div style={{ fontSize: 11.5, color: '#94a3b8' }}>{formatBytes(a.size)}</div>
+                                    <div style={{ fontSize: 16, color: '#0f172a', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.filename}</div>
+                                    <div style={{ fontSize: 14.5, color: '#475467' }}>{formatBytes(a.size)}</div>
                                   </div>
                                 </a>
                               ))}
@@ -788,7 +788,7 @@ export default function Chat() {
                             <button onClick={() => navigate(attachedRecordLink(msg.attachedRecord))}
                               style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, marginTop: msg.body || msg.attachments?.length ? 8 : 0, cursor: 'pointer', maxWidth: 240 }}>
                               {msg.attachedRecord.type === 'company' ? <Building2 size={17} color="#1d4ed8" /> : <Briefcase size={17} color="#1d4ed8" />}
-                              <span style={{ fontSize: 13.5, color: '#1d4ed8', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg.attachedRecord.label}</span>
+                              <span style={{ fontSize: 16.5, color: '#1d4ed8', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{msg.attachedRecord.label}</span>
                             </button>
                           )}
                         </>
@@ -823,29 +823,29 @@ export default function Chat() {
             </div>
 
             {replyingTo && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', background: '#eff6ff', borderTop: '1px solid #e2e8f0', fontSize: 13.5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 20px', background: '#eff6ff', borderTop: '1px solid #e2e8f0', fontSize: 16.5 }}>
                 <span style={{ color: '#1d4ed8' }}><strong>Replying to {replyingTo.fromUser?.name}:</strong> {replyingTo.body?.slice(0, 80)}</span>
-                <button onClick={() => setReplyingTo(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex' }}><X size={15} /></button>
+                <button onClick={() => setReplyingTo(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#344054', display: 'flex' }}><X size={15} /></button>
               </div>
             )}
 
             {(pendingAttachments.length > 0 || pendingRecord || uploadError) && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '10px 20px', borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
                 {pendingAttachments.map(a => (
-                  <span key={a.url} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 7, padding: '5px 10px' }}>
+                  <span key={a.url} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 15.5, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 7, padding: '5px 10px' }}>
                     {a.mimeType?.startsWith('image/') ? <ImageIcon size={13} /> : <FileIcon size={13} />}
                     {a.filename}
-                    <button onClick={() => removePendingAttachment(a.url)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={12} /></button>
+                    <button onClick={() => removePendingAttachment(a.url)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475467', display: 'flex' }}><X size={12} /></button>
                   </span>
                 ))}
                 {pendingRecord && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 7, padding: '5px 10px', color: '#1d4ed8' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 15.5, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 7, padding: '5px 10px', color: '#1d4ed8' }}>
                     {pendingRecord.type === 'company' ? <Building2 size={13} /> : <Briefcase size={13} />}
                     {pendingRecord.label}
                     <button onClick={() => setPendingRecord(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1d4ed8', display: 'flex' }}><X size={12} /></button>
                   </span>
                 )}
-                {uploadError && <span style={{ fontSize: 12.5, color: '#ef4444' }}>{uploadError}</span>}
+                {uploadError && <span style={{ fontSize: 15.5, color: '#ef4444' }}>{uploadError}</span>}
               </div>
             )}
 
@@ -855,8 +855,8 @@ export default function Chat() {
                   {mentionCandidates.map(m => (
                     <button key={m.id} onClick={() => pickMention(m)} style={{ display: 'flex', alignItems: 'center', gap: 9, width: '100%', padding: '9px 14px', border: 'none', background: 'none', cursor: 'pointer', textAlign: 'left' }}
                       onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <div className="chat-user-avatar" style={{ width: 26, height: 26, fontSize: 11.5 }}>{initials(m.name)}</div>
-                      <span style={{ fontSize: 14.5 }}>{m.name}</span>
+                      <div className="chat-user-avatar" style={{ width: 26, height: 26, fontSize: 14.5 }}>{initials(m.name)}</div>
+                      <span style={{ fontSize: 17.5 }}>{m.name}</span>
                     </button>
                   ))}
                 </div>

@@ -236,6 +236,30 @@ function AttachChip({ name }) {
 // ─────────────────────────────────────────────────────────
 // Composer Section
 // ─────────────────────────────────────────────────────────
+// ── Email Template dropdown ────────────────────────────
+// The dropdown's fixed slots. Each has dedicated composer behaviour — 1 and
+// 3 take the Before/After screenshots, 3 is the AI audit path — and saved
+// drafts reference them by these exact keys, so they are ALWAYS offered.
+// Prompt Templates can re-word or re-write what they send; it can never
+// take one out of this list.
+//
+// Everything a user saves in Marketing → Prompt Templates is appended to
+// these at render time (see templateOptions below), which is what makes a
+// newly created template selectable here without a code change.
+const BUILT_IN_TEMPLATE_OPTIONS = [
+  { value: 'manual', label: '✍️ Manual' },
+  { value: '1', label: '1 — Before & After Sample' },
+  { value: '2', label: '2 — Client References' },
+  { value: '3', label: '3 — Audit (AI)' },
+  { value: '4', label: '4 — Pilot Offer POC' },
+]
+const BUILT_IN_TEMPLATE_KEYS = new Set(['1', '2', '3', '4'])
+
+// The one placeholder the built-in templates substitute (emailPromptDefaults
+// exports it as TOKEN). Used below to decide whether a template's own text
+// actually needs a Client Name before it can be compiled.
+const CLIENT_NAME_TOKEN = '{{clientName}}'
+
 function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, clearInitialDraft, companyContext }) {
   const [to, setTo]         = useState(initialDraft?.to || '')
   const [cc, setCc]         = useState(initialDraft?.cc || '')
@@ -284,6 +308,40 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
 
   const isBeforeAfter = template === '1' || template === '3'
   const isManual = template === 'manual'
+
+  // Fixed slots first, then every template saved in Prompt Templates for
+  // this Client Type. Filtered to enabled, content-kind rows on purpose:
+  // an AI system prompt is a set of instructions for the model, not an
+  // email body, so it must never be offered as one here. (The built-in
+  // slot 3 is the single place an ai_prompt row is used, and it reaches
+  // the AI through its own dedicated path in compilePreview.)
+  const templateOptions = [
+    ...BUILT_IN_TEMPLATE_OPTIONS,
+    ...savedTemplates
+      .filter(t => t && t.enabled && t.kind === 'content' && !BUILT_IN_TEMPLATE_KEYS.has(t.templateKey))
+      .slice()
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map(t => ({ value: t.templateKey, label: t.label || t.templateKey })),
+  ]
+  // A selected template can stop being offered mid-compose — deleted or
+  // disabled in Prompt Templates, or the Client Type was switched to one it
+  // doesn't belong to. Keep it visible rather than letting the select render
+  // blank and silently swallow the selection.
+  if (template && !templateOptions.some(o => o.value === template)) {
+    templateOptions.push({ value: template, label: `${template} (no longer available)` })
+  }
+
+  // Client Name is genuinely required only when the template text actually
+  // carries the {{clientName}} placeholder. Every built-in does, so nothing
+  // changes for them; a custom template that never references it no longer
+  // blocks the preview and the send on a value it would not use anywhere.
+  const needsClientName = (() => {
+    if (isManual) return false
+    if (BUILT_IN_TEMPLATE_KEYS.has(template)) return true
+    const saved = savedFor(template)
+    if (!saved) return false
+    return `${saved.subject || ''}${saved.content || ''}`.includes(CLIENT_NAME_TOKEN)
+  })()
 
   // Load draft if provided
   useEffect(() => {
@@ -392,7 +450,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to.trim())) { if (!silent) showToast('Please enter a valid "To" email address.', 'error'); return false }
     }
     if (template !== 'manual') {
-      if (!clientName.trim()) { if (!silent) showToast('Client Name is required when using templates.', 'error'); return false }
+      if (needsClientName && !clientName.trim()) { if (!silent) showToast('Client Name is required when using templates.', 'error'); return false }
       if (isBeforeAfter && (!beforeFile || !afterFile)) {
         if (!silent) showToast('Before & After screenshots are required for this template.', 'error')
         return false
@@ -480,7 +538,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
     if (autoTimer.current) clearTimeout(autoTimer.current)
     autoTimer.current = setTimeout(() => {
       if (isManual) return
-      if (!clientName.trim()) return
+      if (needsClientName && !clientName.trim()) return
       if (isBeforeAfter && (!beforeFile || !afterFile)) return
       if (template === '3') {
         const key = `${clientType}|${beforeFile?.name}|${afterFile?.name}`
@@ -490,7 +548,12 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
     }, 500)
     return () => { if (autoTimer.current) clearTimeout(autoTimer.current) }
     // eslint-disable-next-line
-  }, [clientType, template, clientName, beforeFile, afterFile])
+    // savedTemplates is in the list so the preview refreshes once the saved
+    // templates arrive from the API — without it, a first render that beat
+    // the fetch would keep showing the built-in copy for a slot the user has
+    // since edited, and a freshly created template selected from a restored
+    // draft would never compile at all.
+  }, [clientType, template, clientName, beforeFile, afterFile, savedTemplates])
 
   const saveDraft = () => {
     const draft = {
@@ -691,11 +754,9 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
               <div className="et-form-group et-field-template">
                 <label className="et-label">Email Template</label>
                 <select className="et-input" value={template} onChange={e => handleTemplateChange(e.target.value)}>
-                  <option value="manual">✍️ Manual</option>
-                  <option value="1">1 — Before &amp; After Sample</option>
-                  <option value="2">2 — Client References</option>
-                  <option value="3">3 — Audit (AI)</option>
-                  <option value="4">4 — Pilot Offer POC</option>
+                  {templateOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -796,7 +857,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
                   onDrop={e => { e.preventDefault(); setIsDragOver(false); handleAdditionalFiles(e.dataTransfer.files) }}
                 >
                   <input ref={addFilesRef} type="file" multiple onChange={e => handleAdditionalFiles(e.target.files)} />
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: '#64748b' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: '#344054' }}>
                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
                   </svg>
                   <p>Drag &amp; drop files or <span>click to browse</span></p>
@@ -982,7 +1043,7 @@ function DraftsSection({ onLoadDraft, setSection }) {
     <div className="et-section">
       <div className="et-panel-header">
         <h2 className="et-panel-title">Drafts</h2>
-        <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{drafts.length} draft{drafts.length !== 1 ? 's' : ''} saved</span>
+        <span style={{ fontSize: '0.8rem', color: '#475467' }}>{drafts.length} draft{drafts.length !== 1 ? 's' : ''} saved</span>
       </div>
 
       <div className="et-grid-panel">
@@ -1003,9 +1064,9 @@ function DraftsSection({ onLoadDraft, setSection }) {
                 </tr>
               ) : drafts.map(d => (
                 <tr key={d.id} onClick={() => loadDraft(d)}>
-                  <td style={{ fontWeight: 500 }}>{d.to || <span style={{ color: '#64748b', fontStyle: 'italic' }}>(No Recipient)</span>}</td>
-                  <td>{d.subject || <span style={{ color: '#64748b', fontStyle: 'italic' }}>(No Subject)</span>}</td>
-                  <td style={{ color: '#94a3b8', whiteSpace: 'nowrap' }}>{fmtDateTime(d.timestamp)}</td>
+                  <td style={{ fontWeight: 500 }}>{d.to || <span style={{ color: '#344054', fontStyle: 'italic' }}>(No Recipient)</span>}</td>
+                  <td>{d.subject || <span style={{ color: '#344054', fontStyle: 'italic' }}>(No Subject)</span>}</td>
+                  <td style={{ color: '#475467', whiteSpace: 'nowrap' }}>{fmtDateTime(d.timestamp)}</td>
                   <td style={{ textAlign: 'center' }}>
                     <button className="et-draft-del-btn" onClick={e => deleteDraft(e, d.id)} title="Delete Draft">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1078,11 +1139,11 @@ function AnalyticsSection() {
         scales: {
           x: {
             grid: { color: 'rgba(255,255,255,0.03)' },
-            ticks: { color: '#94A3B8', font: { family: 'Inter', size: 11 } }
+            ticks: { color: '#475467', font: { family: 'Inter', size: 11 } }
           },
           y: {
             grid: { color: 'rgba(255,255,255,0.03)' },
-            ticks: { color: '#94A3B8', precision: 0, font: { family: 'Inter', size: 11 } },
+            ticks: { color: '#475467', precision: 0, font: { family: 'Inter', size: 11 } },
             min: 0
           }
         }

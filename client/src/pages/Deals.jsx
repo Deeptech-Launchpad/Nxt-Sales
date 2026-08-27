@@ -17,6 +17,11 @@ import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUti
 import '../styles/deals.css'
 
 const COLUMNS_STORAGE_KEY = 'mwz_deals_visible_columns'
+
+// The two columns the table always leads with, in this order: Company name
+// first, then Deal name. Pinned rather than toggleable, so neither can be
+// switched off and leave the row without an identity.
+const PINNED_COLUMN_KEYS = ['companyName', 'title']
 const VIEW_STORAGE_KEY = 'mwz_deals_view_mode'
 
 const DEFAULT_COLUMNS = [
@@ -119,7 +124,7 @@ function DealExportMenu({ fetchAllForExport, columns }) {
             { label: 'Export as PDF',   fn: () => run(exportPDF, ['Deals Export — NXT Sales']) },
           ].map(item => (
             <button key={item.label} onClick={item.fn}
-              style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', textAlign: 'left', fontSize: 13, color: '#334155', cursor: 'pointer', fontFamily: 'DM Sans,system-ui,sans-serif' }}
+              style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', textAlign: 'left', fontSize: 16, color: '#334155', cursor: 'pointer', fontFamily: 'DM Sans,system-ui,sans-serif' }}
               onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
@@ -354,6 +359,16 @@ export default function Deals() {
 
   const editColumnsFields = [...dealFields, DEAL_OWNER_COLUMN, DEAL_FLAGS_COLUMN]
   const orderedVisibleFields = visibleColumns.map(key => editColumnsFields.find(f => f.key === key)).filter(Boolean)
+  // Company name and Deal name are rendered as the two pinned leading columns,
+  // so they are not repeated among the scrolling ones.
+  const listFields = orderedVisibleFields.filter(f => !PINNED_COLUMN_KEYS.includes(f.key))
+  // Exactly what the Company column showed before this reorder — the name plus
+  // the domain when there is one. Unchanged on purpose: this is a reorder and a
+  // restyle, not a change to what the row reports.
+  const companyCellText = (d) => {
+    const name = d.companyName || d.company?.name || '--'
+    return d.domainName ? `${name} / ${d.domainName}` : name
+  }
   const orderedBoardFields = boardVisibleColumns.map(key => editColumnsFields.find(f => f.key === key)).filter(Boolean)
 
   function renderDealCell(f, d) {
@@ -388,9 +403,13 @@ export default function Deals() {
     { label: 'Deals won', value: wonDeals, icon: 'verified', tone: 'success' },
   ]
 
+  // Mirrors the table: the two pinned columns first, in the same order, then
+  // whatever else is on screen. Naming them explicitly also means an export can
+  // never drop Company Name just because an older saved column list omits it.
   const exportColumns = [
+    { key: 'companyName', header: 'Company Name' },
     { key: 'title', header: 'Deal Name' },
-    ...orderedVisibleFields.map(f => ({ key: f.key, header: f.label }))
+    ...listFields.map(f => ({ key: f.key, header: f.label }))
   ]
 
   const fetchAllForExport = async () => {
@@ -427,10 +446,10 @@ export default function Deals() {
         <div className="deals-header-actions">
           <div className="action-group">
             {viewMode === 'list' && (
-              <EditColumnsMenu fields={editColumnsFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} alwaysShownKey="title" defaultColumns={DEFAULT_COLUMNS} />
+              <EditColumnsMenu fields={editColumnsFields} visibleColumns={visibleColumns} onSave={saveVisibleColumns} alwaysShownKey={PINNED_COLUMN_KEYS} defaultColumns={DEFAULT_COLUMNS} />
             )}
             {viewMode === 'board' && (
-              <EditColumnsMenu fields={editColumnsFields} visibleColumns={boardVisibleColumns} onSave={saveBoardVisibleColumns} alwaysShownKey="title" defaultColumns={DEFAULT_BOARD_COLUMNS} />
+              <EditColumnsMenu fields={editColumnsFields} visibleColumns={boardVisibleColumns} onSave={saveBoardVisibleColumns} alwaysShownKey={PINNED_COLUMN_KEYS} defaultColumns={DEFAULT_BOARD_COLUMNS} />
             )}
             <DealExportMenu fetchAllForExport={fetchAllForExport} columns={exportColumns} />
             <button className="deals-secondary-btn" onClick={() => setShowImport(true)}>
@@ -547,16 +566,17 @@ export default function Deals() {
         <table className="deals-table">
           <thead>
             <tr>
+              <th className="sticky-company-col deal-col-companyName">Company name</th>
               <th className="sticky-deal-col">Deal name</th>
-              {orderedVisibleFields.map(f => <th key={f.key} className={`${f.key === 'companyName' ? 'sticky-company-col ' : ''}deal-col-${f.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`}>{f.label}</th>)}
+              {listFields.map(f => <th key={f.key} className={`deal-col-${f.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`}>{f.label}</th>)}
               <th className="sticky-actions-col"><span className="sr-only">Actions</span></th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={2 + orderedVisibleFields.length}><div className="deals-loading">Loading deals…</div></td></tr>
+              <tr><td colSpan={3 + listFields.length}><div className="deals-loading">Loading deals…</div></td></tr>
             ) : filteredDeals.length === 0 ? (
-              <tr><td colSpan={2 + orderedVisibleFields.length}>
+              <tr><td colSpan={3 + listFields.length}>
                 <div className="deals-empty-state"><span className="deals-empty-icon"><MaterialIcon>handshake</MaterialIcon></span>
                   <strong>{deals.length === 0 ? (dealsTab === 'mine' ? 'No deals on companies you own yet.' : 'No deals yet') : 'No deals match these filters'}</strong>
                   <p>{deals.length === 0 ? 'Create your first deal to start building your sales pipeline.' : 'Try adjusting or clearing your filters.'}</p>
@@ -565,8 +585,11 @@ export default function Deals() {
               </td></tr>
             ) : filteredDeals.map((d, i) => (
               <tr key={d.id}>
+                <td className="sticky-company-col deal-col-companyName deal-company-cell" onClick={() => handleOpenDeal(d)}>
+                  <div title={companyCellText(d)}>{companyCellText(d)}</div>
+                </td>
                 <td className="sticky-deal-col deal-title-cell" onClick={() => handleOpenDeal(d)}><div title={d.title}>{d.title}</div></td>
-                {orderedVisibleFields.map(f => {
+                {listFields.map(f => {
                   const content = renderDealCell(f, d)
                   const title = typeof content === 'string' ? content : undefined
                   const fieldClass = `deal-col-${f.key.replace(/[^a-zA-Z0-9_-]/g, '-')}`

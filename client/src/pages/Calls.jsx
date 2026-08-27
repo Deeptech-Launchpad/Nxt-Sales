@@ -10,9 +10,19 @@ import {
 } from 'lucide-react'
 import api from '../api/client'
 import EditColumnsMenu from '../components/EditColumnsMenu'
+import FilterDropdown from '../components/filters/FilterDropdown'
 import '../styles/contacts.css'
 
 const CALLHIPPO_URL = 'https://web.callhippo.com/dashboard?key=2'
+
+// The three values attachContactHistory already produces for the Contact
+// History column — not a new classification, just the existing one made
+// filterable. No selection means All; the dropdown’s "Clear all" resets to it.
+const CONTACT_HISTORY_OPTIONS = [
+  { value: 'New Contact',      label: 'New Contact'      },
+  { value: 'Existing Contact', label: 'Existing Contact' },
+  { value: 'Re-contact',       label: 'Re-contact'       },
+]
 
 // Toggleable/reorderable-by-visibility columns (Edit Columns). Checkbox, #,
 // and Actions stay fixed outside this list, same as every other module's
@@ -50,8 +60,8 @@ const COLUMNS_STORAGE_KEY = 'mwz_calls_visible_columns'
 const CALL_TD_STYLE = {
   callDate:           { whiteSpace: 'nowrap', color: '#0f172a', fontWeight: 500 },
   direction:          { whiteSpace: 'nowrap' },
-  fromNumber:         { whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 12 },
-  toNumber:           { whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 12 },
+  fromNumber:         { whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 15 },
+  toNumber:           { whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 15 },
   contactHistory:     { whiteSpace: 'nowrap' },
   status:             { whiteSpace: 'nowrap' },
   duration:           { whiteSpace: 'nowrap', fontWeight: 600, color: '#374151' },
@@ -98,13 +108,13 @@ function StatusBadge({ status }) {
     busy:      { bg: '#fff7ed', color: '#ea580c', label: 'Busy'     },
     failed:    { bg: '#fef2f2', color: '#dc2626', label: 'Failed'   },
     voicemail: { bg: '#f5f3ff', color: '#7c3aed', label: 'Voicemail'},
-    unknown:   { bg: '#f8fafc', color: '#64748b', label: 'Unknown'  },
+    unknown:   { bg: '#f8fafc', color: '#344054', label: 'Unknown'  },
   }
   const s = status?.toLowerCase() || 'unknown'
   const c = map[s] || map.unknown
   return (
     <span style={{
-      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+      fontSize: 14, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
       background: c.bg, color: c.color, whiteSpace: 'nowrap',
     }}>
       {c.label}
@@ -118,10 +128,10 @@ function ContactHistoryBadge({ value }) {
     'Existing Contact': { bg: '#f0fdf4', color: '#16a34a' },
     'Re-contact':       { bg: '#fff7ed', color: '#ea580c' },
   }
-  const c = map[value] || { bg: '#f8fafc', color: '#64748b' }
+  const c = map[value] || { bg: '#f8fafc', color: '#344054' }
   return (
     <span style={{
-      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+      fontSize: 14, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
       background: c.bg, color: c.color, whiteSpace: 'nowrap',
     }}>
       {value || '—'}
@@ -132,7 +142,7 @@ function ContactHistoryBadge({ value }) {
 function AnalysisBadge({ status, title }) {
   if (!status) return null
   const map = {
-    pending:   { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#64748b', label: 'Queued'      },
+    pending:   { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#344054', label: 'Queued'      },
     analyzing: { icon: <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />, color: '#2563eb', label: 'Processing…' },
     completed: { icon: <CheckCircle size={11} />,  color: '#16a34a', label: 'Analyzed'   },
     failed:    { icon: <XCircle size={11} />,      color: '#dc2626', label: 'Failed'     },
@@ -141,7 +151,7 @@ function AnalysisBadge({ status, title }) {
   return (
     <span
       title={title || undefined}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: c.color, cursor: title ? 'help' : 'default', whiteSpace: 'nowrap' }}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 14, fontWeight: 600, color: c.color, cursor: title ? 'help' : 'default', whiteSpace: 'nowrap' }}
     >
       {c.icon} {c.label}
     </span>
@@ -231,10 +241,10 @@ function AnalysisModal({ callLog, onClose }) {
   const cardHeaderIcon = {
     width: 32, height: 32, borderRadius: 8,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: 16,
+    fontSize: 19,
   }
-  const labelStyle  = { fontSize: 11, color: '#6b7a99', fontWeight: 500, marginBottom: 4 }
-  const valueStyle  = { fontSize: 14, color: '#ffffff', fontWeight: 600, lineHeight: 1.4 }
+  const labelStyle  = { fontSize: 14, color: '#6b7a99', fontWeight: 500, marginBottom: 4 }
+  const valueStyle  = { fontSize: 17, color: '#ffffff', fontWeight: 600, lineHeight: 1.4 }
 
   return (
     <div style={{
@@ -262,14 +272,14 @@ function AnalysisModal({ callLog, onClose }) {
               <Brain size={18} color="#fff" />
             </div>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>EmotionSense AI</div>
-              <div style={{ fontSize: 11, color: '#6b7a99' }}>Call Recording Analyser</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#ffffff' }}>EmotionSense AI</div>
+              <div style={{ fontSize: 14, color: '#6b7a99' }}>Call Recording Analyser</div>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {usage && (
               <span style={{
-                fontSize: 12, fontWeight: 600, color: '#fff',
+                fontSize: 15, fontWeight: 600, color: '#fff',
                 background: '#16a34a', borderRadius: 99,
                 padding: '4px 12px', letterSpacing: 0.2,
               }}>
@@ -278,7 +288,7 @@ function AnalysisModal({ callLog, onClose }) {
             )}
             <button onClick={onClose} style={{
               background: 'rgba(255,255,255,0.07)', border: 'none', cursor: 'pointer',
-              color: '#94a3b8', borderRadius: 8, padding: '6px 8px', display: 'flex', alignItems: 'center',
+              color: '#475467', borderRadius: 8, padding: '6px 8px', display: 'flex', alignItems: 'center',
             }}>
               <X size={16} />
             </button>
@@ -294,23 +304,23 @@ function AnalysisModal({ callLog, onClose }) {
               marginBottom: 20, flexWrap: 'wrap',
             }}>
               {duration > 0 && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8892a4' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, color: '#8892a4' }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', display: 'inline-block' }} />
                   {duration.toFixed(1)}s
                 </span>
               )}
               {speakers.length > 0 && (
-                <span style={{ fontSize: 12, color: '#8892a4' }}>
+                <span style={{ fontSize: 15, color: '#8892a4' }}>
                   👤 {speakers.length} speaker{speakers.length !== 1 ? 's' : ''}
                 </span>
               )}
               {segments.length > 0 && (
-                <span style={{ fontSize: 12, color: '#8892a4' }}>
+                <span style={{ fontSize: 15, color: '#8892a4' }}>
                   📄 {segments.length} lines
                 </span>
               )}
               {procSec && (
-                <span style={{ fontSize: 12, color: '#8892a4' }}>
+                <span style={{ fontSize: 15, color: '#8892a4' }}>
                   ⚡ {procSec}s to process
                 </span>
               )}
@@ -322,7 +332,7 @@ function AnalysisModal({ callLog, onClose }) {
             <div style={card}>
               <div style={cardHeader}>
                 <div style={{ ...cardHeaderIcon, background: 'rgba(99,102,241,0.15)' }}>📋</div>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#ffffff' }}>Call Summary</span>
+                <span style={{ fontSize: 17, fontWeight: 700, color: '#ffffff' }}>Call Summary</span>
               </div>
               <div style={{
                 display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0,
@@ -348,7 +358,7 @@ function AnalysisModal({ callLog, onClose }) {
             <div style={card}>
               <div style={cardHeader}>
                 <div style={{ ...cardHeaderIcon, background: 'rgba(234,179,8,0.15)' }}>🎭</div>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#ffffff' }}>Overall Call Emotion</span>
+                <span style={{ fontSize: 17, fontWeight: 700, color: '#ffffff' }}>Overall Call Emotion</span>
               </div>
               <div style={{ padding: '16px 20px' }}>
                 {/* Dominant emotion row */}
@@ -358,7 +368,7 @@ function AnalysisModal({ callLog, onClose }) {
                 }}>
                   <span style={{ fontSize: 32 }}>{EMOTION_EMOJI[dominantEmotion] || '😐'}</span>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 10, color: '#6b7a99', fontWeight: 500, marginBottom: 2 }}>Dominant Emotion</div>
+                    <div style={{ fontSize: 13, color: '#6b7a99', fontWeight: 500, marginBottom: 2 }}>Dominant Emotion</div>
                     <div style={{
                       fontSize: 22, fontWeight: 800, color: '#ffffff',
                       textTransform: 'capitalize',
@@ -367,7 +377,7 @@ function AnalysisModal({ callLog, onClose }) {
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, color: '#6b7a99', fontWeight: 500, marginBottom: 2 }}>Score</div>
+                    <div style={{ fontSize: 13, color: '#6b7a99', fontWeight: 500, marginBottom: 2 }}>Score</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: EMOTION_COLORS[dominantEmotion] || '#fff' }}>
                       {(dominantScore * 100).toFixed(1)}%
                     </div>
@@ -382,7 +392,7 @@ function AnalysisModal({ callLog, onClose }) {
                     return (
                       <div key={emotion} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <span style={{
-                          width: 72, fontSize: 12, color: '#c8d0e0', fontWeight: 500,
+                          width: 72, fontSize: 15, color: '#c8d0e0', fontWeight: 500,
                           textTransform: 'capitalize', flexShrink: 0,
                         }}>
                           {emotion.charAt(0).toUpperCase() + emotion.slice(1)}
@@ -396,7 +406,7 @@ function AnalysisModal({ callLog, onClose }) {
                             transition: 'width 0.4s ease',
                           }} />
                         </div>
-                        <span style={{ width: 44, fontSize: 12, color: '#8892a4', textAlign: 'right', flexShrink: 0 }}>
+                        <span style={{ width: 44, fontSize: 15, color: '#8892a4', textAlign: 'right', flexShrink: 0 }}>
                           {pct}%
                         </span>
                       </div>
@@ -412,7 +422,7 @@ function AnalysisModal({ callLog, onClose }) {
             <div style={card}>
               <div style={cardHeader}>
                 <div style={{ ...cardHeaderIcon, background: 'rgba(6,182,212,0.15)' }}>📝</div>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#ffffff' }}>Extracted Transcript</span>
+                <span style={{ fontSize: 17, fontWeight: 700, color: '#ffffff' }}>Extracted Transcript</span>
               </div>
               <div style={{ padding: '14px 20px 4px' }}>
                 {/* Speaker chips */}
@@ -422,7 +432,7 @@ function AnalysisModal({ callLog, onClose }) {
                       const color = SPEAKER_PALETTE[i % SPEAKER_PALETTE.length]
                       return (
                         <span key={sp} style={{
-                          fontSize: 11, fontWeight: 600, padding: '4px 12px', borderRadius: 99,
+                          fontSize: 14, fontWeight: 600, padding: '4px 12px', borderRadius: 99,
                           background: color + '22', color, border: `1px solid ${color}44`,
                         }}>
                           {sp}
@@ -444,18 +454,18 @@ function AnalysisModal({ callLog, onClose }) {
                         padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)',
                       }}>
                         <span style={{
-                          width: 34, fontSize: 11, color: '#4a5568',
+                          width: 34, fontSize: 14, color: '#4a5568',
                           fontFamily: 'monospace', flexShrink: 0,
                         }}>
                           {ts !== null ? fmtTimestamp(ts) : ''}
                         </span>
                         <span style={{
-                          fontSize: 12, fontWeight: 700, color, flexShrink: 0, width: 160,
+                          fontSize: 15, fontWeight: 700, color, flexShrink: 0, width: 160,
                           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>
                           {spLabel}
                         </span>
-                        <span style={{ fontSize: 13, color: '#c8d0e0', lineHeight: 1.5 }}>
+                        <span style={{ fontSize: 16, color: '#c8d0e0', lineHeight: 1.5 }}>
                           {seg.text || seg.transcript || ''}
                         </span>
                       </div>
@@ -470,11 +480,11 @@ function AnalysisModal({ callLog, onClose }) {
           {!summary && segments.length === 0 && (
             <div style={card}>
               <div style={{ ...cardHeader }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#ffffff' }}>Analysis Result</span>
+                <span style={{ fontSize: 17, fontWeight: 700, color: '#ffffff' }}>Analysis Result</span>
               </div>
               <div style={{ padding: 16 }}>
                 <pre style={{
-                  fontSize: 11, color: '#94a3b8', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                  fontSize: 14, color: '#475467', whiteSpace: 'pre-wrap', wordBreak: 'break-all',
                   background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
                   borderRadius: 8, padding: 14, maxHeight: 400, overflowY: 'auto', margin: 0,
                 }}>
@@ -500,7 +510,7 @@ class CallsErrorBoundary extends React.Component {
       return (
         <div style={{ padding: 40, fontFamily: 'DM Sans, sans-serif' }}>
           <h3 style={{ color: '#dc2626', marginBottom: 12 }}>Calls page error</h3>
-          <pre style={{ fontSize: 12, background: '#fef2f2', padding: 16, borderRadius: 8, color: '#7f1d1d', whiteSpace: 'pre-wrap' }}>
+          <pre style={{ fontSize: 15, background: '#fef2f2', padding: 16, borderRadius: 8, color: '#7f1d1d', whiteSpace: 'pre-wrap' }}>
             {this.state.error.message}{'\n'}{this.state.error.stack}
           </pre>
         </div>
@@ -552,6 +562,12 @@ function CallsInner() {
   const [selectedIds,  setSelectedIds]  = useState(new Set())
   const [search,           setSearch]           = useState(() => searchParams.get('q') || '')
   const [debouncedSearch,  setDebouncedSearch]   = useState(() => searchParams.get('q') || '')
+  // Kept in the URL like page and search, so a refresh or a reopened
+  // Recording Analysis comes back to the same filtered view.
+  const [contactHistory, setContactHistory] = useState(
+    () => (searchParams.get('contact') ? [searchParams.get('contact')] : []))
+  // FilterDropdown works in arrays; the request and the URL want one value.
+  const contactHistoryValue = contactHistory[0] || ''
 
   const [visibleColumns, setVisibleColumns] = useState(() => {
     try {
@@ -569,9 +585,13 @@ function CallsInner() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
-  const fetchLogs = useCallback((pg, searchTerm = '') => {
+  const fetchLogs = useCallback((pg, searchTerm = '', history = '') => {
     setLoading(true)
-    const params = { limit: PAGE_SIZE, page: pg, ...(searchTerm && { search: searchTerm }) }
+    const params = {
+      limit: PAGE_SIZE, page: pg,
+      ...(searchTerm && { search: searchTerm }),
+      ...(history && { contactHistory: history }),
+    }
     api.get('/callhippo/logs', { params })
       .then(r => { setLogs(r.data.logs || []); setTotal(r.data.total || 0) })
       .catch(() => setLogs([]))
@@ -584,9 +604,10 @@ function CallsInner() {
     return () => clearTimeout(timer)
   }, [search])
 
-  useEffect(() => { setPage(1) }, [debouncedSearch])
+  useEffect(() => { setPage(1) }, [debouncedSearch, contactHistoryValue])
 
-  useEffect(() => { fetchLogs(page, debouncedSearch) }, [fetchLogs, page, debouncedSearch])
+  useEffect(() => { fetchLogs(page, debouncedSearch, contactHistoryValue) },
+    [fetchLogs, page, debouncedSearch, contactHistoryValue])
 
   // Mirror the current context into the URL. replace:true so this never fills
   // the back stack - Back should still leave Calls, not step through pages.
@@ -594,8 +615,9 @@ function CallsInner() {
     const p = new URLSearchParams(searchParams)
     page > 1 ? p.set('page', String(page)) : p.delete('page')
     debouncedSearch ? p.set('q', debouncedSearch) : p.delete('q')
+    contactHistoryValue ? p.set('contact', contactHistoryValue) : p.delete('contact')
     if (p.toString() !== searchParams.toString()) setSearchParams(p, { replace: true })
-  }, [page, debouncedSearch]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [page, debouncedSearch, contactHistoryValue]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear selection whenever page changes
   useEffect(() => { setSelectedIds(new Set()) }, [page])
@@ -610,9 +632,12 @@ function CallsInner() {
     // searchTerm default to '', so each automatic refresh silently discarded
     // the user's active search and reloaded the unfiltered list underneath
     // them - the auto-refresh-loses-my-context bug.
-    const timer = setInterval(() => fetchLogs(page, debouncedSearch), 15000)
+    // The active filter is passed for the same reason the search term is:
+    // without it every automatic refresh would quietly reload the unfiltered
+    // list underneath the user.
+    const timer = setInterval(() => fetchLogs(page, debouncedSearch, contactHistoryValue), 15000)
     return () => clearInterval(timer)
-  }, [logs, fetchLogs, page, debouncedSearch])
+  }, [logs, fetchLogs, page, debouncedSearch, contactHistoryValue])
 
   // Recording Analysis is identified in the URL (?analysis=<id>) rather than
   // held only in component state, so an automatic refresh - or a real browser
@@ -707,15 +732,15 @@ function CallsInner() {
         return fmtDate(log.callDate)
       case 'direction':
         return log.direction === 'inbound' ? (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#7c3aed', fontSize: 12, fontWeight: 600 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#7c3aed', fontSize: 15, fontWeight: 600 }}>
             <PhoneIncoming size={13} /> Inbound
           </span>
         ) : log.direction === 'missed' ? (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#dc2626', fontSize: 12, fontWeight: 600 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#dc2626', fontSize: 15, fontWeight: 600 }}>
             <PhoneMissed size={13} /> Missed
           </span>
         ) : (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#2563eb', fontSize: 12, fontWeight: 600 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#2563eb', fontSize: 15, fontWeight: 600 }}>
             <PhoneOutgoing size={13} /> Outbound
           </span>
         )
@@ -736,7 +761,7 @@ function CallsInner() {
             {log.company.name}
           </span>
         ) : (
-          <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>
+          <span style={{ fontSize: 15, color: '#475467' }}>—</span>
         )
       case 'contactHistory':
         return <ContactHistoryBadge value={log.contactHistory} />
@@ -756,7 +781,7 @@ function CallsInner() {
             <Play size={11} /> Play
           </a>
         ) : (
-          <span style={{ fontSize: 12, color: '#94a3b8' }}>No recording</span>
+          <span style={{ fontSize: 15, color: '#475467' }}>No recording</span>
         )
       case 'analysis':
         return log.recordingUrl ? (
@@ -765,7 +790,7 @@ function CallsInner() {
             title={log.analysisStatus === 'failed' ? log.analysisError : undefined}
           />
         ) : (
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>—</span>
+          <span style={{ fontSize: 14, color: '#475467' }}>—</span>
         )
       case 'lastContacted':
         return fmtDate(log.lastContacted)
@@ -801,7 +826,7 @@ function CallsInner() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <h1 style={{ fontSize: 20, fontWeight: 700, color: '#0f172a', margin: 0 }}>Calls Dashboard</h1>
-            <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
+            <p style={{ fontSize: 16, color: '#344054', margin: '4px 0 0' }}>
               Total: {total} Call{total !== 1 ? 's' : ''} synced from CallHippo
             </p>
           </div>
@@ -823,6 +848,14 @@ function CallsInner() {
                 }))
               }}
             />
+            <FilterDropdown
+              label="Contact History"
+              options={CONTACT_HISTORY_OPTIONS}
+              selected={contactHistory}
+              onChange={setContactHistory}
+              searchable={false}
+              singleSelect
+            />
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', borderRadius: 6, padding: '5px 10px', background: '#fff' }}>
               <Search size={13} color="#94a3b8" />
               <input
@@ -830,11 +863,11 @@ function CallsInner() {
                 placeholder="Search by phone number"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                style={{ border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', width: 170 }}
+                style={{ border: 'none', outline: 'none', fontSize: 15, fontFamily: 'inherit', width: 170 }}
               />
             </div>
             {syncMsg && (
-              <span style={{ fontSize: 12, color: syncMsg.includes('failed') || syncMsg.includes('Failed') ? '#ef4444' : '#16a34a' }}>
+              <span style={{ fontSize: 15, color: syncMsg.includes('failed') || syncMsg.includes('Failed') ? '#ef4444' : '#16a34a' }}>
                 {syncMsg}
               </span>
             )}
@@ -858,14 +891,14 @@ function CallsInner() {
         {/* Table */}
         <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
           {loading ? (
-            <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8' }}>
+            <div style={{ padding: 60, textAlign: 'center', color: '#475467' }}>
               <Loader2 size={24} style={{ animation: 'spin 1s linear infinite', marginBottom: 8 }} />
               <p style={{ margin: 0 }}>Loading call history…</p>
             </div>
           ) : logs.length === 0 ? (
             <div style={{ padding: 60, textAlign: 'center' }}>
               <Phone size={40} color="#e2e8f0" style={{ marginBottom: 12 }} />
-              <p style={{ color: '#64748b', margin: 0 }}>No calls yet. Click "Sync calls" to import from CallHippo.</p>
+              <p style={{ color: '#344054', margin: 0 }}>No calls yet. Click "Sync calls" to import from CallHippo.</p>
               <button className="ch-btn ch-btn-primary" style={{ marginTop: 16 }} onClick={syncNow}>
                 <RefreshCw size={13} /> Sync calls now
               </button>
@@ -901,7 +934,7 @@ function CallsInner() {
                           style={{ cursor: 'pointer', width: 14, height: 14 }}
                         />
                       </td>
-                      <td style={{ color: '#94a3b8', fontSize: 12, fontWeight: 500, minWidth: 32 }}>
+                      <td style={{ color: '#475467', fontSize: 15, fontWeight: 500, minWidth: 32 }}>
                         {(page - 1) * PAGE_SIZE + idx + 1}
                       </td>
                       {orderedVisibleFields.map(f => (
@@ -954,7 +987,7 @@ function CallsInner() {
               padding: '14px 16px', borderTop: '1px solid #e2e8f0', flexWrap: 'wrap', gap: 10,
             }}>
               {/* Left: record range */}
-              <span style={{ fontSize: 12, color: '#64748b' }}>
+              <span style={{ fontSize: 15, color: '#344054' }}>
                 Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total} calls
                 {selectedIds.size > 0 && (
                   <span style={{ marginLeft: 10, color: '#2563eb', fontWeight: 600 }}>
@@ -969,7 +1002,7 @@ function CallsInner() {
                   className="ch-btn ch-btn-outline"
                   onClick={() => goToPage(page - 1)}
                   disabled={page === 1}
-                  style={{ padding: '4px 10px', fontSize: 12 }}
+                  style={{ padding: '4px 10px', fontSize: 15 }}
                 >
                   ‹ Prev
                 </button>
@@ -983,10 +1016,10 @@ function CallsInner() {
                   if (start > 1) {
                     pages.push(
                       <button key={1} className="ch-btn ch-btn-outline" onClick={() => goToPage(1)}
-                        style={{ padding: '4px 9px', fontSize: 12 }}>1</button>
+                        style={{ padding: '4px 9px', fontSize: 15 }}>1</button>
                     )
                     if (start > 2) pages.push(
-                      <span key="e1" style={{ fontSize: 12, color: '#94a3b8', padding: '0 2px' }}>…</span>
+                      <span key="e1" style={{ fontSize: 15, color: '#475467', padding: '0 2px' }}>…</span>
                     )
                   }
                   for (let p = start; p <= end; p++) {
@@ -996,7 +1029,7 @@ function CallsInner() {
                         className="ch-btn ch-btn-outline"
                         onClick={() => goToPage(p)}
                         style={{
-                          padding: '4px 9px', fontSize: 12,
+                          padding: '4px 9px', fontSize: 15,
                           background: p === page ? '#e63329' : '#fff',
                           color:      p === page ? '#fff'    : '#374151',
                           borderColor: p === page ? '#e63329' : '#e2e8f0',
@@ -1009,11 +1042,11 @@ function CallsInner() {
                   }
                   if (end < totalPages) {
                     if (end < totalPages - 1) pages.push(
-                      <span key="e2" style={{ fontSize: 12, color: '#94a3b8', padding: '0 2px' }}>…</span>
+                      <span key="e2" style={{ fontSize: 15, color: '#475467', padding: '0 2px' }}>…</span>
                     )
                     pages.push(
                       <button key={totalPages} className="ch-btn ch-btn-outline" onClick={() => goToPage(totalPages)}
-                        style={{ padding: '4px 9px', fontSize: 12 }}>{totalPages}</button>
+                        style={{ padding: '4px 9px', fontSize: 15 }}>{totalPages}</button>
                     )
                   }
                   return pages
@@ -1023,7 +1056,7 @@ function CallsInner() {
                   className="ch-btn ch-btn-outline"
                   onClick={() => goToPage(page + 1)}
                   disabled={page === totalPages}
-                  style={{ padding: '4px 10px', fontSize: 12 }}
+                  style={{ padding: '4px 10px', fontSize: 15 }}
                 >
                   Next ›
                 </button>

@@ -35,8 +35,8 @@ export default function AuthCallback() {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      height: '100vh', color: '#64748b', fontFamily: 'DM Sans, system-ui, sans-serif',
-      gap: 10, fontSize: 15,
+      height: '100vh', color: '#344054', fontFamily: 'DM Sans, system-ui, sans-serif',
+      gap: 10, fontSize: 18,
     }}>
       <span className="spinner spinner-dark" /> Signing you in…
     </div>

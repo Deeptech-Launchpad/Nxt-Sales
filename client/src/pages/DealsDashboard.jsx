@@ -178,7 +178,7 @@ export default function DealsDashboard() {
           </header>
 
           <div className="dd-deal-table">
-            <div className="dd-table-head"><span>Deal</span><span>Stage</span><span>Value</span><span>Created</span><span /></div>
+            <div className="dd-table-head"><span>Deal</span><span>Stage</span><span>Value</span><span>Open date</span><span /></div>
             {loading ? [1, 2, 3, 4].map(item => <div className="dd-deal-placeholder" key={item} />) : (stats?.recent || []).length ? stats.recent.map(deal => (
               <button className="dd-deal-row" type="button" key={deal.id} onClick={() => openDeal(deal)}>
                 <span className="dd-deal-name">
@@ -187,7 +187,12 @@ export default function DealsDashboard() {
                 </span>
                 <span><em className={`dd-stage-badge dd-stage-badge--${stageTone(deal.stage)}`}>{deal.stage || 'No stage'}</em></span>
                 <strong className="dd-deal-value">{deal.value ? formatCurrency(deal.value, deal.currency || 'USD') : '—'}</strong>
-                <span className="dd-deal-date">{shortDate(deal.openDate || deal.createdAt)}</span>
+                {/* Deal Open Date only. This used to fall back to createdAt under a
+                    "Created" heading, so a deal with no Open Date still displayed a
+                    date — and then vanished from a filter on that very date, because
+                    the filter reads the real Open Date. Showing nothing is honest, and
+                    it agrees with the filter. */}
+                <span className="dd-deal-date">{deal.openDate ? shortDate(deal.openDate) : '—'}</span>
                 <ChevronRight className="dd-row-arrow" size={17} />
               </button>
             )) : <div className="dd-empty">No recent deals to show.</div>}

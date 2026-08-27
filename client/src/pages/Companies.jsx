@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import {
   Search, LayoutGrid, List, Download, Plus,
   ChevronDown, SlidersHorizontal, Pencil, Upload, Trash2, Star,
@@ -25,7 +25,7 @@ import '../styles/recents.css'
 // "+N" badge when a company has more than one email.
 const moreCount = (primary, arr) => Math.max(0, valueList(primary, arr).length - 1)
 const MoreBadge = ({ n }) => n > 0
-  ? <span style={{ marginLeft: 6, fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>+{n}</span>
+  ? <span style={{ marginLeft: 6, fontSize: 14, color: '#475467', fontWeight: 600 }}>+{n}</span>
   : null
 
 // Check if company is newly created (within 24 hours)
@@ -37,8 +37,29 @@ const isNewCompany = (createdAt) => {
   return hoursOld < 24
 }
 
+// Recents shows the timestamp the list is actually ordered by, so the
+// ordering is verifiable at a glance instead of having to be taken on trust.
+const fmtUpdated = (value) => {
+  if (!value) return '--'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return '--'
+  const mins = Math.floor((Date.now() - d.getTime()) / 60000)
+  if (mins < 1)  return 'Just now'
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} hr ago`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} day${days > 1 ? 's' : ''} ago`
+  return d.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })
+}
+const fullTimestamp = (value) => {
+  if (!value) return undefined
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? undefined : d.toLocaleString()
+}
+
 const NewBadge = ({ createdAt }) => isNewCompany(createdAt)
-  ? <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#ffffff', background: '#10b981', borderRadius: 3, padding: '2px 6px', whiteSpace: 'nowrap' }}>New</span>
+  ? <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 700, color: '#ffffff', background: '#10b981', borderRadius: 3, padding: '2px 6px', whiteSpace: 'nowrap' }}>New</span>
   : null
 
 function AdvancedTextFilter({ label, value, onChange, placeholder }) {
@@ -127,7 +148,7 @@ function CompanyExportMenu({ fetchAllForExport, columns }) {
             { label: 'Export as PDF',   fn: () => run(exportPDF, ['Companies Export — NXT MarketingWiz']) },
           ].map(item => (
             <button key={item.label} onClick={item.fn}
-              style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', textAlign: 'left', fontSize: 13, color: '#334155', cursor: 'pointer', fontFamily: 'DM Sans,system-ui,sans-serif' }}
+              style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none', background: 'transparent', textAlign: 'left', fontSize: 16, color: '#334155', cursor: 'pointer', fontFamily: 'DM Sans,system-ui,sans-serif' }}
               onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >
@@ -194,7 +215,10 @@ export default function Companies({ recentsMode = false }) {
   const [page, setPage]               = useState(1)
   const [selected, setSelected]       = useState([])
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
-  const [sortBy, setSortBy] = useState(recentsMode ? 'createdAt' : '')
+  // Recents' order is fixed server-side (sort=recent -> updatedAt desc), so
+  // no column is pre-selected here; the dropdown’s default entry names that
+  // real order instead of claiming a creation-date sort the list never used.
+  const [sortBy, setSortBy] = useState('')
   const [sortDir, setSortDir] = useState(recentsMode ? 'desc' : 'asc')
 
   const [showCreate, setShowCreate]   = useState(false)
@@ -280,8 +304,11 @@ export default function Companies({ recentsMode = false }) {
   useEffect(() => {
     if (!recentsMode) return
     Promise.all([
-      api.get('/companies', { params: { page: 1, limit: 1, createDate: 'today' } }),
-      api.get('/companies', { params: { page: 1, limit: 1, createDate: 'last_7' } }),
+      // sort=recent scopes these to EDITED companies (the same population the
+      // list below shows); recentWindow narrows that to the period. Both are
+      // read straight from the DB's updatedAt, never from browser time.
+      api.get('/companies', { params: { page: 1, limit: 1, sort: 'recent', recentWindow: 'today' } }),
+      api.get('/companies', { params: { page: 1, limit: 1, sort: 'recent', recentWindow: 'last_7' } }),
     ]).then(([todayResponse, weekResponse]) => {
       setRecentCounts({
         today: todayResponse.data?.total || 0,
@@ -380,7 +407,17 @@ export default function Companies({ recentsMode = false }) {
     ...(sortBy && { sortBy, sortDir }),
     ...(recentsMode && { sort: 'recent' }),
   }
-  const openCompany = (id) => navigate(`/companies/${id}`, { state: { listContext } })
+  // A company row is a LINK, not a click handler. <Link> renders a real
+  // <a href>, so the browser owns the interaction: right-click -> Open in
+  // new tab / new window / Copy link address, Ctrl/Cmd+click and
+  // middle-click all work natively, and plain left-click still does the
+  // same in-app navigation with the same listContext (which is what
+  // Company Detail's Previous/Next walks). No custom context menu, and no
+  // change to how any of it looks.
+  const companyLinkProps = (id) => ({
+    to: `/companies/${id}`,
+    state: { listContext },
+  })
 
   // Export: fetch EVERY company matching the current filters/search (no page
   // limit) — the dedicated /companies/export endpoint mirrors the same filter
@@ -544,11 +581,11 @@ export default function Companies({ recentsMode = false }) {
         <>
           <section className="recents-hero">
             <div className="recents-hero-copy">
-              <span className="recents-eyebrow"><History size={13} /> Recently added</span>
-              <h1>See what’s new in your CRM</h1>
-              <p>Every newly created company appears here first, so your team can discover fresh accounts and take action quickly.</p>
+              <span className="recents-eyebrow"><History size={13} /> Recently updated</span>
+              <h1>See what’s changed in your CRM</h1>
+              <p>Every company your team edits moves to the top, so you can pick up exactly where anyone left off.</p>
               <div className="recents-hero-meta">
-                <span><CheckCircle2 size={14} /> Newest companies first</span>
+                <span><CheckCircle2 size={14} /> Most recently edited first</span>
                 <span><CheckCircle2 size={14} /> “New” tag for the first 24 hours</span>
               </div>
             </div>
@@ -561,14 +598,14 @@ export default function Companies({ recentsMode = false }) {
               </button>
             </div>
             <div className="recents-hero-stats">
-              <div><span>Total records</span><strong>{total.toLocaleString()}</strong></div>
-              <div><span>Added today</span><strong>{recentCounts.today.toLocaleString()}</strong></div>
-              <div><span>Added last 7 days</span><strong>{recentCounts.last7.toLocaleString()}</strong></div>
+              <div><span>Edited records</span><strong>{total.toLocaleString()}</strong></div>
+              <div><span>Updated today</span><strong>{recentCounts.today.toLocaleString()}</strong></div>
+              <div><span>Updated last 7 days</span><strong>{recentCounts.last7.toLocaleString()}</strong></div>
             </div>
           </section>
 
           <div className="recents-list-heading">
-            <div><span className="recents-eyebrow">Fresh accounts</span><h2>Recently created companies</h2><p>Latest created records appear first. Companies under 24 hours old carry a “New” tag.</p></div>
+            <div><span className="recents-eyebrow">Latest activity</span><h2>Recently updated companies</h2><p>The most recently edited record appears first, using the company’s own last-updated time. Companies created in the last 24 hours still carry a “New” tag.</p></div>
             <div className="recents-list-actions">
               <button className="btn-action" onClick={() => navigate('/companies/recycle-bin')}><Trash2 size={14} /> Recycle Bin{recycleBinCount > 0 ? ` (${recycleBinCount})` : ''}</button>
               <button className="btn-primary" onClick={() => setShowCreate(true)}><Plus size={14} /> Create company</button>
@@ -786,6 +823,7 @@ export default function Companies({ recentsMode = false }) {
                   COMPANY <SortIcon column="name" />
                 </button>
               </th>
+              {recentsMode && <th className="recents-updated-column">LAST UPDATED</th>}
               {orderedVisibleFields.map(f => (
                 <th key={f.key}>
                   {SORTABLE_COLUMN_KEYS.has(f.key) ? (
@@ -801,11 +839,11 @@ export default function Companies({ recentsMode = false }) {
             {loading ? (
               Array.from({ length: 9 }).map((_, row) => (
                 <tr className="company-skeleton-row" key={row} aria-label={row === 0 ? 'Loading...' : undefined}>
-                  {Array.from({ length: 3 + orderedVisibleFields.length }).map((__, cell) => <td key={cell}><span /></td>)}
+                  {Array.from({ length: 3 + orderedVisibleFields.length + (recentsMode ? 1 : 0) }).map((__, cell) => <td key={cell}><span /></td>)}
                 </tr>
               ))
             ) : companies.length === 0 ? (
-              <tr><td colSpan={3 + orderedVisibleFields.length} style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>No companies found</td></tr>
+              <tr><td colSpan={3 + orderedVisibleFields.length + (recentsMode ? 1 : 0)} style={{ textAlign: 'center', padding: '40px', color: '#475467' }}>No companies found</td></tr>
             ) : companies.map(c => (
               <tr key={c.id} className={selected.includes(c.id) ? 'selected-row' : ''}>
                 <td className="select-column"><input type="checkbox" aria-label={`Select ${c.name}`} checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} /></td>
@@ -823,12 +861,15 @@ export default function Companies({ recentsMode = false }) {
                     {(c.name || '??').slice(0, 2).toUpperCase()}
                   </span>
                   <span className="company-name-stack">
-                    <span className="link-style" title={c.name} onClick={() => openCompany(c.id)}>{c.name}</span>
+                    <Link className="link-style" title={c.name} {...companyLinkProps(c.id)}>{c.name}</Link>
                     {c._count?.deals > 0 && <small>{c._count.deals} active deal{c._count.deals > 1 ? 's' : ''}</small>}
                   </span>
                   <NewBadge createdAt={c.createdAt} />
-                  <button type="button" className="row-open-btn" title="Open company" onClick={() => openCompany(c.id)}><ExternalLink size={12} /></button>
+                  <Link className="row-open-btn" title="Open company" aria-label={`Open ${c.name}`} {...companyLinkProps(c.id)}><ExternalLink size={12} /></Link>
                 </td>
+                {recentsMode && (
+                  <td className="recents-updated-column" title={fullTimestamp(c.updatedAt)}>{fmtUpdated(c.updatedAt)}</td>
+                )}
                 {orderedVisibleFields.map(f => <td key={f.key} data-tooltip={companyCellTitle(f, c)}><div className="cell-clamp">{renderCompanyCell(f, c)}</div></td>)}
               </tr>
             ))}
@@ -842,8 +883,7 @@ export default function Companies({ recentsMode = false }) {
             <span>{companies.length} shown</span>
             <div className="grid-sort-control">
               <select aria-label="Sort companies" value={sortBy} onChange={e => { setSortBy(e.target.value); setSortDir('asc'); setPage(1) }}>
-                <option value="">Default order</option>
-                {recentsMode && <option value="createdAt">Recently created</option>}
+                <option value="">{recentsMode ? 'Recently updated (default)' : 'Default order'}</option>
                 <option value="name">Company</option>
                 {orderedVisibleFields.filter(f => SORTABLE_COLUMN_KEYS.has(f.key)).map(f => <option value={f.key} key={f.key}>{f.label}</option>)}
               </select>
@@ -868,14 +908,19 @@ export default function Companies({ recentsMode = false }) {
                 <span className="avatar">{(c.name || '??').slice(0, 2).toUpperCase()}</span>
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <button type="button" className="grid-company-name" title={c.name} onClick={() => openCompany(c.id)}>{c.name}</button>
+                    <Link className="grid-company-name" title={c.name} {...companyLinkProps(c.id)}>{c.name}</Link>
                     <NewBadge createdAt={c.createdAt} />
                   </div>
                   {c._count?.deals > 0 && <span className="grid-deal-badge" title={`${c._count.deals} deal${c._count.deals > 1 ? 's' : ''} for this company`}>{c._count.deals} deal{c._count.deals > 1 ? 's' : ''}</span>}
                 </div>
-                <button type="button" className="grid-open-btn" title="Open company" onClick={() => openCompany(c.id)}><ExternalLink size={12} /></button>
+                <Link className="grid-open-btn" title="Open company" aria-label={`Open ${c.name}`} {...companyLinkProps(c.id)}><ExternalLink size={12} /></Link>
               </div>
               <div className="grid-field-list">
+                {recentsMode && (
+                  <div className="grid-field-row" title={fullTimestamp(c.updatedAt)}>
+                    <span>Last updated</span><strong>{fmtUpdated(c.updatedAt)}</strong>
+                  </div>
+                )}
                 {orderedVisibleFields.map(f => (
                   <div className="grid-field-row" key={f.key} title={companyCellTitle(f, c)}>
                     <span>{f.label}</span><strong>{renderCompanyCell(f, c)}</strong>
@@ -893,7 +938,7 @@ export default function Companies({ recentsMode = false }) {
           <button className="page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
           {pageWindow(page, totalPages).map((n, i, arr) => (
             <span key={n} style={{ display: 'contents' }}>
-              {i > 0 && n - arr[i - 1] > 1 && <span className="page-ellipsis" style={{ padding: '0 4px', color: '#94a3b8' }}>…</span>}
+              {i > 0 && n - arr[i - 1] > 1 && <span className="page-ellipsis" style={{ padding: '0 4px', color: '#475467' }}>…</span>}
               <button className={`page-btn ${n === page ? 'active' : ''}`} onClick={() => setPage(n)}>{n}</button>
             </span>
           ))}

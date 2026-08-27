@@ -330,7 +330,7 @@ export default function AiUsage() {
                       <tr key={u.userId}>
                         <td>
                           {u.name}
-                          {u.email && <span className="aiu-dim" style={{ marginLeft: 6, fontSize: 11.5 }}>{u.email}</span>}
+                          {u.email && <span className="aiu-dim" style={{ marginLeft: 6, fontSize: 14.5 }}>{u.email}</span>}
                         </td>
                         <td className="aiu-num aiu-dim">{n(u.requests)}</td>
                         <td className="aiu-num aiu-dim">{n(u.promptTokens)}</td>

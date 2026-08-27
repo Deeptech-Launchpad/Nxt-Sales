@@ -21,7 +21,7 @@ export default function Settings() {
         <SettingsIcon size={20} color="#0f172a" />
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a' }}>Settings</h1>
       </div>
-      <p style={{ fontSize: 13, color: '#94a3b8', marginBottom: 20 }}>Configuration options will be available here soon.</p>
+      <p style={{ fontSize: 16, color: '#475467', marginBottom: 20 }}>Configuration options will be available here soon.</p>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 14 }}>
         {SECTIONS.map(({ Icon, title, desc, to }) => (
@@ -34,11 +34,11 @@ export default function Settings() {
               <div style={{ width: 36, height: 36, borderRadius: 9, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Icon size={18} color="#64748b" />
               </div>
-              <span style={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>{title}</span>
+              <span style={{ fontSize: 18, fontWeight: 600, color: '#0f172a' }}>{title}</span>
             </div>
-            <p style={{ fontSize: 12.5, color: '#64748b', lineHeight: 1.5, margin: 0 }}>{desc}</p>
+            <p style={{ fontSize: 15.5, color: '#344054', lineHeight: 1.5, margin: 0 }}>{desc}</p>
             {!to && (
-              <span style={{ display: 'inline-block', marginTop: 12, fontSize: 11, fontWeight: 600, color: '#94a3b8', background: '#f1f5f9', borderRadius: 12, padding: '3px 10px' }}>Coming soon</span>
+              <span style={{ display: 'inline-block', marginTop: 12, fontSize: 14, fontWeight: 600, color: '#475467', background: '#f1f5f9', borderRadius: 12, padding: '3px 10px' }}>Coming soon</span>
             )}
           </div>
         ))}

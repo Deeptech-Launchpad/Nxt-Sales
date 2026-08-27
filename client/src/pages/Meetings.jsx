@@ -302,7 +302,7 @@ export default function Meetings() {
             <button className="page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
             {pageWindow(page, totalPages).map((n, i, arr) => (
               <span key={n} style={{ display: 'flex', alignItems: 'center' }}>
-                {i > 0 && arr[i - 1] !== n - 1 && <span style={{ padding: '0 4px', color: '#cbd5e1' }}>…</span>}
+                {i > 0 && arr[i - 1] !== n - 1 && <span style={{ padding: '0 4px', color: '#667085' }}>…</span>}
                 <button className={`page-btn ${n === page ? 'active' : ''}`} onClick={() => setPage(n)}>{n}</button>
               </span>
             ))}
