@@ -6,7 +6,7 @@ import '../styles/email-tool.css'
 import DeliverabilityReport from '../components/activities/DeliverabilityReport'
 import { runDeliverabilityAnalysis } from '../utils/emailDeliverability'
 import { compressImageIfNeeded } from '../utils/imageCompress'
-import { discoverBestGeminiModel, callGeminiWithFallback } from '../utils/geminiModel'
+import { callGemini, getAiStatus, aiUnavailableMessage } from '../utils/geminiModel'
 import { recordAiUsage, AI_FEATURES } from '../utils/aiUsage'
 import AiUsagePanel from '../components/AiUsagePanel'
 import { stripInlineFontSize } from '../utils/sanitizeEmailHtml'
@@ -46,7 +46,10 @@ function fmtDateTime(ts) {
 
 async function generateAiEmail(clientName, beforeFile, afterFile, settings, clientType = 'ecommerce', savedPrompt = null) {
   const { aiProvider, aiKey, aiModel } = settings
-  if (!aiKey) throw new Error('AI API Key missing. Add it in Settings.')
+  // Gemini runs through the server, which owns the key — nothing to provide
+  // here. The other two providers are still called straight from the page, so
+  // they do still need one.
+  if (aiProvider !== 'gemini' && !aiKey) throw new Error('AI API Key missing. Add it in Settings.')
 
   // Prompt is selected by client type; the subject-output instruction is appended
   // so the AI returns both a subject line and the HTML body.
@@ -64,11 +67,12 @@ async function generateAiEmail(clientName, beforeFile, afterFile, settings, clie
     if (beforeFile) parts.push({ inlineData: { mimeType: beforeFile.type, data: beforeFile.data } })
     if (afterFile)  parts.push({ inlineData: { mimeType: afterFile.type,  data: afterFile.data  } })
 
-    // Usage is recorded inside callGeminiWithFallback — see utils/aiUsage.js.
-    const d = await callGeminiWithFallback(aiKey, aiModel, {
+    // Runs on the server, which holds the key and picks the model.
+    // Token usage is recorded there too, so it cannot be missed.
+    const d = await callGemini({
       contents: [{ parts }],
       systemInstruction: { parts: [{ text: systemPrompt }] },
-    }, { feature: AI_FEATURES.EMAIL_AI_GENERATION })
+    }, AI_FEATURES.EMAIL_AI_GENERATION)
     emailText = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
   } else if (aiProvider === 'openai') {
@@ -1194,40 +1198,47 @@ function AnalyticsSection() {
 function SettingsSection({ onGmailChange }) {
   const [googleClientId, setGoogleClientId] = useState(localStorage.getItem('google_client_id') || '')
   const [aiProvider, setAiProvider]         = useState(localStorage.getItem('ai_provider') || 'gemini')
-  const [aiKey, setAiKey]                   = useState(localStorage.getItem('ai_key') || '')
-  const [aiModel, setAiModel]               = useState(localStorage.getItem('ai_model') || 'gemini-2.5-flash')
   const [connecting, setConnecting]         = useState(false)
   const [detecting, setDetecting]           = useState(false)
+  // The Gemini key lives on the server and is never sent here. All this
+  // panel needs is whether AI works and which model is live.
+  const [aiStatus, setAiStatus]             = useState(null)
   const localToken  = localStorage.getItem('gmail_access_token')
   const localExpiry = parseInt(localStorage.getItem('gmail_token_expiry') || '0')
   const localValid  = localToken && Date.now() < localExpiry
 
-  // Auto-detect the best supported Gemini model for whatever key the user
-  // pastes in — they should never have to know/guess a model name. Runs on
-  // Save (when a key is present) and can be re-run manually if needed.
-  const detectModel = async (key) => {
-    if (aiProvider !== 'gemini' || !key) return
-    setDetecting(true)
+  // The server detects which model its key can actually use, so nobody has
+  // to know or guess a model name — and a name Google retires can never
+  // strand a feature the way a pinned "gemini-1.5-pro" did.
+  const loadAiStatus = async (refresh = false) => {
+    if (refresh) setDetecting(true)
     try {
-      const best = await discoverBestGeminiModel(key)
-      setAiModel(best)
-      localStorage.setItem('ai_model', best)
-      showToast(`Detected best Gemini model: ${best}`, 'success')
+      const status = await getAiStatus({ refresh })
+      setAiStatus(status)
+      if (refresh) {
+        showToast(status.connected
+          ? `Gemini connected — using ${status.model}`
+          : (aiUnavailableMessage(status) || 'Gemini is not reachable.'),
+          status.connected ? 'success' : 'error')
+      }
     } catch (err) {
-      showToast(`Model auto-detection failed: ${err.message}`, 'error')
+      setAiStatus(null)
+      if (refresh) showToast(`Could not read AI status: ${err.message}`, 'error')
     } finally {
       setDetecting(false)
     }
   }
 
+  useEffect(() => { loadAiStatus(false) }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+
   const saveSettings = async () => {
     localStorage.setItem('google_client_id', googleClientId.trim())
     localStorage.setItem('ai_provider', aiProvider)
-    const trimmedKey = aiKey.trim()
-    localStorage.setItem('ai_key', trimmedKey)
-    localStorage.setItem('ai_model', aiModel)
+    // No API key is written to the browser any more. The old one is cleared
+    // on save so a key stored before this change stops lingering in
+    // localStorage on machines that already have it.
+    localStorage.removeItem('ai_key')
     showToast('Settings saved successfully!', 'success')
-    if (aiProvider === 'gemini' && trimmedKey) await detectModel(trimmedKey)
   }
 
   const connectGmail = async () => {
@@ -1310,39 +1321,46 @@ function SettingsSection({ onGmailChange }) {
 
           {aiProvider === 'gemini' && (
             <div className="et-form-group">
-              <label className="et-label">AI Model</label>
+              <label className="et-label">Gemini Connection</label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <select className="et-input" value={aiModel} onChange={e => setAiModel(e.target.value)} style={{ flex: 1 }}>
-                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recommended)</option>
-                  <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-                  <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                  <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                  <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                </select>
+                <div className="et-input" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, cursor: 'default' }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                    background: aiStatus?.connected ? '#16a34a' : aiStatus ? '#dc2626' : '#cbd5e1',
+                  }} />
+                  <span>
+                    {aiStatus?.connected
+                      ? `Gemini Connected · ${aiStatus.model}`
+                      : aiStatus ? (aiUnavailableMessage(aiStatus) || 'Gemini not connected')
+                      : 'Checking…'}
+                  </span>
+                </div>
                 <button
                   type="button"
                   className="et-btn et-btn-secondary"
                   style={{ flex: 'none', whiteSpace: 'nowrap' }}
-                  disabled={detecting || !aiKey.trim()}
-                  onClick={() => detectModel(aiKey.trim())}
+                  disabled={detecting}
+                  onClick={() => loadAiStatus(true)}
                 >
-                  {detecting ? 'Detecting…' : 'Auto-detect'}
+                  {detecting ? 'Checking…' : 'Re-detect model'}
                 </button>
               </div>
               <div className="et-help-text">
-                Auto-detected from your API key when you save — you shouldn't need to pick this
-                manually. If Template 3 generation fails because a model was retired, it automatically
-                retries with the next best supported model.
+                The Gemini API key is held on the server and is never sent to the browser.
+                The model above is detected against that key, so a model Google retires is
+                replaced automatically instead of breaking Customer Intelligence or Template 3.
               </div>
             </div>
           )}
 
-          <div className="et-form-group">
-            <label className="et-label">AI API Key</label>
-            <input className="et-input" type="password" placeholder="Your API key for the selected provider"
-              value={aiKey} onChange={e => setAiKey(e.target.value)} />
-            <div className="et-help-text">Used for PDP Audit AI email generation (Template 3)</div>
-          </div>
+          {aiProvider !== 'gemini' && (
+            <div className="et-form-group">
+              <div className="et-help-text">
+                Only Gemini runs through the server-held key. OpenAI and Anthropic still
+                need their own key at the point of use.
+              </div>
+            </div>
+          )}
 
           <div className="et-settings-actions">
             <button className="et-btn et-btn-primary" style={{ flex: 'none', minWidth: 140 }} onClick={saveSettings}>
