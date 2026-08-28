@@ -1,7 +1,7 @@
 // AI Customer Intelligence for the Company detail page.
 //
 // Reuses the EXACT same AI configuration the Email Tool saves in Settings
-// (localStorage: ai_provider / ai_key / ai_model) and the same shared Gemini
+// (server-held Gemini key, no browser configuration) and the same shared
 // call helper (geminiModel.js) every other AI call site uses — no second
 // API-key field, no separate AI configuration, nothing hardcoded. The API key
 // is read here and sent only to Google's Gemini endpoint; it is never
@@ -12,17 +12,15 @@
 // the UI, which renders it as the sheet. See SYSTEM_PROMPT below.
 
 import api from '../api/client'
-import { callGeminiWithFallback } from './geminiModel'
+import { callGemini, getAiStatus, aiUnavailableMessage } from './geminiModel'
 import { valueList } from './multiValue'
 import { AI_FEATURES } from './aiUsage'
 
-// ── AI settings (single source of truth: Email Tool → Settings) ────────────
+// ── AI settings ───────────────────────────────────────
+// Kept as a function so existing callers still work, but there is no key and
+// no model here any more — both belong to the server now.
 export function getAiSettings() {
-  return {
-    provider: localStorage.getItem('ai_provider') || 'gemini',
-    key: (localStorage.getItem('ai_key') || '').trim(),
-    model: localStorage.getItem('ai_model') || 'gemini-2.5-flash',
-  }
+  return { provider: 'gemini' }
 }
 
 // ── In-session cache ───────────────────────────────────────────────────────
@@ -291,13 +289,11 @@ async function gatherContext(company) {
 // Throws with a user-presentable message on any failure; on success returns
 // { sheet, generatedAt, model, sources } and caches it for this session.
 export async function generateCompanyInsights(company, extraContext = {}) {
-  const { provider, key, model } = getAiSettings()
-
-  if (!key) {
-    throw new Error('No AI API key configured. Add your Gemini API key in Marketing → Email → Settings → AI API Key.')
-  }
-  if (provider !== 'gemini') {
-    throw new Error(`Customer Intelligence currently supports the Gemini API (your AI provider is set to "${provider}"). Switch the provider to Gemini in Marketing → Email → Settings.`)
+  // One round-trip to confirm AI is actually usable, so a misconfigured
+  // server produces a clear message instead of a failed generation.
+  const status = await getAiStatus().catch(() => null)
+  if (!status || !status.connected) {
+    throw new Error(aiUnavailableMessage(status))
   }
 
   const { page, mail, pdpUrl, domain } = await gatherContext(company)
@@ -315,7 +311,7 @@ export async function generateCompanyInsights(company, extraContext = {}) {
 
   // No responseMimeType/JSON constraint any more — the prompt asks for a
   // readable sheet, and forcing application/json would fight it.
-  const d = await callGeminiWithFallback(key, model, {
+  const d = await callGemini({
     systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents: [{ parts: [{ text: userBlock }] }],
     generationConfig: { temperature: 0.4 },
@@ -327,7 +323,8 @@ export async function generateCompanyInsights(company, extraContext = {}) {
   const result = {
     sheet,
     generatedAt: new Date().toISOString(),
-    model: d.modelVersion || model,
+    // Whichever model the server actually used, straight from the response.
+    model: d.modelVersion || 'gemini',
     // Shown in the UI so the rep can see which inputs actually reached the
     // model — an empty section 5 is then obviously "no synced email", not a
     // silent failure.

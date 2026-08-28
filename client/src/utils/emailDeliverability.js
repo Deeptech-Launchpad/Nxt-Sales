@@ -6,7 +6,8 @@
 // Everything here is ADVISORY — it estimates inbox placement, never guarantees it.
 // ─────────────────────────────────────────────────────────────────────────────
 import api from '../api/client'
-import { callGeminiWithFallback } from './geminiModel'
+import { callGemini } from './geminiModel'
+import { AI_FEATURES } from './aiUsage'
 
 // Common spam-trigger phrases (kept practical, not exhaustive).
 const SPAM_KEYWORDS = [
@@ -176,9 +177,11 @@ export function analyzeContent({ subject = '', html = '' }) {
   }
 }
 
-// ── AI pass (optional; reuses the composer's AI key) ─────────────────────────
+// ── AI pass ───────────────────────────────────────────────
+// Gemini now runs through the backend, so no key reaches this function.
+// The other providers still take one at the call site — unchanged.
 export async function analyzeWithAI({ subject = '', html = '', provider = 'gemini', key = '', model = '' }) {
-  if (!key) return { available: false }
+  if (provider !== 'gemini' && !key) return { available: false }
   const text = stripHtml(html).slice(0, 6000)
   const instruction =
 `You are an expert email deliverability and anti-spam analyst for cold/B2B outreach to international clients.
@@ -192,7 +195,7 @@ BODY (text): ${text}`
   let raw = ''
   try {
     if (provider === 'gemini') {
-      const d = await callGeminiWithFallback(key, model, { contents: [{ parts: [{ text: instruction }] }] })
+      const d = await callGemini({ contents: [{ parts: [{ text: instruction }] }] }, AI_FEATURES.EMAIL_DELIVERABILITY)
       raw = d.candidates?.[0]?.content?.parts?.[0]?.text || ''
     } else if (provider === 'openai') {
       const r = await fetch('https://api.openai.com/v1/chat/completions', {
