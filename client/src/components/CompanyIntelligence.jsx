@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Sparkles, RefreshCw, Loader2, AlertCircle, Globe, Mail, Copy, Check } from 'lucide-react'
-import { generateCompanyInsights, getCachedInsights, getAiSettings } from '../utils/companyIntelligence'
+import { generateCompanyInsights, getCachedInsights } from '../utils/companyIntelligence'
+import { getAiStatus, aiUnavailableMessage } from '../utils/geminiModel'
 
 // AI Customer Intelligence section for the Company detail page (Intelligence
 // tab). Gemini is only ever called from the explicit Generate/Refresh button
@@ -127,7 +128,14 @@ export default function CompanyIntelligence({ company }) {
   const [error,   setError]   = useState('')
   const [copied,  setCopied]  = useState(false)
 
-  const hasKey = !!getAiSettings().key
+  // There is no API key in the browser to check any more — the server holds
+  // it. Ask the backend whether AI is actually usable instead, which is also
+  // a better signal: it catches a bad key or an unreachable Gemini, not just
+  // a missing one.
+  const [aiStatus, setAiStatus] = useState(null)
+  useEffect(() => { getAiStatus().then(setAiStatus).catch(() => setAiStatus(null)) }, [])
+  const aiReady = aiStatus?.connected === true
+  const aiChecking = aiStatus === null
 
   const generate = async () => {
     if (loading) return
@@ -180,14 +188,14 @@ export default function CompanyIntelligence({ company }) {
         )}
         <button
           onClick={generate}
-          disabled={loading || !hasKey}
-          title={hasKey ? undefined : 'Add your Gemini API key in Marketing → Email → Settings first'}
+          disabled={loading || aiChecking || !aiReady}
+          title={aiReady ? undefined : aiUnavailableMessage(aiStatus)}
           style={{
             marginLeft: result ? 0 : 'auto', display: 'flex', alignItems: 'center', gap: 6,
             padding: '5px 12px', borderRadius: 6, border: 'none', fontFamily: 'inherit',
-            background: loading || !hasKey ? '#e2e8f0' : '#7c3aed',
-            color: loading || !hasKey ? '#94a3b8' : '#fff',
-            fontSize: 15, fontWeight: 600, cursor: loading || !hasKey ? 'not-allowed' : 'pointer',
+            background: loading || !aiReady ? '#e2e8f0' : '#7c3aed',
+            color: loading || !aiReady ? '#94a3b8' : '#fff',
+            fontSize: 15, fontWeight: 600, cursor: loading || !aiReady ? 'not-allowed' : 'pointer',
           }}
         >
           {loading
@@ -199,9 +207,9 @@ export default function CompanyIntelligence({ company }) {
       </div>
 
       <div style={{ padding: '12px 16px' }}>
-        {!hasKey && (
+        {!aiChecking && !aiReady && (
           <div style={{ fontSize: 15.5, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '9px 12px' }}>
-            No AI API key configured. Add your Gemini API key once in <strong>Marketing → Email → Settings → AI API Key</strong> — this section reuses that same configuration.
+            {aiUnavailableMessage(aiStatus)}
           </div>
         )}
 
@@ -219,7 +227,7 @@ export default function CompanyIntelligence({ company }) {
           </div>
         )}
 
-        {hasKey && !result && !error && !loading && (
+        {aiReady && !result && !error && !loading && (
           <div style={{ fontSize: 15.5, color: '#344054' }}>
             Build a one-page <strong>Sales Pitch Intelligence Sheet</strong> for this company — company snapshot,
             detected CMS/platform, enrichment opportunities, customer benefits, relationship context from synced
