@@ -779,13 +779,55 @@ router.post('/send', auth, async (req, res) => {
       // rfcMessageId is uniquely indexed, and a clash means this exact email is
       // already stored — synced from another mailbox in the moment between the
       // send and this write. The email has ALREADY gone out, so this must never
-      // fail the request: drop just that field and record the row as before.
-      if (createErr.code === 'P2002') {
+      // fail the request.
+      //
+      // This used to insert the row anyway with rfcMessageId dropped to null.
+      // That is what MANUFACTURED the duplicate: two rows for one real email,
+      // and the copy holding the Message-ID was the synced one while the CRM
+      // copy held the tracking — so the pair could never be reconciled by the
+      // sync (its dedupe check keys on exactly the field that was nulled), and
+      // the same email showed twice, once "Opened Nx" and once not tracked.
+      //
+      // The row that already owns this Message-ID IS this email, so adopt it
+      // instead of adding a second one. Only what a synced copy cannot know is
+      // filled in; nothing already recorded is overwritten, and no row is
+      // deleted. Gmail is untouched either way.
+      if (createErr.code !== 'P2002') throw createErr
+      if (sentRfcMessageId) {
+        const existing = await prisma.activity.findUnique({ where: { rfcMessageId: sentRfcMessageId } })
+        if (existing) {
+          activity = await prisma.activity.update({
+            where: { id: existing.id },
+            data: {
+              // Carry the open-tracking identity across — without it this send
+              // could never report opens, because the pixel points at this id.
+              ...(existing.trackingId ? {} : { trackingId }),
+              // We composed and sent this, so it is outbound regardless of how
+              // the mailbox it was synced from happened to classify it. The
+              // tracking block is only exposed for outbound mail, so this is
+              // also what lets the opens show up at all.
+              direction: 'outbound',
+              ...(existing.emailStatus === 'opened' ? {} : { emailStatus: 'sent' }),
+              // Fill only genuine gaps.
+              ...(existing.bodyHtml   == null && storedHtml           ? { bodyHtml: storedHtml } : {}),
+              ...(existing.companyId  == null && sendCompanyId        ? { companyId: sendCompanyId } : {}),
+              ...(existing.ccEmail    == null && cc                   ? { ccEmail: cc } : {}),
+              ...(existing.bccEmail   == null && bcc                  ? { bccEmail: bcc } : {}),
+              ...(existing.matchedCompanyEmail == null && resolvedMatchedAddress ? { matchedCompanyEmail: resolvedMatchedAddress } : {}),
+              ...(existing.matchBasis == null && sendMatchBasis       ? { matchBasis: sendMatchBasis } : {}),
+            },
+            include: activityInclude,
+          })
+        }
+      }
+      if (!activity) {
+        // No row to adopt (or the clash was on some other unique field): fall
+        // back to the previous behaviour so a sent email is never unrecorded.
         activity = await prisma.activity.create({
           data: { ...activityData, rfcMessageId: null },
           include: activityInclude,
         })
-      } else throw createErr
+      }
     }
 
     res.status(201).json(activity)
@@ -1328,6 +1370,37 @@ async function runEmailSync({
 // Tracking telemetry (open count/times) is sender-private: it is stripped from
 // the payload for anyone who is not the user who sent the message, so a
 // teammate viewing the same company never sees another rep's open data.
+// Collapses rows that are the SAME real Gmail message down to one.
+//
+// Identity is the RFC 5322 Message-ID and nothing else. Gmail's own message id
+// and thread id are per-MAILBOX, so the one email sitting in two connected
+// mailboxes legitimately has two of each — while subject and body are shared
+// by genuinely different messages all the time (a template re-sent, a repeated
+// notification), which is exactly why neither may be used to decide identity.
+// A row with no Message-ID is therefore never collapsed: unidentifiable is not
+// the same as duplicate.
+//
+// Which copy survives matters for more than tidiness. The CRM-composed send is
+// the row carrying trackingId and the open history; the copy the sync pulled
+// from the recipient's mailbox carries none. Preferring the tracked row is what
+// stops the same email reading "Opened 3x" on one screen and showing nothing on
+// another — the duplicate was the cause of that inconsistency, not a separate
+// tracking bug.
+function dedupeSameGmailMessage(rows) {
+  const winnerByRfc = new Map()
+  for (const r of rows) {
+    if (!r.rfcMessageId) continue
+    const cur = winnerByRfc.get(r.rfcMessageId)
+    if (!cur) { winnerByRfc.set(r.rfcMessageId, r); continue }
+    // Prefer the row that can actually report opens, then the outbound
+    // original over the synced-back copy of it.
+    const better = (!cur.trackingId && r.trackingId) ||
+      (!!cur.trackingId === !!r.trackingId && cur.direction !== 'outbound' && r.direction === 'outbound')
+    if (better) winnerByRfc.set(r.rfcMessageId, r)
+  }
+  return rows.filter(r => !r.rfcMessageId || winnerByRfc.get(r.rfcMessageId) === r)
+}
+
 function publicMessage(a, viewerId) {
   const isOutbound = a.direction === 'outbound'
   return {
@@ -1627,12 +1700,16 @@ router.get('/thread/:threadId', auth, async (req, res) => {
     if (threadId.startsWith('single:')) where.id = threadId.slice(7)
     else where.threadId = threadId
 
-    const rows = await prisma.activity.findMany({
+    const allRows = await prisma.activity.findMany({
       where,
       orderBy: { createdAt: 'asc' },
       include: { user: { select: { id: true, name: true, email: true } } },
     })
-    if (rows.length === 0) return res.status(404).json({ message: 'Conversation not found.' })
+    if (allRows.length === 0) return res.status(404).json({ message: 'Conversation not found.' })
+
+    // One real Gmail message renders once. Genuinely different messages in the
+    // thread are untouched — they have their own Message-IDs.
+    const rows = dedupeSameGmailMessage(allRows)
 
     res.json({
       threadId,

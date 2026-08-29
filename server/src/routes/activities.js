@@ -30,6 +30,24 @@ function entityForType(type) {
   return null
 }
 
+// The same real Gmail message can land in two connected mailboxes (e.g. the
+// CRM-composed send and a mailbox that also receives a copy of it), so it can
+// be stored as two Activity rows for one real email. rfcMessageId (the RFC
+// 5322 Message-ID header) is the one value Gmail sets identically on both
+// copies, so it's the only safe key to collapse on here — never subject or
+// body, which two genuinely different messages in a thread can share. Rows
+// with no rfcMessageId (not yet backfilled, or non-email types) pass through
+// untouched. This only changes what this feed displays — nothing is deleted.
+function dedupeEmailActivities(records) {
+  const winnerByRfc = new Map()
+  for (const r of records) {
+    if (r.type !== 'email' || !r.rfcMessageId) continue
+    const cur = winnerByRfc.get(r.rfcMessageId)
+    if (!cur || (!cur.trackingId && r.trackingId)) winnerByRfc.set(r.rfcMessageId, r)
+  }
+  return records.filter(r => r.type !== 'email' || !r.rfcMessageId || winnerByRfc.get(r.rfcMessageId) === r)
+}
+
 // Attaches custom.<key> values onto every task/meeting row in `records` —
 // records may be a mixed bag of activity types (the per-company feed can
 // be), so task and meeting rows are grouped and attached separately; every
@@ -69,7 +87,7 @@ router.get('/', auth, async (req, res) => {
         include: { user: { select: { id: true, name: true, email: true } } },
       })
       await attachTaskMeetingCustomFields(activities)
-      return res.json(activities)
+      return res.json(dedupeEmailActivities(activities))
     }
 
     if (!['meeting', 'task'].includes(type)) {
