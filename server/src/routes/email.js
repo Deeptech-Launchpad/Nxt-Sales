@@ -1459,15 +1459,23 @@ router.get('/conversations', auth, async (req, res) => {
     // snippet of each thread's latest message, fetched separately below. On a
     // company with a long history this is the difference between shipping a
     // few KB and several MB per page load.
-    const rows = await prisma.activity.findMany({
+    const allRows = await prisma.activity.findMany({
       where: { companyId, type: 'email' },
       orderBy: { createdAt: 'asc' },
       select: {
         id: true, threadId: true, subject: true, title: true, direction: true,
         createdAt: true, fromEmail: true, toEmail: true, ccEmail: true,
         matchedCompanyEmail: true, attachments: true,
+        rfcMessageId: true, trackingId: true,
       },
     })
+    // Gmail's threadId is per-mailbox, so the same real email synced from two
+    // connected mailboxes lands under two different threadIds — each would
+    // otherwise become its own thread card below. Collapsed here, once, across
+    // every thread at once (never within a single thread only), so this is
+    // correct with no pagination edge case: this endpoint returns the whole
+    // company's history in one response, not a page of it.
+    const rows = dedupeSameGmailMessage(allRows)
 
     // Group into threads first, then file each thread under the company
     // address it actually involves. A conversation is only ever shown under an
@@ -1648,7 +1656,7 @@ router.get('/inbox', auth, async (req, res) => {
     `
     const total = countRows[0]?.count || 0
 
-    const rows = await prisma.$queryRaw`
+    const pageRows = await prisma.$queryRaw`
       SELECT * FROM (
         SELECT DISTINCT ON (COALESCE("threadId", 'single:' || id)) *
         FROM "Activity"
@@ -1658,6 +1666,17 @@ router.get('/inbox', auth, async (req, res) => {
       ORDER BY t."createdAt" DESC
       LIMIT ${limit} OFFSET ${(page - 1) * limit}
     `
+
+    // threadId is per-mailbox, so the one row DISTINCT ON keeps per thread can
+    // still be the exact same real email as another thread's row — the same
+    // outreach synced back from a second connected mailbox, one thread each.
+    // Collapsed here so the Inbox lists that email once, matched on
+    // rfcMessageId alone (never subject/body/threadId, which distinct emails
+    // share constantly). Applied to this page's rows only: a duplicate pair
+    // split across a page boundary is not caught, which is the trade-off for
+    // not restructuring the count/pagination query for a case that is already
+    // provably rare (0 confirmed in production).
+    const rows = dedupeSameGmailMessage(pageRows)
 
     // Company names resolved via one targeted query keyed on just the
     // companyIds present on this page — not a global join.
