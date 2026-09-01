@@ -196,19 +196,27 @@ function matchHeaders({ from, to, cc } = {}, index) {
     }
   }
 
-  // Rule 2 — domain, only after every field failed rule 1.
-  for (const addrs of groups) {
-    for (const a of addrs) {
-      if (index.ownAddresses.has(a)) continue
-      const dom = domainOf(a)
-      if (!dom || FREE_EMAIL_DOMAINS.has(dom)) continue
-      // Never let our own organisation's domain resolve to a company.
-      if (index.ownDomains?.has(dom)) continue
-      const companyId = index.byDomain.get(dom)
-      if (companyId) return { companyId, matchedEmail: a, basis: 'domain' }
-    }
-  }
-
+  // Rule 2 (DOMAIN) has been REMOVED. A company is identified by an address
+  // somebody actually saved on it, and by nothing else.
+  //
+  // The old rule mapped a message when no saved address matched but the
+  // sender/recipient DOMAIN resolved to exactly one company. It was right more
+  // often than not — but only by luck, because a domain is not an identity: it
+  // is shared by every employee of a client, by their shared inboxes, by their
+  // bounce daemons, and sometimes by an unrelated business on the same domain.
+  // Nobody ever asserted those links, they were invisible in the UI, and the
+  // rule would silently claim any FUTURE address at a known domain too.
+  //
+  // The ~1,000 rows that were relying on this have had their addresses saved
+  // explicitly against their companies first (see scripts/backfill-company-
+  // emails.js), so removing it costs no correct mapping. What it does stop is
+  // postmaster@, junkemail@ and the next unrecognised address from being filed
+  // against a company on a domain guess.
+  //
+  // Consequence, and it is intended: a message whose addresses are not saved
+  // anywhere resolves to NO company. It is still stored in full — the sync
+  // writes it with companyId null rather than dropping it — and associates
+  // itself the moment somebody adds that address to a company.
   return null
 }
 
@@ -216,9 +224,12 @@ async function matchEmail(headers) {
   return matchHeaders(headers, await getIndex())
 }
 
-// Resolves a whole Gmail thread to one company: the first message that matches
-// decides for the entire conversation, so a thread is never shown with holes
-// where a reply happened not to name a company address.
+// DEPRECATED — no longer used by the sync, kept only so any other caller keeps
+// working. Resolving a whole Gmail thread from ONE message is what allowed a
+// single matching message to drag every other message in the conversation into
+// that company, including messages addressed to entirely different people at
+// unrelated organisations. Each message now resolves on its own headers; see
+// the per-message match in routes/email.js.
 function matchThread(messagesHeaders, index) {
   for (const h of messagesHeaders) {
     const m = matchHeaders(h, index)

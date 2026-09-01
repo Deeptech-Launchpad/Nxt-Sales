@@ -24,8 +24,13 @@ const prisma = new PrismaClient()
 const args = process.argv.slice(2)
 const companyFlagIdx = args.indexOf('--company')
 const companyName = companyFlagIdx !== -1 ? args[companyFlagIdx + 1] : null
+// The index guards only apply when --company was actually given. Without that
+// check, companyFlagIdx is -1, so `i !== companyFlagIdx + 1` reads as `i !== 0`
+// and silently swallowed the FIRST address argument.
 const addresses = args.filter((a, i) =>
-  a.includes('@') && i !== companyFlagIdx && i !== companyFlagIdx + 1).map(a => a.toLowerCase())
+  a.includes('@') &&
+  (companyFlagIdx === -1 || (i !== companyFlagIdx && i !== companyFlagIdx + 1))
+).map(a => a.toLowerCase())
 
 function oauthClient() {
   return new google.auth.OAuth2(
@@ -146,7 +151,7 @@ function countAttachments(payload) {
         id: true, threadId: true, messageId: true, rfcMessageId: true, subject: true,
         direction: true, fromEmail: true, toEmail: true, ccEmail: true, createdAt: true,
         companyId: true, matchedCompanyEmail: true, matchBasis: true, mailboxEmail: true,
-        trackingId: true, attachments: true,
+        trackingId: true, attachments: true, gmailDeletedAt: true,
       },
       orderBy: { createdAt: 'asc' },
     })
@@ -158,8 +163,15 @@ function countAttachments(payload) {
       crmByRfc.get(r.rfcMessageId).push(r)
     }
 
+    // Rows marked gmailDeletedAt are still in the table but withheld from every
+    // read path, so they must not be counted as what the CRM "shows" — counting
+    // them made a completed reconcile look like it had done nothing.
+    const visibleRows = crmRows.filter(r => !r.gmailDeletedAt)
+    const hiddenRows  = crmRows.filter(r => r.gmailDeletedAt)
+
     console.log(`\nGMAIL: ${gmailMsgs.size} distinct real message(s)`)
-    console.log(`CRM  : ${crmRows.length} Activity row(s)\n`)
+    console.log(`CRM  : ${visibleRows.length} visible Activity row(s)` +
+      (hiddenRows.length ? `  (+${hiddenRows.length} hidden as deleted-in-Gmail)` : '') + '\n')
 
     // ── Per Gmail message: is it in the CRM exactly once, and is the date right?
     let missing = 0, dup = 0, drift = 0
@@ -194,10 +206,12 @@ function countAttachments(payload) {
     }
 
     // ── CRM rows Gmail does not have (extra / wrongly-mapped)
+    // Only VISIBLE rows count as a discrepancy: a row already marked
+    // deleted-in-Gmail is the reconcile having done its job, not an error.
     const gmailRfcs = new Set([...gmailMsgs.values()].map(g => g.rfc).filter(Boolean))
-    const extras = crmRows.filter(r => !r.rfcMessageId || !gmailRfcs.has(r.rfcMessageId))
+    const extras = visibleRows.filter(r => !r.rfcMessageId || !gmailRfcs.has(r.rfcMessageId))
     if (extras.length) {
-      console.log(`\n!! ${extras.length} CRM row(s) with NO matching Gmail message for this address:`)
+      console.log(`\n!! ${extras.length} VISIBLE CRM row(s) with NO matching Gmail message for this address:`)
       for (const r of extras) {
         console.log(`  - ${r.id}  "${r.subject}"`)
         console.log(`      rfcMessageId: ${r.rfcMessageId || 'NULL  <-- invisible to dedupe'}`)
@@ -209,13 +223,15 @@ function countAttachments(payload) {
 
     console.log(`\nSUMMARY for ${target}:`)
     console.log(`  Gmail real messages      : ${gmailMsgs.size}`)
-    console.log(`  CRM activity rows        : ${crmRows.length}`)
+    console.log(`  CRM rows VISIBLE         : ${visibleRows.length}   <-- compare this to Gmail`)
+    console.log(`  CRM rows hidden (deleted): ${hiddenRows.length}`)
+    console.log(`  CRM rows in table total  : ${crmRows.length}`)
     console.log(`  missing from CRM         : ${missing}`)
     console.log(`  duplicated in CRM        : ${dup}`)
     console.log(`  rows with date drift >1m : ${drift}`)
     console.log(`  CRM rows not in Gmail    : ${extras.length}`)
-    console.log(`  CRM rows with NULL rfcId : ${crmRows.filter(r => !r.rfcMessageId).length}`)
-    console.log(`  matched by DOMAIN (not exact address): ${crmRows.filter(r => r.matchBasis === 'domain').length}`)
+    console.log(`  CRM rows with NULL rfcId : ${visibleRows.filter(r => !r.rfcMessageId).length}`)
+    console.log(`  matched by DOMAIN (not exact address): ${visibleRows.filter(r => r.matchBasis === 'domain').length}`)
     console.log('')
   }
 
