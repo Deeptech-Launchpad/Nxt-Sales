@@ -734,15 +734,30 @@ router.post('/send', auth, async (req, res) => {
     // assumption about whether Gmail preserves or replaces a client-supplied one.
     // Best-effort — a failure here leaves the field null, i.e. exactly the old
     // behaviour, and never affects an email that has already gone out.
+    // Retried, because a null here is not harmless. The sync's cross-mailbox
+    // guard is findUnique({ rfcMessageId }) — a NULL row can never match it, so
+    // a send stored without its Message-ID is invisible to de-duplication: the
+    // moment ANOTHER connected mailbox syncs that same email, a second Activity
+    // is created for it, and nothing later can reconcile the pair. (The
+    // sender's own mailbox does repair it on its next sync, via the messageId
+    // adopt path — but only if it wins the race.) Three quick attempts turn a
+    // transient blip into a non-event; the send itself has already succeeded
+    // either way, so this must never throw.
     let sentRfcMessageId = null
-    try {
-      const meta = await gmail.users.messages.get({
-        userId: 'me', id: sent.data.id, format: 'metadata', metadataHeaders: ['Message-ID'],
-      })
-      sentRfcMessageId = (meta.data.payload?.headers || [])
-        .find(h => h.name?.toLowerCase() === 'message-id')?.value || null
-    } catch (metaErr) {
-      console.warn('[Email Send] Could not read back the Message-ID (row will be de-duplicated on the next sync instead):', metaErr.message)
+    for (let attempt = 1; attempt <= 3 && !sentRfcMessageId; attempt++) {
+      try {
+        const meta = await gmail.users.messages.get({
+          userId: 'me', id: sent.data.id, format: 'metadata', metadataHeaders: ['Message-ID'],
+        })
+        sentRfcMessageId = (meta.data.payload?.headers || [])
+          .find(h => h.name?.toLowerCase() === 'message-id')?.value || null
+      } catch (metaErr) {
+        if (attempt === 3) {
+          console.error('[Email Send] Could not read back the Message-ID after 3 attempts — this row is invisible to cross-mailbox de-duplication until the sending mailbox syncs it:', metaErr.message)
+        } else {
+          await new Promise(r => setTimeout(r, 300 * attempt))
+        }
+      }
     }
 
     const activityData = {
@@ -1018,7 +1033,13 @@ router.post('/sync-mailbox', auth, async (req, res) => {
 // Pages through a Gmail search query until exhausted (or the safety cap is
 // hit), instead of silently keeping only the first 100 hits — that truncation
 // is why older conversations could go missing from a long history.
-const MAX_PAGES = 10
+// Raised from 10 (1,000 messages). A full-history import ("days=all") on a
+// real sales mailbox exceeds that easily, and the cap was silent: the run
+// reported success while quietly leaving the oldest mail unsynced, which reads
+// downstream as "messages missing from the CRM". Still bounded, so a runaway
+// query cannot page forever — but now it says so when it stops early, instead
+// of pretending it reached the end.
+const MAX_PAGES = 100
 async function listAllMessages(gmail, q) {
   const out = []
   let pageToken
@@ -1026,8 +1047,9 @@ async function listAllMessages(gmail, q) {
     const res = await gmail.users.messages.list({ userId: 'me', q, maxResults: 100, pageToken })
     out.push(...(res.data.messages || []))
     pageToken = res.data.nextPageToken
-    if (!pageToken) break
+    if (!pageToken) return out
   }
+  console.warn(`[Email Sync] page cap (${MAX_PAGES}) reached for query "${q}" — ${out.length} message(s) collected, MORE REMAIN UNSYNCED. Narrow the window or raise MAX_PAGES.`)
   return out
 }
 
@@ -1194,6 +1216,18 @@ async function runEmailSync({
 
         const rfcId = getHeader('Message-ID') || getHeader('Message-Id') || null
 
+        // THE authoritative timestamp is Gmail's own internalDate — the value
+        // the Gmail UI displays. The RFC "Date:" header, used here before, is
+        // only what the SENDING CLIENT claimed: it drifts with clock skew,
+        // delayed delivery and relaying, and a forwarded or re-sent message can
+        // carry a Date header from days earlier. That is why CRM dates did not
+        // line up with what the user sees in Gmail. The header is kept as a
+        // fallback for the (rare) case internalDate is absent.
+        const internalMs = Number(msg.internalDate)
+        const gmailDate = Number.isFinite(internalMs) && internalMs > 0
+          ? new Date(internalMs)
+          : (getHeader('Date') ? new Date(getHeader('Date')) : new Date())
+
         if (existing) {
           // ADOPT and CORRECT, never skip. Re-pointing the existing row keeps
           // its id, trackingId and open history intact — which is why tracking
@@ -1203,6 +1237,12 @@ async function runEmailSync({
           // another company" special case any more: if it resolves this thread
           // to company X, X is where it belongs. The old guard existed only
           // because two different rules could disagree about ownership.
+          //
+          // Deliberately NOT corrected here: createdAt. Rewriting the stored
+          // date of rows that already exist would silently modify production
+          // data on every sync, so the internalDate change below applies to
+          // NEWLY created rows only. Back-correcting existing dates is a
+          // separate, explicit migration.
           const patch = {}
           if (existing.companyId !== threadCompanyId) patch.companyId = threadCompanyId
           if (existing.matchedCompanyEmail !== threadMatchedAddr) patch.matchedCompanyEmail = threadMatchedAddr
@@ -1255,7 +1295,6 @@ async function runEmailSync({
         }
 
         const subjectRaw = getHeader('Subject') || '(no subject)'
-        const dateHeader = getHeader('Date')
         const atts       = extractAttachments(msg.payload)
 
         try {
@@ -1281,7 +1320,7 @@ async function runEmailSync({
               matchBasis:  threadMatchBasis,
               mailboxEmail: userEmail,
               attachments: atts.length ? atts : undefined,
-              createdAt:   dateHeader ? new Date(dateHeader) : new Date(),
+              createdAt:   gmailDate,
             },
           })
           synced++
@@ -1459,8 +1498,11 @@ router.get('/conversations', auth, async (req, res) => {
     // snippet of each thread's latest message, fetched separately below. On a
     // company with a long history this is the difference between shipping a
     // few KB and several MB per page load.
+    // gmailDeletedAt: null — a message the user permanently deleted in Gmail
+    // must stop appearing here too (Gmail is the source of truth). The row is
+    // kept in the table, only withheld from display.
     const allRows = await prisma.activity.findMany({
-      where: { companyId, type: 'email' },
+      where: { companyId, type: 'email', gmailDeletedAt: null },
       orderBy: { createdAt: 'asc' },
       select: {
         id: true, threadId: true, subject: true, title: true, direction: true,
@@ -1648,6 +1690,10 @@ router.get('/inbox', auth, async (req, res) => {
     // matching address, the matcher links them and they appear here on their
     // own — hiding is a display rule, not a data change.
     conditions.push(Prisma.sql`"companyId" IS NOT NULL`)
+    // A message permanently deleted in Gmail stops being listed here — Gmail is
+    // the source of truth. Applied as a SQL condition (not a post-fetch filter)
+    // so it narrows the COUNT and the page identically.
+    conditions.push(Prisma.sql`"gmailDeletedAt" IS NULL`)
     const whereClause = Prisma.join(conditions, ' AND ')
 
     const countRows = await prisma.$queryRaw`
@@ -1715,7 +1761,9 @@ router.get('/thread/:threadId', auth, async (req, res) => {
     const { threadId } = req.params
     const { companyId } = req.query
 
-    const where = { type: 'email', companyId: companyId || undefined }
+    // gmailDeletedAt: null — see /conversations. A thread never shows a message
+    // that no longer exists in Gmail.
+    const where = { type: 'email', companyId: companyId || undefined, gmailDeletedAt: null }
     if (threadId.startsWith('single:')) where.id = threadId.slice(7)
     else where.threadId = threadId
 

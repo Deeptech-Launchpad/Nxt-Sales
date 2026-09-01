@@ -80,6 +80,12 @@ router.get('/', auth, async (req, res) => {
     if (companyId) {
       const where = { companyId }
       if (type && type !== 'all') where.type = type
+      // An email permanently deleted in Gmail is withheld from this feed too —
+      // Gmail is the source of truth, and the Emails tab and this timeline must
+      // never disagree about which messages exist. Scoped to email rows: the
+      // column is only ever set on them, and notes/calls/tasks/meetings have no
+      // Gmail counterpart to be deleted from.
+      where.gmailDeletedAt = null
 
       const activities = await prisma.activity.findMany({
         where,

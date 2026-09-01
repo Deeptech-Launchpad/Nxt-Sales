@@ -211,6 +211,18 @@ model Activity {
   // are synced into one company (see companyEmailMatcher.js / Decision A).
   rfcMessageId  String?   @unique
   threadId      String?
+  // Set when the underlying Gmail message is confirmed GONE from the mailbox
+  // it was synced from (a definitive 404 from messages.get, not a transient
+  // error). Gmail is the source of truth, so such a row must stop appearing in
+  // the Inbox, the company's Emails tab and the thread view — but it is kept,
+  // not deleted, so the history stays auditable and a mistaken reconcile can be
+  // undone by clearing this one column.
+  //
+  // Real case this exists for: a rep sent a mail, noticed it had no subject or
+  // no attachments, re-sent it correctly and permanently deleted the botched
+  // one from Gmail. The CRM had already synced it and kept it forever, which is
+  // what surfaced as "an extra message the CRM shows and Gmail doesn't".
+  gmailDeletedAt DateTime?
   companyId     String?
   trackingId    String?   @unique
   openCount     Int       @default(0)
