@@ -1181,24 +1181,36 @@ async function runEmailSync({
       const threadRes = await gmail.users.threads.get({ userId: 'me', id: threadId, format: 'full' })
       const threadMessages = threadRes.data.messages || []
 
-      // Thread-level resolution through THE canonical matcher. The first
-      // message that resolves decides for the whole conversation, so replies
-      // and forwards are never dropped and the thread is never shown with
-      // holes. From/To/Cc are all matching fields, so a company Cc'd on
-      // someone else's thread is now correctly associated (spec §6) — the old
-      // rule fetched those messages and then discarded them.
+      // Company resolution is PER MESSAGE, not per thread.
       //
-      // A thread that resolves to NO company is still stored, with companyId
-      // null: it belongs in the mailbox record as an unassigned email, and
-      // leaving it out is what made history look incomplete. It simply never
-      // surfaces under a company.
-      const resolved = matcher.matchThread(threadMessages.map(headerTripleForMessage), index)
-      if (!resolved && mode === 'company') { skippedThreads++; return }
-
-      const threadCompanyId   = resolved?.companyId || null
-      const threadMatchedAddr = resolved?.matchedEmail || null
-      const threadMatchBasis  = resolved?.basis || null
-      if (!resolved) unassignedThreads++
+      // It used to take the first message in the thread that matched and apply
+      // that company to every other message in it. One message naming a saved
+      // company address therefore pulled in every unrelated message sharing the
+      // Gmail thread — mail to different people at different organisations,
+      // filed under a company that had nothing to do with it. Each message now
+      // answers "which company is this?" from its own From/To/Cc alone, so two
+      // companies can appear in one Gmail thread and each keeps only its own
+      // messages. From/To/Cc are all matching fields, so a company Cc'd on
+      // someone else's thread is still correctly associated.
+      //
+      // A message that resolves to NO company is still stored, with companyId
+      // null: it belongs in the mailbox record as unassigned email, and leaving
+      // it out is what made history look incomplete. It simply never surfaces
+      // under a company until an address on it is saved to one.
+      //
+      // The thread is still FETCHED as a unit (one round trip) and threadId is
+      // still stored for grouping — only the ASSOCIATION is per message.
+      const perMessageMatch = new Map()   // gmail message id -> match | null
+      let threadMatchedAny = false
+      for (const m of threadMessages) {
+        const hit = matcher.matchHeaders(headerTripleForMessage(m), index)
+        perMessageMatch.set(m.id, hit)
+        if (hit) threadMatchedAny = true
+      }
+      // Company mode asked about one specific company, so a thread where
+      // nothing matched at all is simply not theirs.
+      if (!threadMatchedAny && mode === 'company') { skippedThreads++; return }
+      if (!threadMatchedAny) unassignedThreads++
 
       // One lookup for the whole thread instead of one query per message.
       const threadMsgIds = threadMessages.map(m => m.id)
@@ -1215,6 +1227,13 @@ async function runEmailSync({
         const existing = existingByMsgId.get(msg.id)
 
         const rfcId = getHeader('Message-ID') || getHeader('Message-Id') || null
+
+        // This message's own company association — never a value inherited
+        // from a sibling in the same Gmail thread.
+        const hit = perMessageMatch.get(msg.id) || null
+        const msgCompanyId   = hit?.companyId    || null
+        const msgMatchedAddr = hit?.matchedEmail || null
+        const msgMatchBasis  = hit?.basis        || null
 
         // THE authoritative timestamp is Gmail's own internalDate — the value
         // the Gmail UI displays. The RFC "Date:" header, used here before, is
@@ -1234,7 +1253,7 @@ async function runEmailSync({
           // and the Activity view can no longer disagree.
           //
           // The matcher is authoritative, so there is no "don't steal from
-          // another company" special case any more: if it resolves this thread
+          // another company" special case any more: if it resolves this message
           // to company X, X is where it belongs. The old guard existed only
           // because two different rules could disagree about ownership.
           //
@@ -1244,9 +1263,9 @@ async function runEmailSync({
           // NEWLY created rows only. Back-correcting existing dates is a
           // separate, explicit migration.
           const patch = {}
-          if (existing.companyId !== threadCompanyId) patch.companyId = threadCompanyId
-          if (existing.matchedCompanyEmail !== threadMatchedAddr) patch.matchedCompanyEmail = threadMatchedAddr
-          if (existing.matchBasis !== threadMatchBasis) patch.matchBasis = threadMatchBasis
+          if (existing.companyId !== msgCompanyId) patch.companyId = msgCompanyId
+          if (existing.matchedCompanyEmail !== msgMatchedAddr) patch.matchedCompanyEmail = msgMatchedAddr
+          if (existing.matchBasis !== msgMatchBasis) patch.matchBasis = msgMatchBasis
           if (!existing.threadId) patch.threadId = threadId
           if (existing.ccEmail == null && getHeader('Cc')) patch.ccEmail = getHeader('Cc')
           if (existing.bccEmail == null && getHeader('Bcc')) patch.bccEmail = getHeader('Bcc')
@@ -1301,7 +1320,7 @@ async function runEmailSync({
           await prisma.activity.create({
             data: {
               type:        'email',
-              companyId:   threadCompanyId,
+              companyId:   msgCompanyId,
               userId,
               title:       `Email – ${subjectRaw}`,
               body:        extractTextBody(msg.payload) || null,
@@ -1316,8 +1335,8 @@ async function runEmailSync({
               messageId:   msg.id,
               rfcMessageId: rfcId,
               threadId,
-              matchedCompanyEmail: threadMatchedAddr,
-              matchBasis:  threadMatchBasis,
+              matchedCompanyEmail: msgMatchedAddr,
+              matchBasis:  msgMatchBasis,
               mailboxEmail: userEmail,
               attachments: atts.length ? atts : undefined,
               createdAt:   gmailDate,
@@ -1368,23 +1387,24 @@ async function runEmailSync({
       where: { companyId, type: 'email' },
       select: { id: true, threadId: true, fromEmail: true, toEmail: true, ccEmail: true },
     })
-    const byThread = new Map()
-    for (const r of linked) {
-      const k = r.threadId || `single:${r.id}`
-      if (!byThread.has(k)) byThread.set(k, [])
-      byThread.get(k).push(r)
-    }
+    // Evaluated PER ROW, matching how the sync now assigns companies.
+    //
+    // This used to group rows by thread and keep the whole thread if ANY row in
+    // it still matched (`rows.some(...)`). That contradicts per-message
+    // assignment: a thread containing one genuine message for this company
+    // would hold on to every unrelated message beside it, silently re-creating
+    // the thread-level linkage the sync no longer produces. Each row is now
+    // judged on its own stored headers, so a row keeps its company only if that
+    // row itself still qualifies.
+    //
+    // Exactly the rule used on import — THE canonical matcher. Keeping these
+    // identical is what makes the module self-healing: if a company's addresses
+    // change, a re-sync releases rows that no longer qualify instead of leaving
+    // them linked forever.
     const staleIds = []
-    for (const rows of byThread.values()) {
-      // Exactly the rule used on import — THE canonical matcher, applied to
-      // the stored headers. Keeping these identical is what makes the module
-      // self-healing: if a company's addresses change, a re-sync releases rows
-      // that no longer qualify instead of leaving them linked forever.
-      const stillOurs = rows.some(r => {
-        const m = matcher.matchHeaders({ from: r.fromEmail, to: r.toEmail, cc: r.ccEmail }, index)
-        return m && m.companyId === companyId
-      })
-      if (!stillOurs) staleIds.push(...rows.map(r => r.id))
+    for (const r of linked) {
+      const m = matcher.matchHeaders({ from: r.fromEmail, to: r.toEmail, cc: r.ccEmail }, index)
+      if (!m || m.companyId !== companyId) staleIds.push(r.id)
     }
     if (staleIds.length) {
       // Wrongly-linked rows are UNLINKED, never deleted: the row, its
