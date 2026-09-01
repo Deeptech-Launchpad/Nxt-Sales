@@ -28,6 +28,9 @@ import AcceptInvite from './pages/AcceptInvite'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import AuthCallback from './pages/AuthCallback'
+import EnrichmentReports from './pages/EnrichmentReports'
+import ProspectBoard from './pages/ProspectBoard'
+import SingleMailOutreach from './pages/SingleMailOutreach'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -67,6 +70,10 @@ export default function App() {
             <Route path="email" element={<EmailTool />} />
             <Route path="prompt-templates" element={<PromptTemplates />} />
             <Route path="ai-usage" element={<AiUsage />} />
+            <Route path="enrichment-reports" element={<EnrichmentReports />} />
+            <Route path="enrichment-reports/:id" element={<EnrichmentReports />} />
+            <Route path="prospects" element={<ProspectBoard />} />
+            <Route path="outreach/single-mail" element={<SingleMailOutreach />} />
             <Route path="users" element={<UserManagement />} />
             <Route path="profile" element={<Profile />} />
             <Route path="settings" element={<Settings />} />

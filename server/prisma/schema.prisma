@@ -8,35 +8,64 @@ datasource db {
 }
 
 model User {
-  id               String         @id @default(cuid())
-  email            String         @unique
-  name             String
-  companyName      String?
-  passwordHash     String?
-  googleId         String?        @unique
-  avatar           String?
-  role             String         @default("member")
-  status           String         @default("active")
-  inviteToken      String?        @unique
-  inviteExpires    DateTime?
-  signature        String?
-  signatureImage   String?
-  settings         Json?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  activities       Activity[]     @relation("ActivityCreator")
-  assignedActivities Activity[]   @relation("ActivityAssignee")
-  companies        Company[]
-  deals            Deal[]
-  emailAccounts    EmailAccount[]
-  sentMessages     ChatMessage[]  @relation("SentMessages")
-  receivedMessages ChatMessage[]  @relation("ReceivedMessages")
-  createdConversations Conversation[]
+  id                      String                    @id @default(cuid())
+  email                   String                    @unique
+  name                    String
+  companyName             String?
+  passwordHash            String?
+  googleId                String?                   @unique
+  avatar                  String?
+  role                    String                    @default("member")
+  status                  String                    @default("active")
+  inviteToken             String?                   @unique
+  inviteExpires           DateTime?
+  signature               String?
+  signatureImage          String?
+  settings                Json?
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  activities              Activity[]                @relation("ActivityCreator")
+  assignedActivities      Activity[]                @relation("ActivityAssignee")
+  companies               Company[]
+  deals                   Deal[]
+  emailAccounts           EmailAccount[]
+  sentMessages            ChatMessage[]             @relation("SentMessages")
+  receivedMessages        ChatMessage[]             @relation("ReceivedMessages")
+  createdConversations    Conversation[]
   conversationMemberships ConversationMember[]
-  chatMentions ChatMention[]
-  chatMessageReceipts ChatMessageReceipt[]
-  aiUsage          AiUsage[]
-  followUpEnrollments FollowUpEnrollment[]
+  chatMentions            ChatMention[]
+  chatMessageReceipts     ChatMessageReceipt[]
+  aiUsage                 AiUsage[]
+  followUpEnrollments     FollowUpEnrollment[]
+  enrichmentReports       ProductEnrichmentReport[]
+}
+
+model ProductEnrichmentReport {
+  id                   String   @id @default(cuid())
+  name                 String
+  clientName           String
+  clientLogo           Json?
+  preparedFor          String?
+  preparedBy           String?
+  reportDate           DateTime @default(now())
+  projectName          String?
+  executiveSummary     String?  @db.Text
+  overallBusinessValue String?  @db.Text
+  nextSteps            String?  @db.Text
+  footerText           String?
+  status               String   @default("Draft")
+  products             Json
+  branding             Json?
+  pdfPath              String?
+  pageCount            Int?
+  ownerId              String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  owner                User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, updatedAt])
+  @@index([status])
+  @@index([clientName])
 }
 
 // One row per AI/LLM request made from the CRM, recorded from whatever usage
@@ -62,33 +91,33 @@ model AiUsage {
 }
 
 model Company {
-  id             String     @id @default(cuid())
-  name           String
-  email          String?
-  phone          String?
-  industry       String?
-  leadStatus     String?
-  status         String     @default("Lead")
-  notes          String?
-  ownerId        String?
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  domain                String?
-  country               String?
-  emails                Json?
-  phones                Json?
-  endPdpUrl             String?
-  cms                   String?
-  remarks               String?
-  contactPersons        Json?
-  linkedProfiles        Json?
-  isPinned              Boolean    @default(false)
-  isFavorite            Boolean    @default(false)
-  deletedAt             DateTime?
-  activities     Activity[]
-  deals          Deal[]
-  callLogs       CallLog[]
-  owner          User?      @relation(fields: [ownerId], references: [id])
+  id                  String               @id @default(cuid())
+  name                String
+  email               String?
+  phone               String?
+  industry            String?
+  leadStatus          String?
+  status              String               @default("Lead")
+  notes               String?
+  ownerId             String?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  domain              String?
+  country             String?
+  emails              Json?
+  phones              Json?
+  endPdpUrl           String?
+  cms                 String?
+  remarks             String?
+  contactPersons      Json?
+  linkedProfiles      Json?
+  isPinned            Boolean              @default(false)
+  isFavorite          Boolean              @default(false)
+  deletedAt           DateTime?
+  activities          Activity[]
+  deals               Deal[]
+  callLogs            CallLog[]
+  owner               User?                @relation(fields: [ownerId], references: [id])
   followUpEnrollments FollowUpEnrollment[]
 
   @@index([email])
@@ -98,6 +127,77 @@ model Company {
   @@index([leadStatus])
   @@index([name])
   @@index([isPinned])
+}
+
+model Prospect {
+  id             String              @id @default(cuid())
+  firstName      String
+  lastName       String?
+  jobTitle       String?
+  companyName    String?
+  email          String?
+  emailStatus    String              @default("Unverified")
+  linkedinUrl    String?
+  linkedinStatus String?
+  channel        String              @default("Email")
+  status         String              @default("New")
+  ownerId        String?
+  ownerName      String?
+  lastContacted  DateTime?
+  createdById    String
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  activities     ProspectActivity[]
+  drafts         OutreachDraft[]
+  scheduled      ScheduledOutreach[]
+
+  @@index([createdById])
+  @@index([status])
+  @@index([companyName])
+  @@index([ownerId])
+  @@index([lastContacted])
+}
+
+model ProspectActivity {
+  id         String   @id @default(cuid())
+  prospectId String
+  type       String
+  title      String
+  detail     String?
+  createdBy  String?
+  createdAt  DateTime @default(now())
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@index([prospectId, createdAt])
+}
+
+model OutreachDraft {
+  id         String   @id @default(cuid())
+  prospectId String
+  userId     String
+  subject    String?
+  htmlBody   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@unique([prospectId, userId])
+}
+
+model ScheduledOutreach {
+  id          String   @id @default(cuid())
+  prospectId  String
+  userId      String
+  toEmail     String
+  subject     String
+  htmlBody    String
+  scheduledAt DateTime
+  status      String   @default("Scheduled")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  prospect    Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, scheduledAt])
 }
 
 model FollowUpEnrollment {
@@ -120,16 +220,16 @@ model FollowUpEnrollment {
 }
 
 model Deal {
-  id        String    @id @default(cuid())
-  title     String
-  value     Float     @default(0)
-  currency  String    @default("USD")
-  stage     String    @default("Discussion")
-  companyId String?
-  ownerId   String
-  notes     String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id                  String    @id @default(cuid())
+  title               String
+  value               Float     @default(0)
+  currency            String    @default("USD")
+  stage               String    @default("Discussion")
+  companyId           String?
+  ownerId             String
+  notes               String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
   country             String?
   companyName         String?
   domainName          String?
@@ -145,67 +245,67 @@ model Deal {
   // Independent of stage — a deal can be flagged POC and/or Proposal Shared
   // regardless of which pipeline stage it's currently in. Non-nullable with
   // a false default, same convention as Company.isPinned.
-  poc            Boolean @default(false)
-  proposalShared Boolean @default(false)
+  poc                 Boolean   @default(false)
+  proposalShared      Boolean   @default(false)
   // Nullable, no default — existing deals simply have both empty until set.
-  pocReceivedDate  DateTime?
-  pocDeliveredDate DateTime?
-  openDate         DateTime?
-  company   Company?  @relation(fields: [companyId], references: [id])
-  owner     User      @relation(fields: [ownerId], references: [id])
+  pocReceivedDate     DateTime?
+  pocDeliveredDate    DateTime?
+  openDate            DateTime?
+  company             Company?  @relation(fields: [companyId], references: [id])
+  owner               User      @relation(fields: [ownerId], references: [id])
 
   @@index([ownerId])
   @@index([companyId])
 }
 
 model Activity {
-  id            String    @id @default(cuid())
-  type          String
-  userId        String
-  title         String?
-  body          String?
-  toEmail       String?
-  fromEmail     String?
-  subject       String?
-  emailStatus   String?
-  direction     String?
-  duration      Int?
-  outcome       String?
-  startTime     DateTime?
-  endTime       DateTime?
-  meetingStatus String?
-  location      String?
-  participants  String?
-  dueDate       DateTime?
-  priority      String?
-  taskStatus    String?
+  id                  String    @id @default(cuid())
+  type                String
+  userId              String
+  title               String?
+  body                String?
+  toEmail             String?
+  fromEmail           String?
+  subject             String?
+  emailStatus         String?
+  direction           String?
+  duration            Int?
+  outcome             String?
+  startTime           DateTime?
+  endTime             DateTime?
+  meetingStatus       String?
+  location            String?
+  participants        String?
+  dueDate             DateTime?
+  priority            String?
+  taskStatus          String?
   // Opt-in per-task: when true, a background sweep marks this task
   // completed once its dueDate has passed. Off by default — a task is
   // never auto-completed unless this was explicitly turned on for it.
-  autoCompleteOverdue Boolean @default(false)
-  assignedToId  String?
-  meetLink      String?
-  messageId     String?
-  threadId      String?
-  companyId     String?
-  trackingId    String?   @unique
-  openCount     Int       @default(0)
-  firstOpenedAt DateTime?
-  lastOpenedAt  DateTime?
-  openHistory   Json?
-  recordingUrl  String?
-  callLogId     String?   @unique
+  autoCompleteOverdue Boolean   @default(false)
+  assignedToId        String?
+  meetLink            String?
+  messageId           String?
+  threadId            String?
+  companyId           String?
+  trackingId          String?   @unique
+  openCount           Int       @default(0)
+  firstOpenedAt       DateTime?
+  lastOpenedAt        DateTime?
+  openHistory         Json?
+  recordingUrl        String?
+  callLogId           String?   @unique
   // Which of the company's saved email addresses this conversation belongs to.
   // Drives the Company → Email Address → Thread → Messages grouping; null for
   // non-email activities and for emails whose matched address was later removed.
   matchedCompanyEmail String?
-  ccEmail       String?
-  attachments   Json?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  company       Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  user          User      @relation("ActivityCreator", fields: [userId], references: [id])
-  assignedTo    User?     @relation("ActivityAssignee", fields: [assignedToId], references: [id])
+  ccEmail             String?
+  attachments         Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  company             Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user                User      @relation("ActivityCreator", fields: [userId], references: [id])
+  assignedTo          User?     @relation("ActivityAssignee", fields: [assignedToId], references: [id])
 
   @@index([companyId])
   @@index([messageId])
@@ -218,24 +318,24 @@ model Activity {
 }
 
 model CallLog {
-  id              String    @id @default(cuid())
-  callhippoId     String    @unique
-  callDate        DateTime
-  fromNumber      String?
-  toNumber        String?
-  direction       String?
-  status          String?
-  duration        Int?
-  recordingUrl    String?
-  agentName       String?
-  agentId         String?
-  analysisStatus  String?
-  analysisResult  Json?
-  analysisError   String?
-  companyId       String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  company         Company?  @relation(fields: [companyId], references: [id])
+  id             String   @id @default(cuid())
+  callhippoId    String   @unique
+  callDate       DateTime
+  fromNumber     String?
+  toNumber       String?
+  direction      String?
+  status         String?
+  duration       Int?
+  recordingUrl   String?
+  agentName      String?
+  agentId        String?
+  analysisStatus String?
+  analysisResult Json?
+  analysisError  String?
+  companyId      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  company        Company? @relation(fields: [companyId], references: [id])
 
   @@index([callDate])
   @@index([analysisStatus])
@@ -247,14 +347,14 @@ model CallLog {
 // columns, kept (nullable-compatible) until the E2 backfill script has moved
 // every row onto conversationId and a separate follow-up migration drops them.
 model Conversation {
-  id            String    @id @default(cuid())
-  isGroup       Boolean   @default(false)
-  name          String?   // group name; null for 1:1 (UI derives the display name from the other member)
+  id            String               @id @default(cuid())
+  isGroup       Boolean              @default(false)
+  name          String? // group name; null for 1:1 (UI derives the display name from the other member)
   createdById   String
   lastMessageAt DateTime?
-  lastMessageId String?   // denormalized for fast sidebar sort/preview
-  createdAt     DateTime  @default(now())
-  createdBy     User      @relation(fields: [createdById], references: [id])
+  lastMessageId String? // denormalized for fast sidebar sort/preview
+  createdAt     DateTime             @default(now())
+  createdBy     User                 @relation(fields: [createdById], references: [id])
   members       ConversationMember[]
   messages      ChatMessage[]
 
@@ -262,10 +362,10 @@ model Conversation {
 }
 
 model ConversationMember {
-  id             String    @id @default(cuid())
+  id             String       @id @default(cuid())
   conversationId String
   userId         String
-  joinedAt       DateTime  @default(now())
+  joinedAt       DateTime     @default(now())
   lastReadAt     DateTime? // per-member read cursor — avoids scanning every message for unread counts
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -275,24 +375,24 @@ model ConversationMember {
 }
 
 model ChatMessage {
-  id             String   @id @default(cuid())
+  id             String               @id @default(cuid())
   fromUserId     String
-  toUserId       String?  // null for group messages — no single recipient; superseded by conversationId + ConversationMember for both 1:1 and group
+  toUserId       String? // null for group messages — no single recipient; superseded by conversationId + ConversationMember for both 1:1 and group
   body           String
-  isRead         Boolean  @default(false)
+  isRead         Boolean              @default(false)
   conversationId String?
   replyToId      String?
   editedAt       DateTime?
   deletedAt      DateTime?
   pinnedAt       DateTime?
-  attachments    Json?     // [{filename, mimeType, size, url}] — same shape as Activity.attachments (E5)
-  attachedRecord Json?     // {type: 'company'|'deal', id, label} snapshot at send time (E6) — no polymorphic FK
-  createdAt      DateTime @default(now())
-  fromUser       User     @relation("SentMessages",     fields: [fromUserId], references: [id], onDelete: Cascade)
-  toUser         User?    @relation("ReceivedMessages", fields: [toUserId],   references: [id], onDelete: Cascade)
-  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  replyTo        ChatMessage?  @relation("MessageReplies", fields: [replyToId], references: [id])
-  replies        ChatMessage[] @relation("MessageReplies")
+  attachments    Json? // [{filename, mimeType, size, url}] — same shape as Activity.attachments (E5)
+  attachedRecord Json? // {type: 'company'|'deal', id, label} snapshot at send time (E6) — no polymorphic FK
+  createdAt      DateTime             @default(now())
+  fromUser       User                 @relation("SentMessages", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser         User?                @relation("ReceivedMessages", fields: [toUserId], references: [id], onDelete: Cascade)
+  conversation   Conversation?        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo        ChatMessage?         @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies        ChatMessage[]        @relation("MessageReplies")
   mentions       ChatMention[]
   receipts       ChatMessageReceipt[]
 
@@ -307,7 +407,7 @@ model ChatMessage {
 // message was actually pushed to that member's live socket (E1's presence
 // layer); readAt is set when their client marks the conversation read.
 model ChatMessageReceipt {
-  id          String    @id @default(cuid())
+  id          String      @id @default(cuid())
   messageId   String
   userId      String
   deliveredAt DateTime?
@@ -322,10 +422,10 @@ model ChatMessageReceipt {
 // @Mentions (Update 3 / E4) — a join table rather than a JSON array on
 // ChatMessage so "messages mentioning me" is an indexed query, not a scan.
 model ChatMention {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   messageId String
   userId    String
-  createdAt DateTime @default(now())
+  createdAt DateTime    @default(now())
   message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -362,18 +462,18 @@ model DropdownOption {
 // Prisma column (enforced at the route layer via DMMF introspection), so
 // built-in and custom fields can never be confused with one another.
 model CustomFieldDefinition {
-  id          String    @id @default(cuid())
-  entity      String    // "Company" | "Deal"
-  key         String    // machine key, e.g. "gstNumber" — immutable after creation
-  label       String    // display label — freely editable, never affects `key`
-  type        String    // "text" | "textarea" | "number" | "email" | "phone" | "date" | "checkbox" | "dropdown" | "multiselect" | "url" | "currency" | "percentage"
-  required    Boolean   @default(false)
-  order       Int       @default(0)
-  enabled     Boolean   @default(true)
+  id          String             @id @default(cuid())
+  entity      String // "Company" | "Deal"
+  key         String // machine key, e.g. "gstNumber" — immutable after creation
+  label       String // display label — freely editable, never affects `key`
+  type        String // "text" | "textarea" | "number" | "email" | "phone" | "date" | "checkbox" | "dropdown" | "multiselect" | "url" | "currency" | "percentage"
+  required    Boolean            @default(false)
+  order       Int                @default(0)
+  enabled     Boolean            @default(true)
   helpText    String?
   createdById String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
   values      CustomFieldValue[]
 
   @@unique([entity, key])
@@ -389,7 +489,7 @@ model CustomFieldDefinition {
 // of this contract. Only the ONE typed column matching the field's declared
 // type is ever populated per row; the rest stay null.
 model CustomFieldValue {
-  id          String    @id @default(cuid())
+  id          String                @id @default(cuid())
   fieldId     String
   field       CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
   recordId    String
@@ -397,9 +497,9 @@ model CustomFieldValue {
   numberValue Decimal?
   dateValue   DateTime?
   boolValue   Boolean?
-  listValue   Json?     // multiselect — array of strings, same convention as Company.contactPersons/linkedProfiles
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  listValue   Json? // multiselect — array of strings, same convention as Company.contactPersons/linkedProfiles
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
 
   @@unique([fieldId, recordId])
   @@index([recordId])

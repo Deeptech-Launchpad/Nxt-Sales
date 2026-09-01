@@ -21,6 +21,7 @@ const PAGE_TITLES = {
   '/email':      'Email Tool',
   '/prompt-templates': 'Prompt Templates',
   '/ai-usage':   'AI Usage',
+  '/enrichment-reports': 'Product Enrichment Report',
   '/settings':   'Settings',
   '/profile':    'My Profile',
   '/chat':       'Team Chat',
@@ -47,6 +48,7 @@ const NAV_GROUPS = [
       { to: '/email', label: 'Email', Icon: Mail },
       { to: '/prompt-templates', label: 'Prompt Templates', Icon: FileCode },
       { to: '/ai-usage', label: 'AI Usage', Icon: BarChart3 },
+      { to: '/enrichment-reports', label: 'Product Enrichment Report', Icon: FileCode },
     ],
   },
   {

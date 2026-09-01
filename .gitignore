@@ -22,3 +22,7 @@ server/test-task-flow.js
 
 # User-uploaded chat files (Update 3 / E5) — local disk storage, not repo content
 server/uploads/
+
+# Temp directory
+tmp/
+

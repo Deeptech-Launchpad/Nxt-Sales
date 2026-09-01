@@ -23,10 +23,13 @@ const promptTemplateRoutes = require('./routes/promptTemplates')
 const dataTransferRoutes = require('./routes/dataTransfer')
 const intelligenceRoutes = require('./routes/intelligence')
 const settingsRoutes = require('./routes/settings')
+const enrichmentReportRoutes = require('./routes/enrichmentReports')
+const prospectRoutes = require('./routes/prospects')
 const { startRecycleBinPurgeSweep } = require('./jobs/purgeRecycleBin')
 const { startAutoCompleteOverdueTasksSweep } = require('./jobs/autoCompleteOverdueTasks')
 const { startCallHippoAutoSync } = require('./jobs/callHippoAutoSync')
 const { startFollowUpSequenceSweep } = require('./jobs/followUpSequences')
+const { startScheduledOutreachSweep } = require('./jobs/scheduledOutreach')
 const { initSocket } = require('./realtime/socket')
 
 require('./config/passport')
@@ -62,9 +65,12 @@ app.use('/api/prompt-templates', promptTemplateRoutes)
 app.use('/api/data', dataTransferRoutes)
 app.use('/api/intelligence', intelligenceRoutes)
 app.use('/api/settings', settingsRoutes)
+app.use('/api/enrichment-reports', enrichmentReportRoutes)
+app.use('/api/prospects', prospectRoutes)
 
 // Chat file uploads (Update 3 / E5) — local disk, served back read-only.
 app.use('/uploads/chat', express.static(path.join(__dirname, '../uploads/chat')))
+app.use('/uploads/enrichment-reports', express.static(path.join(__dirname, '../uploads/enrichment-reports')))
 
 app.get('/health', (_, res) => res.json({ status: 'ok', app: 'NXT Sales' }))
 
@@ -74,6 +80,7 @@ const server = app.listen(PORT, () => {
   startAutoCompleteOverdueTasksSweep()
   startCallHippoAutoSync()
   startFollowUpSequenceSweep()
+  startScheduledOutreachSweep()
 })
 
 initSocket(server)
