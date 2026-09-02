@@ -7,6 +7,7 @@ import {
   Search, Bell, User, Settings, LogOut, FileCode,
   Calendar, Mail, Building2, TrendingUp, X, CheckSquare,
   LayoutDashboard, Inbox, Phone, MessageSquare, ChevronDown, Menu, Users, BarChart3, History,
+  Send, FileText,
 } from 'lucide-react'
 import '../../styles/topbar.css'
 import '../../styles/topnav.css'
@@ -21,6 +22,9 @@ const PAGE_TITLES = {
   '/email':      'Email Tool',
   '/prompt-templates': 'Prompt Templates',
   '/ai-usage':   'AI Usage',
+  '/prospects':  'Prospect & Channel Board',
+  '/outreach/single-mail': 'Single Mail Outreach',
+  '/enrichment-reports': 'Product Enrichment Report',
   '/settings':   'Settings',
   '/profile':    'My Profile',
   '/chat':       'Team Chat',
@@ -47,6 +51,9 @@ const NAV_GROUPS = [
       { to: '/email', label: 'Email', Icon: Mail },
       { to: '/prompt-templates', label: 'Prompt Templates', Icon: FileCode },
       { to: '/ai-usage', label: 'AI Usage', Icon: BarChart3 },
+      { to: '/prospects', label: 'Prospect & Channel Board', Icon: User },
+      { to: '/outreach/single-mail', label: 'Single Mail Outreach', Icon: Send },
+      { to: '/enrichment-reports', label: 'Product Enrichment Report', Icon: FileText },
     ],
   },
   {
