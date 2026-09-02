@@ -35,6 +35,12 @@ model User {
   chatMessageReceipts ChatMessageReceipt[]
   aiUsage          AiUsage[]
   followUpEnrollments FollowUpEnrollment[]
+  // Back-relation required by ProductEnrichmentReport.owner. Deliberately the
+  // ONLY User field taken from the frontend branch: its `settings` and
+  // `companyName` columns belong to unrelated features (user settings and
+  // company favourites) that nothing here uses, and pulling them in would drag
+  // in migrations this integration does not need.
+  enrichmentReports ProductEnrichmentReport[]
 }
 
 // One row per AI/LLM request made from the CRM, recorded from whatever usage
@@ -505,4 +511,108 @@ model PromptTemplate {
 
   @@unique([clientType, templateKey])
   @@index([clientType, enabled])
+}
+
+// ── Product enrichment reports, prospect outreach ─────────────────────────
+// Brought over from the frontend feature branch. Additive only: these five
+// models are new, and nothing existing references them, so no current table
+// or column is altered by adding them.
+
+model ProductEnrichmentReport {
+  id                   String   @id @default(cuid())
+  name                 String
+  clientName           String
+  clientLogo           Json?
+  preparedFor          String?
+  preparedBy           String?
+  reportDate           DateTime @default(now())
+  projectName          String?
+  executiveSummary     String?  @db.Text
+  overallBusinessValue String?  @db.Text
+  nextSteps            String?  @db.Text
+  footerText           String?
+  status               String   @default("Draft")
+  products             Json
+  branding             Json?
+  pdfPath              String?
+  pageCount            Int?
+  ownerId              String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  owner                User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, updatedAt])
+  @@index([status])
+  @@index([clientName])
+}
+
+model Prospect {
+  id             String              @id @default(cuid())
+  firstName      String
+  lastName       String?
+  jobTitle       String?
+  companyName    String?
+  email          String?
+  emailStatus    String              @default("Unverified")
+  linkedinUrl    String?
+  linkedinStatus String?
+  channel        String              @default("Email")
+  status         String              @default("New")
+  ownerId        String?
+  ownerName      String?
+  lastContacted  DateTime?
+  createdById    String
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  activities     ProspectActivity[]
+  drafts         OutreachDraft[]
+  scheduled      ScheduledOutreach[]
+
+  @@index([createdById])
+  @@index([status])
+  @@index([companyName])
+  @@index([ownerId])
+  @@index([lastContacted])
+}
+
+model ProspectActivity {
+  id         String   @id @default(cuid())
+  prospectId String
+  type       String
+  title      String
+  detail     String?
+  createdBy  String?
+  createdAt  DateTime @default(now())
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@index([prospectId, createdAt])
+}
+
+model OutreachDraft {
+  id         String   @id @default(cuid())
+  prospectId String
+  userId     String
+  subject    String?
+  htmlBody   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@unique([prospectId, userId])
+}
+
+model ScheduledOutreach {
+  id          String   @id @default(cuid())
+  prospectId  String
+  userId      String
+  toEmail     String
+  subject     String
+  htmlBody    String
+  scheduledAt DateTime
+  status      String   @default("Scheduled")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  prospect    Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, scheduledAt])
 }
