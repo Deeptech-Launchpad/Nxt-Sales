@@ -1,212 +1,93 @@
-import { useState, useEffect } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
+import { useEffect, useRef, useState } from 'react'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import api from '../../api/client'
 import '../../styles/sidebar.css'
 import {
-  LayoutDashboard, Users, Building2, TrendingUp, Mail,
-  Settings, ChevronDown, Search, FileCode,
-  Inbox, Phone, Calendar, CheckSquare, MessageSquare,
-  PanelLeftClose, PanelLeftOpen, BarChart3, History, FileCode2,
-  User, Send, FileText
+  LayoutDashboard, Users, Building2, TrendingUp, Mail, Settings, Inbox,
+  Phone, Calendar, CheckSquare, MessageSquare, BarChart3, History,
+  FileCode2, Briefcase, Megaphone, SlidersHorizontal, ChevronRight, FileText,
+  User, Send,
 } from 'lucide-react'
 
-const menuStructure = [
-  {
-    section: 'CRM',
-    icon: LayoutDashboard,
-    items: [
-      { to: '/companies', label: 'Companies', icon: Building2 },
-      { to: '/recents', label: 'Recents', icon: History },
-      { to: '/deals', label: 'Deals', icon: TrendingUp },
-      { to: '/deals-dashboard', label: 'Deals Dashboard', icon: BarChart3 },
-      { to: '/inbox', label: 'Inbox', icon: Inbox },
-      { to: '/calls', label: 'Calls', icon: Phone },
-      { to: '/meetings', label: 'Meetings', icon: Calendar },
-      { to: '/tasks', label: 'Tasks', icon: CheckSquare },
-    ],
-  },
-  {
-    section: 'Marketing',
-    icon: Mail,
-    items: [
-      { to: '/email', label: 'Email', icon: FileCode },
-      { to: '/prompt-templates', label: 'Prompt Templates', icon: FileCode2 },
-      { to: '/ai-usage', label: 'AI Usage', icon: BarChart3 },
-      { to: '/prospects', label: 'Prospect & Channel Board', icon: User },
-      { to: '/outreach/single-mail', label: 'Single Mail Outreach', icon: Send },
-      { to: '/enrichment-reports', label: 'Product Enrichment Report', icon: FileText },
-    ],
-  },
+const groups = [
+  { label: 'CRM', Icon: Briefcase, items: [
+    { to: '/companies', label: 'Companies', Icon: Building2 },
+    { to: '/recents', label: 'Recents', Icon: History },
+    { to: '/deals', label: 'Deals', Icon: TrendingUp },
+    { to: '/deals-dashboard', label: 'Deals Dashboard', Icon: BarChart3 },
+    { to: '/inbox', label: 'Inbox', Icon: Inbox },
+    { to: '/calls', label: 'Calls', Icon: Phone },
+    { to: '/meetings', label: 'Meetings', Icon: Calendar },
+    { to: '/tasks', label: 'Tasks', Icon: CheckSquare },
+  ]},
+  { label: 'Marketing', Icon: Megaphone, items: [
+    { to: '/prospects', label: 'Prospect & Channel Board', Icon: User },
+    { to: '/outreach/single-mail', label: 'Single Mail Outreach', Icon: Send },
+    { to: '/email', label: 'Email', Icon: Mail },
+    { to: '/prompt-templates', label: 'Prompt Templates', Icon: FileCode2 },
+    { to: '/ai-usage', label: 'AI Usage', Icon: BarChart3 },
+    { to: '/enrichment-reports', label: 'Product Enrichment Report', Icon: FileText },
+  ]},
+  { label: 'Manage', Icon: SlidersHorizontal, items: [
+    { to: '/users', label: 'Users', Icon: Users },
+    { to: '/settings', label: 'Settings', Icon: Settings },
+  ]},
 ]
 
-export default function Sidebar({ collapsed, onToggleCollapsed }) {
-  const { user } = useAuth()
+export default function Sidebar() {
   const navigate = useNavigate()
-  const [expanded,   setExpanded]   = useState({})
-  const [search,     setSearch]     = useState('')
+  const location = useLocation()
+  const sidebarRef = useRef(null)
+  const [openGroup, setOpenGroup] = useState(null)
   const [unreadChat, setUnreadChat] = useState(0)
 
-  // Poll for unread chat messages every 10 seconds
+  useEffect(() => setOpenGroup(null), [location.pathname])
   useEffect(() => {
-    const fetchUnread = () => {
-      api.get('/chat/unread').then(r => setUnreadChat(r.data.count || 0)).catch(() => {})
-    }
+    const close = event => { if (sidebarRef.current && !sidebarRef.current.contains(event.target)) setOpenGroup(null) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [])
+  useEffect(() => {
+    const fetchUnread = () => api.get('/chat/unread').then(r => setUnreadChat(r.data.count || 0)).catch(() => {})
     fetchUnread()
     const interval = setInterval(fetchUnread, 10000)
     return () => clearInterval(interval)
   }, [])
 
-  const toggleSection = (section) => {
-    setExpanded(p => ({ ...p, [section]: !p[section] }))
-  }
-
-  // Filter nav items by the search box — sections with no matching item are
-  // hidden, and a section with a match auto-expands so the result is visible
-  // without also needing to click it open.
-  const query = search.trim().toLowerCase()
-  const filteredMenuStructure = query
-    ? menuStructure
-        .map(s => ({ ...s, items: s.items.filter(i => i.label.toLowerCase().includes(query)) }))
-        .filter(s => s.items.length > 0)
-    : menuStructure
-
+  const groupIsActive = group => group.items.some(item => location.pathname.startsWith(item.to))
   return (
-    <aside className={`sidebar-modern${collapsed ? ' collapsed' : ''}`}>
-      {/* Header — logo always returns to the Dashboard, from any page */}
-      <div className="sidebar-header-modern">
-        <button
-          type="button"
-          className="logo-section-modern"
-          onClick={() => navigate('/dashboard')}
-          style={{ background: 'none', border: 'none', padding: 0, flex: 1, minWidth: 0, cursor: 'pointer' }}
-        >
-          <span className="sidebar-logo-crop nav-label"><img src="/nxt-sales-logo-clean.png" alt="NXT Sales" className="logo-img-modern" /></span>
-        </button>
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="sidebar-collapse-btn"
-        >
-          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-        </button>
-      </div>
-
-      {/* Search */}
-      <div className="search-section-modern">
-        <div className="search-input-modern">
-          <Search size={16} color="#94a3b8" />
-          <input
-            type="text"
-            placeholder="Search..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* Navigation */}
-      <nav className="nav-modern">
-        {/* Dashboard — always-visible direct link */}
-        <NavLink
-          to="/dashboard"
-          className={({ isActive }) => `item-link-modern${isActive ? ' active' : ''}`}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', margin: '4px 8px', borderRadius: 6 }}
-          title={collapsed ? 'Dashboard' : undefined}
-        >
-          <LayoutDashboard size={16} />
-          <span className="nav-label" style={{ flex: 1 }}>Dashboard</span>
+    <aside className="crm-sidebar" ref={sidebarRef}>
+      <button className="crm-sidebar-logo" type="button" onClick={() => navigate('/dashboard')} aria-label="Go to dashboard">
+        <img src="/nxt-sales-logo-clean.png" alt="NXT Sales" />
+      </button>
+      <nav className="crm-sidebar-nav" aria-label="Primary navigation">
+        <NavLink to="/dashboard" data-tooltip="Dashboard" className={({ isActive }) => `crm-nav-tile${isActive ? ' active' : ''}`}>
+          <LayoutDashboard aria-hidden="true" /><span>Dashboard</span>
         </NavLink>
-
-        {/* Team Chat — always-visible direct link */}
-        <NavLink
-          to="/chat"
-          className={({ isActive }) => `item-link-modern${isActive ? ' active' : ''}`}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', margin: '4px 8px', borderRadius: 6 }}
-          title={collapsed ? 'Team Chat' : undefined}
-        >
-          <MessageSquare size={16} />
-          <span className="nav-label" style={{ flex: 1 }}>Team Chat</span>
-          {unreadChat > 0 && (
-            <span style={{
-              background: '#e11d48', color: '#fff', fontSize: 13, fontWeight: 700,
-              minWidth: 18, height: 18, borderRadius: 9, padding: '0 4px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              {unreadChat > 99 ? '99+' : unreadChat}
-            </span>
-          )}
+        <SidebarGroup group={groups[0]} active={groupIsActive(groups[0])} open={openGroup === 'CRM'} onToggle={() => setOpenGroup(v => v === 'CRM' ? null : 'CRM')} />
+        <NavLink to="/chat" data-tooltip="Team Chat" className={({ isActive }) => `crm-nav-tile${isActive ? ' active' : ''}`}>
+          <span className="crm-nav-icon-wrap"><MessageSquare aria-hidden="true" />{unreadChat > 0 && <i className="crm-nav-badge">{unreadChat > 9 ? '9+' : unreadChat}</i>}</span>
+          <span>Team Chat</span>
         </NavLink>
-
-        {filteredMenuStructure.map(({ section, icon: SectionIcon, items }) => {
-          const isExpanded = query ? true : expanded[section]
-
-          return (
-            <div key={section} className="section-modern">
-              <button
-                className={`section-button-modern ${isExpanded ? 'active' : ''}`}
-                onClick={() => toggleSection(section)}
-                title={collapsed ? section : undefined}
-              >
-                <div className="section-icon-wrapper">
-                  <SectionIcon size={18} />
-                </div>
-                <span className="section-label-modern nav-label">{section}</span>
-                <ChevronDown
-                  size={16}
-                  className="nav-label"
-                  style={{
-                    transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform 0.2s',
-                    marginLeft: 'auto'
-                  }}
-                />
-              </button>
-
-              {isExpanded && (
-                <div className="items-list-modern">
-                  {items.map(({ to, label, icon: ItemIcon }) => (
-                    <NavLink
-                      key={to}
-                      to={to}
-                      className={({ isActive }) => `item-link-modern ${isActive ? 'active' : ''}`}
-                      title={collapsed ? label : undefined}
-                    >
-                      <ItemIcon size={16} />
-                      <span className="nav-label">{label}</span>
-                    </NavLink>
-                  ))}
-                </div>
-              )}
-            </div>
-          )
-        })}
-
-        {query && filteredMenuStructure.length === 0 && (
-          <div style={{ padding: '10px 16px', fontSize: 15, color: '#475467' }}>No matches</div>
-        )}
+        {groups.slice(1).map(group => <SidebarGroup key={group.label} group={group} active={groupIsActive(group)} open={openGroup === group.label} onToggle={() => setOpenGroup(v => v === group.label ? null : group.label)} />)}
       </nav>
-
-      {/* Footer */}
-      <div className="sidebar-footer-modern">
-        <NavLink
-          to="/users"
-          className={({ isActive }) => `settings-link-modern ${isActive ? 'active' : ''}`}
-          title={collapsed ? 'Users' : undefined}
-        >
-          <Users size={18} />
-          <span className="nav-label">Users</span>
-        </NavLink>
-        <NavLink
-          to="/settings"
-          className={({ isActive }) => `settings-link-modern ${isActive ? 'active' : ''}`}
-          title={collapsed ? 'Settings' : undefined}
-        >
-          <Settings size={18} />
-          <span className="nav-label">Settings</span>
-        </NavLink>
-      </div>
     </aside>
+  )
+}
+
+function SidebarGroup({ group, active, open, onToggle }) {
+  const { label, Icon, items } = group
+  return (
+    <div className={`crm-nav-group${open ? ' open' : ''}`}>
+      <button type="button" data-tooltip={label} className={`crm-nav-tile${active ? ' active' : ''}`} onClick={onToggle} aria-expanded={open}>
+        <Icon aria-hidden="true" /><span>{label}</span>
+      </button>
+      {open && <div className="crm-nav-flyout">
+        <div className="crm-nav-flyout-title">{label}</div>
+        {items.map(({ to, label: itemLabel, Icon: ItemIcon }) => <NavLink key={to} to={to} data-tooltip={itemLabel} className={({ isActive }) => `crm-nav-subitem${isActive ? ' active' : ''}`}>
+          <ItemIcon aria-hidden="true" /><span>{itemLabel}</span><ChevronRight aria-hidden="true" className="crm-nav-subarrow" />
+        </NavLink>)}
+      </div>}
+    </div>
   )
 }
