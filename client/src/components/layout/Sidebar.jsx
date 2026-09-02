@@ -7,7 +7,8 @@ import {
   LayoutDashboard, Users, Building2, TrendingUp, Mail,
   Settings, ChevronDown, Search, FileCode,
   Inbox, Phone, Calendar, CheckSquare, MessageSquare,
-  PanelLeftClose, PanelLeftOpen, BarChart3, History, FileCode2
+  PanelLeftClose, PanelLeftOpen, BarChart3, History, FileCode2,
+  User, Send, FileText
 } from 'lucide-react'
 
 const menuStructure = [
@@ -32,6 +33,9 @@ const menuStructure = [
       { to: '/email', label: 'Email', icon: FileCode },
       { to: '/prompt-templates', label: 'Prompt Templates', icon: FileCode2 },
       { to: '/ai-usage', label: 'AI Usage', icon: BarChart3 },
+      { to: '/prospects', label: 'Prospect & Channel Board', icon: User },
+      { to: '/outreach/single-mail', label: 'Single Mail Outreach', icon: Send },
+      { to: '/enrichment-reports', label: 'Product Enrichment Report', icon: FileText },
     ],
   },
 ]

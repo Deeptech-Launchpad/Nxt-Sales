@@ -27,6 +27,9 @@ import AcceptInvite from './pages/AcceptInvite'
 import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import AuthCallback from './pages/AuthCallback'
+import EnrichmentReports from './pages/EnrichmentReports'
+import ProspectBoard from './pages/ProspectBoard'
+import SingleMailOutreach from './pages/SingleMailOutreach'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -70,6 +73,10 @@ export default function App() {
             <Route path="settings" element={<Settings />} />
             <Route path="settings/dropdowns" element={<DropdownManager />} />
             <Route path="settings/custom-fields" element={<CustomFieldsManager />} />
+            <Route path="enrichment-reports" element={<EnrichmentReports />} />
+            <Route path="enrichment-reports/:id" element={<EnrichmentReports />} />
+            <Route path="prospects" element={<ProspectBoard />} />
+            <Route path="outreach/single-mail" element={<SingleMailOutreach />} />
           </Route>
           <Route path="/accept-invite" element={<AcceptInvite />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
