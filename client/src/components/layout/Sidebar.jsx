@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Users, Building2, TrendingUp, Mail, Settings, Inbox,
   Phone, Calendar, CheckSquare, MessageSquare, BarChart3, History,
   FileCode2, Briefcase, Megaphone, SlidersHorizontal, ChevronRight, FileText,
-  User, Send,
+  User,
 } from 'lucide-react'
 
 const groups = [
@@ -22,7 +22,6 @@ const groups = [
   ]},
   { label: 'Marketing', Icon: Megaphone, items: [
     { to: '/prospects', label: 'Prospect & Channel Board', Icon: User },
-    { to: '/outreach/single-mail', label: 'Single Mail Outreach', Icon: Send },
     { to: '/email', label: 'Email', Icon: Mail },
     { to: '/prompt-templates', label: 'Prompt Templates', Icon: FileCode2 },
     { to: '/ai-usage', label: 'AI Usage', Icon: BarChart3 },
