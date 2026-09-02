@@ -5,6 +5,7 @@ const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
+const { execFileSync } = require('child_process')
 const PDFDocument = require('pdfkit')
 const { GoogleGenAI } = require('@google/genai')
 
@@ -44,7 +45,8 @@ const MATRIX_AREAS = [
   'Data Standardization',
   'Buyer Experience & Readiness'
 ]
-const RESULT_STATUSES = new Set(['Added', 'Improved', 'Standardized', 'Verified', 'Completed', 'Enriched', 'No Change'])
+const RESULT_STATUSES = new Set(['Added', 'Enriched', 'Improved', 'Standardized', 'Corrected', 'Unchanged', 'Not Detected'])
+const SCORE_AREAS = ['Content Completeness', 'Technical Specifications', 'Taxonomy', 'Structured Attributes', 'Search Readiness', 'Buyer Clarity', 'Digital Assets', 'Compliance Information']
 
 const clean = (v, max = 500) => String(v ?? '').trim().slice(0, max)
 const normalize = body => ({
@@ -210,16 +212,38 @@ Return ONLY valid JSON with this exact shape:
   "keyTransformation": "strong commercial and buyer impact statement",
   "businessImpact": "detailed explanation of why this specific enrichment matters (faceted search, SEO, procurement, buyer confidence)",
   "highlights": ["3 to 6 concise bullet points of specific evidence-based improvements"],
+  "extractedFields": {
+    "manufacturer": {"value":"visible value or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},
+    "mpn": {"value":"visible value or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},
+    "description": {"value":"visible summary or Not visible in supplied page","source":"BEFORE|AFTER|BOTH","confidence":0},
+    "features": {"value":"visible features or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},
+    "dimensions": {"value":"visible dimensions or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},
+    "compliance": {"value":"visible compliance or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},
+    "documents": {"value":"visible downloads or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0}
+  },
+  "scores": {
+    "Content Completeness":{"before":0,"after":0,"evidence":"short visible evidence"},
+    "Technical Specifications":{"before":0,"after":0,"evidence":"short visible evidence"},
+    "Taxonomy":{"before":0,"after":0,"evidence":"short visible evidence"},
+    "Structured Attributes":{"before":0,"after":0,"evidence":"short visible evidence"},
+    "Search Readiness":{"before":0,"after":0,"evidence":"short visible evidence"},
+    "Buyer Clarity":{"before":0,"after":0,"evidence":"short visible evidence"},
+    "Digital Assets":{"before":0,"after":0,"evidence":"short visible evidence"},
+    "Compliance Information":{"before":0,"after":0,"evidence":"short visible evidence"}
+  },
   "improvements": [
     {
       "area": "Product Title & Naming",
       "beforeState": "exact visible original state or description",
       "afterState": "exact visible enriched state or description",
-      "resultStatus": "Added|Improved|Standardized|Enriched|No Change"
+      "whatChanged": "specific evidence-based change",
+      "businessBenefit": "reasonable buyer or operational benefit",
+      "resultStatus": "Added|Enriched|Improved|Standardized|Corrected|Unchanged|Not Detected"
     }
   ]
 }
-The "improvements" array MUST contain an item for each of these 12 areas: ${MATRIX_AREAS.join(', ')}.`
+The "improvements" array MUST contain an item for each area: ${MATRIX_AREAS.join(', ')}.
+Score each category using this explicit 100-point rubric: presence/completeness 40 points, structure/consistency 25, specificity 20, buyer usefulness 15. Scores must be grounded only in visible evidence and include an evidence note. Use 0 when an area is not visible; never invent a value.`
 
     const ai = new GoogleGenAI({ apiKey })
     const response = await ai.models.generateContent({
@@ -231,11 +255,17 @@ The "improvements" array MUST contain an item for each of these 12 areas: ${MATR
     const parsed = JSON.parse(String(response.text || '').replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim())
     const byArea = new Map((parsed.improvements || []).map(x => [x.area, x]))
 
+    const safeField = field => ({ value: clean(field?.value, 1000) || 'Not detected', source: ['BEFORE','AFTER','BOTH'].includes(field?.source) ? field.source : 'BOTH', confidence: Math.max(0, Math.min(100, Number(field?.confidence) || 0)) })
+    const scores = Object.fromEntries(SCORE_AREAS.map(area => { const score = parsed.scores?.[area] || {}; return [area, { before: Math.max(0, Math.min(100, Number(score.before) || 0)), after: Math.max(0, Math.min(100, Number(score.after) || 0)), evidence: clean(score.evidence, 500) || 'No visible evidence supplied.' }] }))
+    const extractedFields = Object.fromEntries(['manufacturer','mpn','description','features','dimensions','compliance','documents'].map(key => [key, safeField(parsed.extractedFields?.[key])]))
+    const confidenceValues = Object.values(extractedFields).map(x => x.confidence).filter(Boolean)
+    const confidence = confidenceValues.length ? Math.round(confidenceValues.reduce((a,b)=>a+b,0)/confidenceValues.length) : 0
     res.json({
-      productName: clean(parsed.productName, 200) || 'Identified Product',
-      brand: clean(parsed.brand, 120),
-      sku: clean(parsed.sku, 120),
-      category: clean(parsed.category, 160),
+      productName: clean(parsed.productName, 200) || 'Not detected',
+      brand: clean(parsed.brand, 120) || 'Not detected',
+      sku: clean(parsed.sku, 120) || 'Not detected',
+      category: clean(parsed.category, 160) || 'Not detected',
+      manufacturer: extractedFields.manufacturer.value,
       beforeSummary: String(parsed.beforeSummary || '').slice(0, 6000),
       afterSummary: String(parsed.afterSummary || '').slice(0, 6000),
       keyTransformation: String(parsed.keyTransformation || '').slice(0, 4000),
@@ -245,14 +275,19 @@ The "improvements" array MUST contain an item for each of these 12 areas: ${MATR
         const item = byArea.get(area) || {}
         return {
           area,
-          beforeState: clean(item.beforeState, 300) || 'Unstructured',
-          afterState: clean(item.afterState, 300) || 'Enriched',
-          resultStatus: RESULT_STATUSES.has(item.resultStatus) ? item.resultStatus : 'Enriched'
+          beforeState: clean(item.beforeState, 300) || 'Not detected',
+          afterState: clean(item.afterState, 300) || 'Not detected',
+          whatChanged: clean(item.whatChanged, 400) || 'Not detected',
+          businessBenefit: clean(item.businessBenefit, 400) || 'Not detected',
+          resultStatus: RESULT_STATUSES.has(item.resultStatus) ? item.resultStatus : 'Not Detected'
         }
       }),
+      extractedFields,
+      scores,
+      scoringMethodology: '100-point evidence rubric: presence/completeness 40, structure/consistency 25, specificity 20, buyer usefulness 15.',
       analysisStatus: 'Complete',
-      confidenceScore: '96%',
-      confidenceNote: 'Grounded AI vision comparison complete.'
+      confidenceScore: confidence ? `${confidence}%` : 'Needs Review',
+      confidenceNote: confidence >= 75 ? 'Grounded AI vision comparison complete.' : 'Some extracted fields require review.'
     })
   } catch (error) {
     console.error('[EnrichmentAnalysis]', error.message)
@@ -308,6 +343,25 @@ function requireComplete(report) {
 
 function imagePath(asset) { return asset?.url ? path.join(IMAGE_DIR, asset.url.split('/').pop()) : null }
 
+function renderPdfEvidence(asset) {
+  const file = imagePath(asset)
+  if (!file || !fs.existsSync(file) || asset?.mimeType !== 'application/pdf') return file
+  const page = Math.max(1, Number(asset.pdfPage || 1))
+  const stem = `${path.basename(file, path.extname(file))}-page-${page}`
+  const output = path.join(IMAGE_DIR, `${stem}.png`)
+  if (fs.existsSync(output)) return output
+  const executable = process.platform === 'win32'
+    ? path.join(process.env.USERPROFILE || '', '.cache/codex-runtimes/codex-primary-runtime/dependencies/native/poppler/Library/bin/pdftoppm.exe')
+    : 'pdftoppm'
+  try {
+    execFileSync(executable, ['-f', String(page), '-l', String(page), '-singlefile', '-png', '-r', '120', file, path.join(IMAGE_DIR, stem)], { windowsHide: true, timeout: 30000 })
+    return fs.existsSync(output) ? output : file
+  } catch (error) {
+    console.warn('[PDF Evidence Render]', error.message)
+    return file
+  }
+}
+
 function addHeader(doc, title, report) {
   const logo = imagePath(report?.branding?.companyLogo) || DEFAULT_LOGO
   if (fs.existsSync(logo)) doc.image(logo, 42, 14, { fit: [90, 26], align: 'left' })
@@ -340,14 +394,14 @@ function drawBrowserFrame(doc, title, x, y, w, h, asset) {
   
   doc.rect(x, y + 20, w, h - 20).strokeColor('#cbd5e1').stroke()
   
-  const file = imagePath(asset)
+  const file = renderPdfEvidence(asset)
   if (file && fs.existsSync(file)) {
-    if (asset?.mimeType === 'application/pdf') {
-      doc.font('Helvetica-Bold').fillColor('#0b255d').fontSize(10).text('PDF Document Page Rendered', x + 10, y + h / 2 - 8, { width: w - 20, align: 'center' })
-    } else {
+    if (path.extname(file).toLowerCase() !== '.pdf') {
       try {
         doc.image(file, x + 3, y + 23, { fit: [w - 6, h - 26], align: 'center', valign: 'center' })
       } catch {}
+    } else {
+      doc.font('Helvetica-Bold').fillColor('#0b255d').fontSize(9).text('PDF preview could not be rendered', x + 10, y + h / 2 - 8, { width: w - 20, align: 'center' })
     }
   } else {
     doc.font('Helvetica-Bold').fillColor('#94a3b8').fontSize(9).text('Screenshot Preview', x + 10, y + h / 2 - 5, { width: w - 20, align: 'center' })
@@ -403,8 +457,13 @@ function buildPdf(report, output) {
       // Page 1: Case Study Summary + Before Screenshot
       page++; addPage(doc, report, `Case Study ${String(index + 1).padStart(2, '0')}`, page)
       doc.font('Helvetica-Bold').fillColor('#e63329').fontSize(8).text(`CASE STUDY ${String(index + 1).padStart(2, '0')}`, 42, 58)
-      doc.fillColor('#0b255d').fontSize(16).text(p.productName || 'Untitled Product', 42, 70, { width: 511 })
-      doc.font('Helvetica').fontSize(8).fillColor('#64748b').text([p.category, p.brand ? `Brand: ${p.brand}` : '', p.sku ? `SKU: ${p.sku}` : ''].filter(Boolean).join('  |  '), 42, 92)
+      const caseTitle = p.productName || 'Untitled Product'
+      doc.fillColor('#0b255d').fontSize(16)
+      const caseTitleHeight = Math.min(42, doc.heightOfString(caseTitle, { width: 511, lineGap: 0 }))
+      doc.text(caseTitle, 42, 70, { width: 511, height: 42, ellipsis: true })
+      const metaY = 72 + caseTitleHeight
+      doc.font('Helvetica').fontSize(8).fillColor('#64748b').text([p.category, p.brand ? `Brand: ${p.brand}` : '', p.sku ? `SKU: ${p.sku}` : ''].filter(Boolean).join('  |  '), 42, metaY, { width: 511, ellipsis: true })
+      const metricY = metaY + 16
 
       const qualitative = [
         ['Content Completeness', p.beforeSummary ? 'Basic to Enriched' : 'Pending'],
@@ -414,14 +473,14 @@ function buildPdf(report, output) {
       ]
       qualitative.forEach(([label, value], i) => {
         const x = 42 + i * 130
-        doc.rect(x, 106, 121, 38).fill('#f8fafc')
-        doc.rect(x, 106, 121, 2).fill('#e63329')
-        doc.fillColor('#64748b').font('Helvetica').fontSize(5.8).text(label.toUpperCase(), x + 7, 114, { width: 107 })
-        doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(7).text(value, x + 7, 127, { width: 107, ellipsis: true })
+        doc.rect(x, metricY, 121, 38).fill('#f8fafc')
+        doc.rect(x, metricY, 121, 2).fill('#e63329')
+        doc.fillColor('#64748b').font('Helvetica').fontSize(5.8).text(label.toUpperCase(), x + 7, metricY + 8, { width: 107 })
+        doc.fillColor('#0f172a').font('Helvetica-Bold').fontSize(7).text(value, x + 7, metricY + 21, { width: 107, ellipsis: true })
       })
 
       // Before vs After Side-by-side Cards
-      const cardY = 154
+      const cardY = metricY + 48
       ;[[42, 'BEFORE · ORIGINAL CLIENT PRODUCT PAGE', p.beforeSummary, '#fff5f5', '#fecaca'], [303, 'AFTER · ALTIUSNXT ENRICHED PRODUCT PAGE', p.afterSummary, '#eff6ff', '#bfdbfe']].forEach(([x, title, text, bg, border]) => {
         doc.roundedRect(x, cardY, 250, 82, 6).fill(bg).strokeColor(border).stroke()
         doc.fillColor('#0b255d').font('Helvetica-Bold').fontSize(7.5).text(title, x + 10, cardY + 8, { width: 230 })
@@ -429,16 +488,20 @@ function buildPdf(report, output) {
       })
 
       // Key Transformation Strip
-      doc.rect(42, 246, 511, 42).fill('#f8fafc')
-      doc.rect(42, 246, 3, 42).fill('#e63329')
-      doc.fillColor('#e63329').font('Helvetica-Bold').fontSize(7.5).text('WHAT CHANGED?', 54, 254)
-      doc.fillColor('#334155').font('Helvetica').fontSize(8).text(p.keyTransformation || '', 54, 267, { width: 485, height: 16, ellipsis: true })
+      const changeY = cardY + 92
+      doc.rect(42, changeY, 511, 42).fill('#f8fafc')
+      doc.rect(42, changeY, 3, 42).fill('#e63329')
+      doc.fillColor('#e63329').font('Helvetica-Bold').fontSize(7.5).text('WHAT CHANGED?', 54, changeY + 8)
+      doc.fillColor('#334155').font('Helvetica').fontSize(8).text(p.keyTransformation || '', 54, changeY + 21, { width: 485, height: 16, ellipsis: true })
 
       // Before Browser Screenshot Frame
-      doc.font('Helvetica-Bold').fillColor('#9f1239').fontSize(7).text('BEFORE - ORIGINAL CLIENT PRODUCT', 42, 302)
-      doc.font('Helvetica-Bold').fillColor('#166534').fontSize(7).text('AFTER - ALTIUSNXT ENRICHED PRODUCT', 303, 302)
-      drawBrowserFrame(doc, 'Original evidence', 42, 315, 250, 445, p.beforeImage)
-      drawBrowserFrame(doc, 'Enriched evidence', 303, 315, 250, 445, p.afterImage)
+      const evidenceLabelY = changeY + 56
+      const evidenceFrameY = evidenceLabelY + 13
+      const evidenceFrameHeight = 760 - evidenceFrameY
+      doc.font('Helvetica-Bold').fillColor('#9f1239').fontSize(7).text('BEFORE - ORIGINAL CLIENT PRODUCT', 42, evidenceLabelY)
+      doc.font('Helvetica-Bold').fillColor('#166534').fontSize(7).text('AFTER - ALTIUSNXT ENRICHED PRODUCT', 303, evidenceLabelY)
+      drawBrowserFrame(doc, 'Original Product Experience', 42, evidenceFrameY, 250, evidenceFrameHeight, { ...p.beforeImage, pdfPage: p.beforePdfPage || 1 })
+      drawBrowserFrame(doc, 'Enriched Product Experience', 303, evidenceFrameY, 250, evidenceFrameHeight, { ...p.afterImage, pdfPage: p.afterPdfPage || 1 })
 
       // Page 2: Enriched After Screenshot + 4-Column Improvement Matrix + Business Impact
       page++; addPage(doc, report, 'Enriched Result & Improvement Matrix', page)

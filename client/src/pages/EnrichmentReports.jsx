@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   Plus, FileText, Upload, X, Eye, Download, Copy, Trash2, Sparkles, ChevronLeft, ChevronRight,
   ChevronDown, Check, RefreshCw, Save, Image as ImageIcon, Undo, Redo, ZoomIn, ZoomOut, Maximize2,
-  Wand2, Building2, CheckCircle2, ArrowUp, ArrowDown, FileCode, Layers
+  Wand2, Building2, CheckCircle2, ArrowUp, ArrowDown, FileCode, Layers, Search, MoreHorizontal, ArrowRight, Share2, AlertCircle
 } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
 import api from '../api/client'
@@ -29,7 +29,7 @@ const MATRIX_AREAS = [
   'Data Standardization',
   'Buyer Experience & Readiness'
 ]
-const RESULT_STATUSES = ['Added', 'Improved', 'Standardized', 'Verified', 'Completed', 'Enriched', 'No Change']
+const RESULT_STATUSES = ['Added', 'Enriched', 'Improved', 'Standardized', 'Corrected', 'Unchanged', 'Not Detected']
 
 const blankProduct = () => ({
   id: crypto.randomUUID(),
@@ -114,11 +114,13 @@ Return ONLY valid JSON with this shape:
   "keyTransformation": "commercial and buyer impact statement",
   "businessImpact": "why enrichment matters to client (faceted search, SEO, procurement, buyer confidence)",
   "highlights": ["3 to 6 concise bullet points of specific evidence-based improvements"],
+  "extractedFields": {"manufacturer":{"value":"visible value or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},"mpn":{"value":"visible value or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},"dimensions":{"value":"visible value or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},"compliance":{"value":"visible value or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},"documents":{"value":"visible value or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0}},
+  "scores": {"Content Completeness":{"before":0,"after":0,"evidence":"visible evidence"},"Technical Specifications":{"before":0,"after":0,"evidence":"visible evidence"},"Taxonomy":{"before":0,"after":0,"evidence":"visible evidence"},"Structured Attributes":{"before":0,"after":0,"evidence":"visible evidence"},"Search Readiness":{"before":0,"after":0,"evidence":"visible evidence"},"Buyer Clarity":{"before":0,"after":0,"evidence":"visible evidence"}},
   "improvements": [
-    { "area": "Product Title & Naming", "beforeState": "Original state", "afterState": "Enriched state", "resultStatus": "Added|Improved|Standardized|Enriched|No Change" }
+    { "area": "Product Title & Naming", "beforeState": "Original state", "afterState": "Enriched state", "whatChanged":"evidence-based change", "businessBenefit":"reasonable buyer benefit", "resultStatus": "Added|Enriched|Improved|Standardized|Corrected|Unchanged|Not Detected" }
   ]
 }
-Must include exactly one improvement item for each area: ${MATRIX_AREAS.join(', ')}.`
+Must include exactly one improvement item for each area: ${MATRIX_AREAS.join(', ')}. Score using this rubric: visible presence/completeness 40 points, structure/consistency 25, specificity 20, buyer usefulness 15. Never infer information that is not visible.`
 
   let raw = ''
   if (key && provider === 'gemini') {
@@ -143,10 +145,15 @@ Must include exactly one improvement item for each area: ${MATRIX_AREAS.join(', 
     highlights: Array.isArray(parsed.highlights) ? parsed.highlights.slice(0, 6) : [],
     improvements: MATRIX_AREAS.map(area => ({
       area,
-      beforeState: byArea.get(area)?.beforeState || 'Unstructured',
-      afterState: byArea.get(area)?.afterState || 'Enriched',
-      resultStatus: RESULT_STATUSES.includes(byArea.get(area)?.resultStatus) ? byArea.get(area).resultStatus : 'Enriched'
+      beforeState: byArea.get(area)?.beforeState || 'Not detected',
+      afterState: byArea.get(area)?.afterState || 'Not detected',
+      whatChanged: byArea.get(area)?.whatChanged || 'Not detected',
+      businessBenefit: byArea.get(area)?.businessBenefit || 'Not detected',
+      resultStatus: RESULT_STATUSES.includes(byArea.get(area)?.resultStatus) ? byArea.get(area).resultStatus : 'Not Detected'
     })),
+    extractedFields: parsed.extractedFields || {},
+    scores: parsed.scores || {},
+    scoringMethodology: '100-point evidence rubric: presence/completeness 40, structure/consistency 25, specificity 20, buyer usefulness 15.',
     analysisStatus: 'Complete',
     confidenceScore: '96%'
   }
@@ -269,39 +276,76 @@ export default function EnrichmentReports() {
 }
 
 function ReportDashboard({ reports, onCreate, onDelete, onDuplicate, navigate, confirmDelete, remove }) {
+  const [search, setSearch] = useState('')
+  const [client, setClient] = useState('All Clients')
+  const [status, setStatus] = useState('All Status')
+  const [sort, setSort] = useState('recent')
+  const [menu, setMenu] = useState(null)
   const stats = {
     total: reports.length,
     products: reports.reduce((sum, r) => sum + (r.products?.length || 0), 0),
     pdfs: reports.filter(r => r.status === 'PDF Generated').length,
     clients: new Set(reports.map(r => r.clientName).filter(Boolean)).size
   }
+  const clients = [...new Set(reports.map(r => r.clientName).filter(Boolean))].sort()
+  const stages = ['Draft','AI Analysis','Needs Review','Ready for PDF','PDF Generated','Shared']
+  const productProgress = product => {
+    const checks = [product.beforeImage, product.afterImage, product.analysisStatus === 'Complete', product.productName, product.keyTransformation]
+    return Math.round(checks.filter(Boolean).length / checks.length * 100)
+  }
+  const reportProgress = r => {
+    if (!r.products?.length) return 0
+    return Math.round(r.products.reduce((sum, p) => sum + productProgress(p), 0) / r.products.length)
+  }
+  const normalizedStage = r => {
+    if (r.status === 'PDF Generated' && r.pdfPath) return 'PDF Generated'
+    if (r.status === 'Shared') return 'Shared'
+    const progress = reportProgress(r)
+    if (progress >= 100) return 'Ready for PDF'
+    if (progress >= 60) return 'Needs Review'
+    if ((r.products || []).some(p => p.analysisStatus === 'Complete')) return 'AI Analysis'
+    return r.status && stages.includes(r.status) ? r.status : 'Draft'
+  }
+  const visible = reports.filter(r => {
+    const q = search.toLowerCase()
+    return (!q || `${r.name} ${r.clientName} ${r.projectName}`.toLowerCase().includes(q)) &&
+      (client === 'All Clients' || r.clientName === client) &&
+      (status === 'All Status' || normalizedStage(r) === status)
+  }).sort((a,b) => sort === 'oldest' ? new Date(a.updatedAt || a.createdAt) - new Date(b.updatedAt || b.createdAt) : sort === 'name' ? String(a.name).localeCompare(String(b.name)) : new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))
+  const latest = [...reports].sort((a,b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt))[0]
+  const readyReview = reports.filter(r => normalizedStage(r) === 'Needs Review').length
+  const latestClient = latest?.clientName || 'No client yet'
+  const open = r => navigate(`/enrichment-reports/${r.id}`)
 
   return (
     <div className="er-page">
       <div className="er-hero">
         <div>
-          <span className="er-eyebrow"><Sparkles size={13} /> CLIENT PRODUCT DATA ENRICHMENT</span>
-          <h1>One Client. Unlimited Products. One Combined PDF.</h1>
-          <p>Upload Before & After product pages, run AI Vision comparison, edit in real-time dual-pane workspace, and generate a client-ready B2B PDF report.</p>
+          <span className="er-eyebrow"><Sparkles size={13} /> CLIENT REPORTING WORKSPACE</span>
+          <h1>Client Product Enrichment Reports</h1>
+          <p>Turn Before &amp; After product pages into professional, client-ready case studies. Compare improvements with AI, review recommendations, and generate one consolidated PDF.</p>
+          <div className="er-process"><span>Upload Products</span><ArrowRight/><span>AI Compare</span><ArrowRight/><span>Review &amp; Edit</span><ArrowRight/><span>Generate PDF</span><ArrowRight/><span>Share with Client</span></div>
         </div>
-        <button className="er-primary" onClick={onCreate}><Plus size={16} />Create Client Report</button>
+        <div className="er-hero-actions"><button className="er-primary" onClick={onCreate}><Plus size={16} />Create Client Report</button><button disabled={!latest} onClick={() => latest && open(latest)}><Eye size={15}/>View Latest Report</button></div>
       </div>
+
+      {latest && <button className="er-continue" onClick={() => open(latest)}><span className="er-continue-icon"><FileText/></span><span><small>Continue Working</small><strong>{latest.clientName || 'Unassigned Client'} — {latest.name}</strong><em>{latest.products?.length || 0} products · {latest.products?.filter(p => productProgress(p) >= 100).length || 0} completed · {latest.products?.filter(p => productProgress(p) < 100).length || 0} require attention</em></span><b>Continue Review <ArrowRight/></b></button>}
 
       <div className="er-stats">
         {[
-          ['Client Reports', stats.total],
-          ['Product Case Studies', stats.products],
-          ['PDF Reports Generated', stats.pdfs],
-          ['Clients Served', stats.clients]
-        ].map(([l, v]) => (
-          <div key={l}><strong>{v}</strong><span>{l}</span></div>
+          ['Active Reports', stats.total, `${readyReview} ready for review`, () => setStatus('All Status')],
+          ['Products Compared', stats.products, 'Across all client reports', () => setSearch('')],
+          ['PDFs Generated', stats.pdfs, 'Ready to share', () => setStatus('PDF Generated')],
+          ['Clients Served', stats.clients, `Latest: ${latestClient}`, () => setClient(latestClient === 'No client yet' ? 'All Clients' : latestClient)]
+        ].map(([l, v, meta, action]) => (
+          <button key={l} onClick={action}><strong>{v}</strong><span>{l}</span><small>{meta}</small></button>
         ))}
       </div>
 
       <section className="er-panel">
         <div className="er-panel-head">
-          <h2>Client Report Library</h2>
-          <p>Manage all client enrichment POC reports and generated combined PDFs.</p>
+          <div><h2>Client Report Library</h2><p>Create, manage, review and share product enrichment reports for every client.</p></div>
+          <div className="er-library-controls"><label><Search/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search reports..."/></label><select value={client} onChange={e=>setClient(e.target.value)}><option>All Clients</option>{clients.map(x=><option key={x}>{x}</option>)}</select><select value={status} onChange={e=>setStatus(e.target.value)}><option>All Status</option>{stages.map(x=><option key={x}>{x}</option>)}</select><select value={sort} onChange={e=>setSort(e.target.value)}><option value="recent">Recently Updated</option><option value="oldest">Oldest First</option><option value="name">Report Name</option></select></div>
         </div>
         {!reports.length ? (
           <div className="er-empty">
@@ -311,49 +355,50 @@ function ReportDashboard({ reports, onCreate, onDelete, onDuplicate, navigate, c
             <button className="er-primary" onClick={onCreate}><Plus size={15} />Create Client Report</button>
           </div>
         ) : (
-          <div className="er-table-wrap">
+          <div className="er-table-wrap er-library-table">
             <table className="er-table">
               <thead>
                 <tr>
-                  <th>Report Name</th>
+                  <th>Report</th>
                   <th>Client</th>
                   <th>Products</th>
-                  <th>Date</th>
+                  <th>Progress</th>
+                  <th>Last Updated</th>
                   <th>Status</th>
-                  <th>Prepared By</th>
+                  <th>Owner</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {reports.map(r => (
+                {visible.map(r => {
+                  const progress = reportProgress(r)
+                  const completed = r.products?.filter(p => productProgress(p) >= 100).length || 0
+                  const needsReview = (r.products?.length || 0) - completed
+                  const stage = normalizedStage(r)
+                  return (
                   <tr key={r.id}>
                     <td>
-                      <button className="er-report-link" onClick={() => navigate(`/enrichment-reports/${r.id}`)}>
-                        {r.name}
-                      </button>
-                      <small>{r.projectName || 'Product Enrichment POC'}</small>
+                      <button className="er-report-link" onClick={() => open(r)}>{r.name}</button>
+                      <small>REP-{new Date(r.createdAt).getFullYear()}-{String(r.id).slice(-4).toUpperCase()} · Created {new Date(r.createdAt).toLocaleDateString('en',{day:'2-digit',month:'short',year:'numeric'})}</small>
                     </td>
-                    <td><strong>{r.clientName}</strong></td>
-                    <td><span className="er-chip">{r.products?.length || 0} Products</span></td>
-                    <td>{new Date(r.createdAt).toLocaleDateString()}</td>
-                    <td><span className={`er-status ${r.status.toLowerCase().replaceAll(' ', '-')}`}>{r.status}</span></td>
+                    <td><strong>{r.clientName || 'Unassigned'}</strong><small>{r.projectName || 'Product Enrichment POC'}</small></td>
+                    <td><strong>{r.products?.length || 0} Products</strong><small>{completed} completed{needsReview ? ` · ${needsReview} needs review` : ''}</small></td>
+                    <td><div className="er-progress"><span><strong>{progress}%</strong> Complete</span><i><b style={{width:`${progress}%`}}/></i></div></td>
+                    <td>{new Date(r.updatedAt || r.createdAt).toLocaleDateString('en',{day:'2-digit',month:'short',year:'numeric'})}</td>
+                    <td><span className={`er-status ${stage.toLowerCase().replaceAll(' ', '-')}`}>{stage}</span></td>
                     <td>{r.owner?.name || r.preparedBy || 'AltiusNxt'}</td>
                     <td>
-                      <div className="er-row-actions">
-                        <button title="Edit Report" onClick={() => navigate(`/enrichment-reports/${r.id}`)}><Eye size={13} /></button>
-                        <button title="Duplicate" onClick={() => onDuplicate(r.id)}><Copy size={13} /></button>
-                        {r.pdfPath && (
-                          <a title="Download Combined PDF" href={`/api/enrichment-reports/${r.id}/download`}>
-                            <Download size={13} />
-                          </a>
-                        )}
-                        <button title="Delete" className="danger" onClick={() => onDelete(r.id)}><Trash2 size={13} /></button>
+                      <div className="er-row-actions er-professional-actions">
+                        <button className="er-open-report" onClick={() => open(r)}>Open Report</button>
+                        <button className="er-more" aria-label={`More actions for ${r.name}`} onClick={()=>setMenu(menu===r.id?null:r.id)}><MoreHorizontal/></button>
+                        {menu===r.id && <div className="er-action-menu"><button onClick={()=>open(r)}><Eye/>Preview Report</button><button onClick={()=>open(r)}><FileText/>Edit Report</button><button onClick={()=>open(r)}><Plus/>Add Products</button>{r.pdfPath&&<a href={`/api/enrichment-reports/${r.id}/download`}><Download/>Download PDF</a>}<button onClick={()=>navigator.clipboard.writeText(`${location.origin}/enrichment-reports/${r.id}`)}><Share2/>Share with Client</button><button onClick={()=>{onDuplicate(r.id);setMenu(null)}}><Copy/>Duplicate Report</button><button className="danger" onClick={()=>{onDelete(r.id);setMenu(null)}}><Trash2/>Delete Report</button></div>}
                       </div>
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
+            {!visible.length && <div className="er-no-results"><Search/><strong>No matching reports</strong><span>Try a different search, client or status filter.</span></div>}
           </div>
         )}
       </section>
@@ -385,6 +430,10 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
   const [confirmRemoveProduct, setConfirmRemoveProduct] = useState(false)
   const [currentPreviewPage, setCurrentPreviewPage] = useState(1)
   const [showThumbnails, setShowThumbnails] = useState(false)
+  const [reviewMode, setReviewMode] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [qualityCheck, setQualityCheck] = useState(null)
+  const autoAnalysisRef = useRef(new Set())
   const previewViewportRef = useRef(null)
   const autosaveSignatureRef = useRef('')
 
@@ -392,7 +441,7 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
   const [openSections, setOpenSections] = useState({
     upload: true,
     ai: false,
-    details: true,
+    details: false,
     summaries: false,
     transformation: false,
     matrix: false,
@@ -505,10 +554,12 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
     return issues
   }
 
-  const generatePDF = async () => {
+  const generatePDF = async (generateAnyway = false) => {
     const issues = getValidationIssues()
-    if (issues.length) {
+    if (issues.length && !generateAnyway) {
       setValidationIssues(issues)
+      const reviewFields = report.products.flatMap((p, product) => Object.entries(p.extractedFields || {}).filter(([,field]) => !field?.value || field.value === 'Not detected' || Number(field.confidence) < 70).map(([name,field]) => ({ product, name, field })))
+      setQualityCheck({ issues, reviewFields, verified: report.products.reduce((sum,p)=>sum+Object.values(p.extractedFields||{}).filter(f=>f?.value&&f.value!=='Not detected'&&Number(f.confidence)>=70).length,0) })
       setToast(`${issues.length} item${issues.length === 1 ? '' : 's'} require attention before PDF generation.`)
       return
     }
@@ -519,7 +570,10 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
       if (!saved) return
       const res = await api.post(`/enrichment-reports/${saved.id}/generate-pdf`)
       setReport(res.data)
+      setQualityCheck(null)
+      setPreviewOpen(true)
       setToast(`PDF generated successfully — ${res.data.pageCount} pages total`)
+      setTimeout(() => document.querySelector('.er-preview-pane')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
     } catch (e) {
       setToast(e.response?.data?.message || 'PDF generation failed.')
     } finally {
@@ -550,6 +604,33 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
   const completionFields = [activeProd.beforeImage, activeProd.afterImage, activeProd.productName, activeProd.category, activeProd.beforeSummary, activeProd.afterSummary, activeProd.keyTransformation]
   const completion = Math.round((completionFields.filter(Boolean).length / completionFields.length) * 100)
   const totalPages = 1 + (report.products.length * 2) + 1
+
+  const analyzeProduct = async (index = activeProduct, automatic = false) => {
+    const product = report.products[index]
+    if (!product?.beforeImage || !product?.afterImage || generating) return
+    setGenerating(true)
+    try {
+      const result = await analyzeScreenshots(product)
+      const products = report.products.map((item, i) => i === index ? { ...item, ...result } : item)
+      pushHistory({ ...report, products })
+      setReviewMode(true)
+      setToast(`${result.productName || `Product ${index + 1}`} — AI analysis complete`)
+    } catch (e) {
+      if (automatic) autoAnalysisRef.current.delete(`${product.beforeImage?.url}|${product.afterImage?.url}`)
+      setToast(e.message || 'Analysis failed.')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  useEffect(() => {
+    const product = report.products[activeProduct]
+    if (!product?.beforeImage?.url || !product?.afterImage?.url || product.analysisStatus === 'Complete') return
+    const key = `${product.beforeImage.url}|${product.afterImage.url}`
+    if (autoAnalysisRef.current.has(key)) return
+    autoAnalysisRef.current.add(key)
+    analyzeProduct(activeProduct, true)
+  }, [activeProd.beforeImage?.url, activeProd.afterImage?.url, activeProduct])
 
   useEffect(() => {
     if (!id || id === 'new' || !report.name || !report.clientName) return
@@ -595,13 +676,13 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
         <div className="er-bar-center">
           <div className="er-tab-switch">
             <button className={activeTab === 'editor' ? 'active' : ''} onClick={() => setActiveTab('editor')}>
-              <FileText /> Product Editor
+              <FileText /> Products
             </button>
             <button className={activeTab === 'setup' ? 'active' : ''} onClick={() => setActiveTab('setup')}>
-              <Building2 /> Client Setup
+              <Building2 /> Client Summary
             </button>
-            <button className={activeTab === 'summary' ? 'active' : ''} onClick={() => setActiveTab('summary')}>
-              <CheckCircle2 /> Final Summary
+            <button className={previewOpen ? 'active' : ''} onClick={() => { setPreviewOpen(true); setTimeout(() => document.querySelector('.er-preview-pane')?.scrollIntoView({ behavior: 'smooth' }), 0) }}>
+              <Eye /> PDF Preview
             </button>
           </div>
         </div>
@@ -619,7 +700,7 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
             <Eye /> Preview
           </button>
           <button className="er-primary" onClick={generatePDF} disabled={generating}>
-            <Sparkles /> {generating ? 'Processing...' : 'Generate Combined PDF'}
+            <Sparkles /> {generating ? 'Processing...' : 'Generate PDF'}
           </button>
           {report.pdfPath && (
             <a className="er-download-btn" href={`/api/enrichment-reports/${report.id}/download`}>
@@ -698,9 +779,17 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
                   </div>
                 </div>
 
+                <div className="er-ai-stagebar">
+                  <span className={activeProd.beforeImage && activeProd.afterImage ? 'done' : 'active'}><b>1</b> Upload</span>
+                  <i><ArrowRight /></i>
+                  <span className={activeProd.analysisStatus === 'Complete' ? 'done' : activeProd.beforeImage && activeProd.afterImage ? 'active' : ''}><b>2</b> AI Analysis</span>
+                  <i><ArrowRight /></i>
+                  <span className={activeProd.analysisStatus === 'Complete' ? 'active' : ''}><b>3</b> Report Preview</span>
+                </div>
+
                 {/* Collapsible Section 01: Upload & Compare */}
                 <CollapsibleSection
-                  title="01. Upload & Compare Previews"
+                  title="1. Upload Before & After"
                   isOpen={openSections.upload}
                   onToggle={() => toggleSection('upload')}
                 >
@@ -732,39 +821,38 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
 
                 {/* Collapsible Section 02: AI Vision Analysis & Evidence */}
                 <CollapsibleSection
-                  title="02. AI Vision Analysis & Evidence"
-                  isOpen={openSections.ai}
+                  title="2. AI Analysis"
+                  isOpen={openSections.ai || !!activeProd.beforeImage && !!activeProd.afterImage}
                   onToggle={() => toggleSection('ai')}
                 >
                   <div className="er-single-analyze-strip">
                     <button
                       className="er-analyze-single-btn"
                       disabled={!activeProd.beforeImage || !activeProd.afterImage || generating}
-                      onClick={async () => {
-                        setGenerating(true)
-                        try {
-                          const res = await analyzeScreenshots(activeProd)
-                          Object.entries(res).forEach(([k, v]) => updateProduct(k, v))
-                          setToast(`${res.productName || 'Product'} analyzed successfully`)
-                        } catch (e) {
-                          setToast(e.message || 'Analysis failed.')
-                        } finally {
-                          setGenerating(false)
-                        }
-                      }}
+                      onClick={() => analyzeProduct()}
                     >
-                      <Sparkles size={14} /> {activeProd.analysisStatus === 'Complete' ? 'Re-analyze Before vs After with AI' : 'Analyze Before vs After with AI'}
+                      <Sparkles size={14} /> {generating ? 'Analyzing product pages...' : activeProd.analysisStatus === 'Complete' ? 'Regenerate from Screenshots' : 'Analyze Before & After'}
                     </button>
+                    {generating && <div className="er-analysis-steps"><strong>AI is creating the report</strong><span>Reading product information</span><span>Comparing visible content</span><span>Detecting enriched attributes</span><span>Evaluating taxonomy and specifications</span><span>Creating client-ready narrative</span></div>}
                     {activeProd.analysisStatus === 'Complete' && (
                       <div className="er-analysis-status-bar">
                         <CheckCircle2 size={14} />
-                        <span>Analysis Complete (Confidence: <strong>{activeProd.confidenceScore || '96%'}</strong>) — Detected: <strong>{activeProd.productName}</strong></span>
+                        <span><strong>AI Analysis Complete</strong> · Confidence {activeProd.confidenceScore || 'Needs review'} · Detected: {activeProd.productName}</span>
                       </div>
                     )}
                   </div>
                 </CollapsibleSection>
 
+                {activeProd.analysisStatus === 'Complete' && <section className="er-ai-output">
+                  <div className="er-ai-output-head"><div><span><Sparkles/></span><div><h3>AI Generated Report Content</h3><p>Review and approve the structured content created from the supplied screenshots.</p></div></div><div><button onClick={() => analyzeProduct()}><RefreshCw/>Regenerate</button><button className="approve" onClick={() => setToast('AI report content approved')}><Check/>Approve</button></div></div>
+                  <div className="er-ai-overview"><article><small>Detected Product</small><strong>{activeProd.productName || 'Not detected'}</strong><span>{activeProd.brand || 'Brand not detected'} · {activeProd.sku || 'SKU not visible'}</span></article><article><small>Category / Taxonomy</small><strong>{activeProd.category || 'Not detected'}</strong><span>Source: supplied product pages</span></article><article><small>Analysis Confidence</small><strong>{activeProd.confidenceScore || 'Needs Review'}</strong><span>Low-confidence values require review</span></article></div>
+                  {Object.keys(activeProd.scores || {}).length > 0 && <div className="er-quality-scores"><div className="er-score-head"><div><h4>Evidence-based Content Quality</h4><p>{activeProd.scoringMethodology || 'Scores use visible evidence only.'}</p></div><strong>{Math.round(Object.values(activeProd.scores).reduce((sum,s)=>sum+(Number(s.after)||0),0)/Math.max(1,Object.keys(activeProd.scores).length))}<small>/100 after</small></strong></div>{Object.entries(activeProd.scores).map(([area,s])=><div className="er-score-row" key={area}><span>{area}<small title={s.evidence}>{s.evidence || 'Visible evidence rubric'}</small></span><b>{s.before} → {s.after}</b><i><em style={{width:`${s.before}%`}}/><strong style={{width:`${s.after}%`}}/></i></div>)}</div>}
+                  <div className="er-ai-summary"><div><h4>Overview</h4><p>{activeProd.keyTransformation || activeProd.afterSummary || 'No evidence-based overview was detected.'}</p></div><div><h4>Key Improvements</h4><ul>{(activeProd.highlights || []).slice(0,5).map((item,i)=><li key={i}><Check/>{item}</li>)}</ul></div><div><h4>Business Impact</h4><p>{activeProd.businessImpact || 'Not detected from the supplied pages.'}</p></div></div>
+                  <div className="er-review-actions"><span>User edits always override AI content.</span><button onClick={() => setReviewMode(v => !v)}><FileText/>{reviewMode ? 'Hide Detailed Editor' : 'Review / Edit Details'}</button><button onClick={() => setPreviewOpen(true)}><Eye/>Open Report Preview</button></div>
+                </section>}
+
                 {/* Collapsible Section 03: Product Details */}
+                {reviewMode && <>
                 <CollapsibleSection
                   title="03. Product Details & Metadata"
                   isOpen={openSections.details}
@@ -895,19 +983,22 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
                     fieldName="Business Impact"
                   />
                 </CollapsibleSection>
+                </>}
               </div>
             </>
           )}
         </main>
 
-        {/* Right Pane Live A4 PDF Preview (55% Width) */}
-        <aside className="er-preview-pane">
+        {/* Collapsible preview uses the same structured report template as PDF generation. */}
+        <aside className={`er-preview-pane ${previewOpen ? 'open' : 'collapsed'}`}>
           <div className="er-preview-toolbar-top">
             <div className="er-preview-title">
-              <Eye /> <strong>Live A4 PDF Preview</strong>
-              <button className="er-thumbnail-toggle" onClick={() => setShowThumbnails(v => !v)}><Layers /> Pages</button>
+              <Eye /> <strong>Report Preview</strong>
+              {previewOpen && <button className="er-thumbnail-toggle" onClick={() => setShowThumbnails(v => !v)}><Layers /> Pages</button>}
             </div>
             <div className="er-zoom-controls">
+              <button className="er-fit-text" onClick={() => setPreviewOpen(v => !v)}>{previewOpen ? 'Collapse' : 'Preview PDF'}</button>
+              {previewOpen && <>
               <span className="er-page-position">Page {currentPreviewPage} / {totalPages}</span>
               <button title="Zoom Out" onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.1))}><ZoomOut /></button>
               <span>{Math.round(zoomLevel * 100)}%</span>
@@ -915,10 +1006,11 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
               <button title="Fit Page" onClick={() => setPreviewFit('page')}><Maximize2 /></button>
               <button className="er-fit-text" title="Fit Width" onClick={() => setPreviewFit('width')}>Fit width</button>
               <button title="Full Screen" onClick={() => document.querySelector('.er-preview-pane')?.requestFullscreen?.()}><FileCode /></button>
+              </>}
             </div>
           </div>
 
-          <div className="er-preview-body">
+          {previewOpen && <div className="er-preview-body">
             {showThumbnails && <nav className="er-page-thumbnails">
               {Array.from({ length: totalPages }, (_, i) => <button key={i} className={currentPreviewPage === i + 1 ? 'active' : ''} onClick={() => { const pages = previewViewportRef.current?.querySelectorAll('.er-a4-page'); pages?.[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' }); setCurrentPreviewPage(i + 1) }}><span>{i === 0 ? 'Cover' : i === totalPages - 1 ? 'Summary' : `Page ${i + 1}`}</span><small>{i + 1}</small></button>)}
             </nav>}
@@ -933,10 +1025,11 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
               <A4DocumentPreview report={report} />
             </div>
           </div>
-          </div>
+          </div>}
         </aside>
       </div>
       {confirmRemoveProduct && <div className="er-modal-backdrop"><div className="er-confirm"><Trash2 /><h3>Remove Product {activeProduct + 1}?</h3><p>This removes its files, findings and matrix from the combined report. You can undo immediately afterward.</p><div><button onClick={() => setConfirmRemoveProduct(false)}>Cancel</button><button className="danger" onClick={removeProduct}>Remove product</button></div></div></div>}
+      {qualityCheck && <div className="er-modal-backdrop"><div className="er-quality-modal"><header><span><CheckCircle2/></span><div><h3>Report Quality Check</h3><p>Review evidence gaps before creating the client PDF.</p></div><button onClick={()=>setQualityCheck(null)}><X/></button></header><div className="er-quality-metrics"><div><strong>{qualityCheck.verified}</strong><span>Fields verified</span></div><div><strong>{qualityCheck.reviewFields.length}</strong><span>Fields need review</span></div><div><strong>{qualityCheck.issues.filter(x=>/upload both|required/i.test(x.label)).length}</strong><span>Critical issues</span></div></div><div className="er-quality-issues">{qualityCheck.issues.slice(0,8).map((issue,i)=><div key={i}><AlertCircle/><span>{issue.label}</span><button onClick={()=>fixIssue(issue)}>Review</button></div>)}</div><footer><button onClick={()=>setQualityCheck(null)}>Cancel</button><button onClick={()=>{const first=qualityCheck.issues[0];setQualityCheck(null);fixIssue(first)}}>Review Issues</button><button className="primary" disabled={qualityCheck.issues.some(x=>/upload both|required/i.test(x.label))} onClick={()=>generatePDF(true)}>Generate Anyway</button></footer></div></div>}
     </div>
   )
 }
