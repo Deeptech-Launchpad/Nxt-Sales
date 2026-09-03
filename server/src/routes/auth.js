@@ -127,7 +127,7 @@ router.get('/google', passport.authenticate('google', { scope: ['profile', 'emai
 
 // GET /auth/google/callback
 router.get('/google/callback',
-  passport.authenticate('google', { failureRedirect: '/login?error=google' }),
+  passport.authenticate('google', { failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:3000'}/login?error=google` }),
   (req, res) => {
     const token = signToken(req.user)
     res.redirect(`${process.env.CLIENT_URL || 'http://localhost:3000'}/auth/callback?token=${token}&user=${encodeURIComponent(JSON.stringify({ id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role }))}`)

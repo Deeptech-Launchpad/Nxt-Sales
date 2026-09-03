@@ -102,7 +102,7 @@ router.get('/', auth, async (req, res) => {
 
     const page  = Math.max(1, parseInt(req.query.page, 10) || 1)
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50))
-    const { assignedToId, status, search, bucket, showCompleted } = req.query
+    const { assignedToId, status, search, bucket, showCompleted, country } = req.query
 
     const where = { type }
     if (assignedToId) where.assignedToId = assignedToId
@@ -143,6 +143,14 @@ router.get('/', auth, async (req, res) => {
         // so it belongs here rather than being invisible in every bucket.
         andConditions.push({ OR: [{ dueDate: { gte: startOfTomorrow } }, { dueDate: null }] })
       }
+    }
+
+    // Country lives on the linked Company, not on the activity, so it filters
+    // through the same company relation the search below already uses.
+    // Case-insensitive for the same reason Companies.jsx matches that way —
+    // stored values vary in casing between manual entry and bulk import.
+    if (country && country.trim()) {
+      andConditions.push({ company: { is: { country: { equals: country.trim(), mode: 'insensitive' } } } })
     }
 
     if (search && search.trim()) {
