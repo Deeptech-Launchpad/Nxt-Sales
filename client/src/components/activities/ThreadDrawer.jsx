@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Paperclip, Eye, EyeOff, ArrowUpRight, ArrowDownLeft, Reply, ReplyAll, Forward, Mail } from 'lucide-react'
 import { sanitizeEmailBody, hasRenderableHtml } from '../../utils/emailHtml'
 import api from '../../api/client'
@@ -253,7 +254,13 @@ export default function ThreadDrawer({ threadId, companyId, summary, onClose, on
 
   const messages = data?.messages || []
 
-  return (
+  // Portalled to <body> for the same reason CallModal/MeetingModal/NoteModal
+  // are: the overlay is position:fixed, but Company → Activities → Emails
+  // renders it inside main.company-workspace-body, which carries a transform
+  // and therefore becomes the containing block for fixed descendants. Left
+  // inline, the overlay sizes to that element instead of the viewport and the
+  // drawer hangs off the bottom of the screen.
+  return createPortal(
     <div className="modal-overlay company-modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal-drawer company-create-modal thread-view-modal" role="dialog" aria-modal="true" aria-label="Conversation">
         <div className="modal-header company-modal-header">
@@ -296,6 +303,7 @@ export default function ThreadDrawer({ threadId, companyId, summary, onClose, on
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
