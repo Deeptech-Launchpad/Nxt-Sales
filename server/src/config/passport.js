@@ -42,6 +42,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
       return done(null, user)
     } catch (err) {
+      console.error('[Google OAuth] sign-in failed:', err.message)
       return done(err, null)
     }
   }))
