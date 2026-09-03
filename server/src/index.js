@@ -1,4 +1,8 @@
 require('dotenv').config()
+// Validates JWT_SECRET and exits if it is missing, too short or a placeholder.
+// Required here, before any route/job/socket module, so a bad secret stops the
+// process instead of being discovered on the first request.
+const JWT_SECRET = require('./config/jwtSecret')
 const express = require('express')
 const path    = require('path')
 const cors    = require('cors')
@@ -41,7 +45,7 @@ const PORT = process.env.PORT || 5000
 app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:3000', credentials: true }))
 app.use(express.json({ limit: '50mb' }))
 app.use(session({
-  secret: process.env.JWT_SECRET || 'dev-secret',
+  secret: JWT_SECRET,
   resave: false,
   saveUninitialized: false,
 }))

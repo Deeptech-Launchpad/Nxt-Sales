@@ -1,5 +1,6 @@
 const axios = require('axios')
 const jwt = require('jsonwebtoken')
+const JWT_SECRET = require('../config/jwtSecret')
 const { PrismaClient } = require('@prisma/client')
 const prisma = new PrismaClient()
 
@@ -21,7 +22,7 @@ async function sweep() {
       try {
         const user = await prisma.user.findUnique({ where: { id: item.userId }, select: { id: true, name: true, email: true } })
         if (!user) throw new Error('Sending user no longer exists.')
-        const token = jwt.sign(user, process.env.JWT_SECRET || 'dev-secret', { expiresIn: '5m' })
+        const token = jwt.sign(user, JWT_SECRET, { expiresIn: '5m' })
         await axios.post(`http://127.0.0.1:${process.env.PORT || 5000}/api/email/send`, {
           to: item.toEmail, subject: item.subject, htmlBody: item.htmlBody, emailMode: 'new',
         }, { headers: { Authorization: `Bearer ${token}` }, timeout: 120000 })

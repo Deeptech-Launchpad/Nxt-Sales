@@ -6,7 +6,7 @@ const passport = require('passport')
 const { PrismaClient } = require('@prisma/client')
 
 const prisma = new PrismaClient()
-const SECRET = process.env.JWT_SECRET || 'dev-secret'
+const SECRET = require('../config/jwtSecret')
 
 function genToken() {
   return crypto.randomBytes(32).toString('hex')

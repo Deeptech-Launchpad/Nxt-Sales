@@ -1,5 +1,6 @@
 const { Server } = require('socket.io')
 const jwt = require('jsonwebtoken')
+const JWT_SECRET = require('../config/jwtSecret')
 const { PrismaClient } = require('@prisma/client')
 
 const prisma = new PrismaClient()
@@ -42,7 +43,7 @@ function initSocket(httpServer) {
   io.use((socket, next) => {
     try {
       const token = socket.handshake.auth?.token
-      const user = jwt.verify(token, process.env.JWT_SECRET || 'dev-secret')
+      const user = jwt.verify(token, JWT_SECRET)
       socket.userId = user.id
       next()
     } catch {
