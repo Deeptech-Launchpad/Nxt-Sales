@@ -7,6 +7,7 @@ import TaskModal from '../components/activities/TaskModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
 import DataImportModal from '../components/modals/DataImportModal'
 import { renderCustomCell } from '../utils/customFieldRender'
+import { useDropdownOptions } from '../hooks/useDropdownOptions'
 import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUtils'
 import '../styles/contacts.css'
 import '../styles/tasks.css'
@@ -130,6 +131,10 @@ export default function Tasks() {
   const [bucket, setBucket]             = useState('today') // '' | 'today' | 'overdue' | 'upcoming'
   const [showCompleted, setShowCompleted] = useState(false)
   const [assigneeFilter, setAssigneeFilter] = useState('')
+  // Country comes from the linked company, and the options are the same
+  // managed 'company.country' list Companies and Deals filter on.
+  const [countryFilter, setCountryFilter] = useState('')
+  const { options: countryOptions } = useDropdownOptions('company.country')
 
   const [showCreate, setShowCreate] = useState(false)
   const [editTask, setEditTask]     = useState(null)
@@ -168,7 +173,11 @@ export default function Tasks() {
   const effectiveAssigneeId = taskTab === 'mine' ? user?.id : assigneeFilter
 
   const fetchTaskSummary = useCallback(() => {
-    const base = { type: 'task', page: 1, limit: 1, ...(effectiveAssigneeId && { assignedToId: effectiveAssigneeId }) }
+    const base = {
+      type: 'task', page: 1, limit: 1,
+      ...(effectiveAssigneeId && { assignedToId: effectiveAssigneeId }),
+      ...(countryFilter && { country: countryFilter }),
+    }
     Promise.all([
       api.get('/activities', { params: base }),
       api.get('/activities', { params: { ...base, bucket: 'today' } }),
@@ -180,7 +189,7 @@ export default function Tasks() {
       overdue: overdue.data?.total || 0,
       upcoming: upcoming.data?.total || 0,
     })).catch(() => {})
-  }, [effectiveAssigneeId])
+  }, [effectiveAssigneeId, countryFilter])
 
   useEffect(() => { fetchTaskSummary() }, [fetchTaskSummary])
 
@@ -195,12 +204,13 @@ export default function Tasks() {
         ...(bucket && { bucket }),
         ...(showCompleted && { showCompleted: 'true' }),
         ...(effectiveAssigneeId && { assignedToId: effectiveAssigneeId }),
+        ...(countryFilter && { country: countryFilter }),
       },
     })
       .then(r => { setTasks(r.data.items || []); setTotal(r.data.total || 0) })
       .catch(() => { setTasks([]); setTotal(0) })
       .finally(() => setLoading(false))
-  }, [page, search, bucket, showCompleted, effectiveAssigneeId])
+  }, [page, search, bucket, showCompleted, effectiveAssigneeId, countryFilter])
 
   useEffect(() => { fetchTasks() }, [fetchTasks])
 
@@ -222,6 +232,7 @@ export default function Tasks() {
           ...(bucket && { bucket }),
           ...(showCompleted && { showCompleted: 'true' }),
           ...(effectiveAssigneeId && { assignedToId: effectiveAssigneeId }),
+          ...(countryFilter && { country: countryFilter }),
         },
       })
       const batch = data.items || []
@@ -236,7 +247,7 @@ export default function Tasks() {
       p += 1
     }
     return collected
-  }, [search, bucket, showCompleted, effectiveAssigneeId])
+  }, [search, bucket, showCompleted, effectiveAssigneeId, countryFilter])
 
   const EXPORT_COLUMNS = [
     { key: 'title',           header: 'Task' },
@@ -268,8 +279,8 @@ export default function Tasks() {
   }
 
   const switchBucket = (b) => { setBucket(b); setPage(1) }
-  const clearFilters = () => { setSearch(''); setBucket('today'); setShowCompleted(false); setAssigneeFilter(''); setPage(1) }
-  const filtersActive = search || bucket !== 'today' || showCompleted || assigneeFilter
+  const clearFilters = () => { setSearch(''); setBucket('today'); setShowCompleted(false); setAssigneeFilter(''); setCountryFilter(''); setPage(1) }
+  const filtersActive = search || bucket !== 'today' || showCompleted || assigneeFilter || countryFilter
 
   return (
     <div className="tasks-workspace">
@@ -356,6 +367,16 @@ export default function Tasks() {
             {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
         )}
+
+        <select
+          className="tasks-assignee-select"
+          value={countryFilter}
+          onChange={e => { setCountryFilter(e.target.value); setPage(1) }}
+          title="Filter by the linked company's country"
+        >
+          <option value="">All countries</option>
+          {countryOptions.map(c => <option key={c.id || c.value} value={c.value}>{c.label}</option>)}
+        </select>
 
         <label className="tasks-completed-toggle">
           <input type="checkbox" checked={showCompleted} onChange={e => { setShowCompleted(e.target.checked); setPage(1) }} />

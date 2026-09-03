@@ -15,15 +15,32 @@ import { getAiStatus, aiUnavailableMessage } from '../utils/geminiModel'
 // ([CRM data] / [Page data] / [Email summary] / [AI inference]) and styles
 // them, without rewriting or reordering anything the model produced.
 
-// The prompt separates sections with a line of dashes and a NUMBERED heading:
+// The prompt separates sections with a rule line and a NUMBERED heading:
 //   ------------------------------------------------
 //   1. COMPANY SNAPSHOT & ORIGIN
 //   ------------------------------------------------
 // Matching that shape (rather than a fixed list of titles) means the renderer
 // keeps working if a heading is ever reworded in the prompt.
-const RULE_LINE = /^\s*-{5,}\s*$/
-const NUMBERED_LINE = /^\s*(\d+)\.\s+(.{3,90}?)\s*$/
-const BARE_HEADING = /^\s*(OUTPUT RULES:|TASK:|ROLE:|INPUTS PROVIDED TO YOU:)\s*$/
+//
+// The model does not always answer in that plain-text shape though — it often
+// returns the same sheet as Markdown instead:
+//   ---
+//   ### 1. COMPANY SNAPSHOT & ORIGIN
+//   * **Company Name:** OFICI `[CRM data]`
+// so the rule and heading patterns accept the Markdown forms too (3-dash
+// rules, leading #'s, a bold-wrapped heading). Without that, not one heading
+// matches, the whole sheet collapses into a single untitled block, and the
+// reader falls back to dumping the raw text.
+const RULE_LINE = /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/
+const NUMBERED_LINE = /^\s*#{0,6}\s*\*{0,2}\s*(\d+)\.\s+(.{3,90}?)\s*\*{0,2}\s*$/
+const BARE_HEADING = /^\s*#{0,6}\s*\*{0,2}\s*(OUTPUT RULES:|TASK:|ROLE:|INPUTS PROVIDED TO YOU:)\s*\*{0,2}\s*$/
+
+// Markdown emphasis is presentation the sheet renderer supplies itself (bold
+// field prefixes, provenance badges), so the markers are stripped rather than
+// printed literally as ** and ` characters.
+function stripMd(s) {
+  return s.replace(/`+/g, '').replace(/\*\*/g, '').replace(/^\s*#{1,6}\s*/, '')
+}
 
 // A numbered line is a section heading only if it READS like one. Testing for
 // "no lowercase anywhere" is too strict — the prompt's own section 5 is
@@ -81,6 +98,59 @@ function parseSheet(text) {
   return blocks
 }
 
+// The full sheet (sections 1-6) is the long detailed output the rep can
+// still get to via Copy — the card itself now shows a condensed read: one
+// representative fact from each of sections 1-5 (company snapshot, CMS,
+// enrichment opportunity, customer benefit, relationship context), a period
+// apiece, capped so a single unusually long line can't blow up the
+// paragraph, plus the Value Pitch pulled out of section 6 and called out on
+// its own. Section 6 (role-based talking points, including every role's
+// full Value Pitch) is then shown below, unabridged, exactly as it already
+// rendered — the only other thing visible besides the paragraph.
+const MAX_FACT_CHARS = 170
+function cleanSheetLine(line) {
+  return stripMd(line)
+    .replace(LABEL_RE, '')
+    .replace(/^\s*[-•*]\s+/, '')
+    .replace(/\s{2,}/g, ' ')
+    // A label removed from mid-sentence leaves "scan )" or "specs ." behind.
+    .replace(/\s+([)\],.;:])/g, '$1')
+    .replace(/\(\s*\)/g, '')
+    .trim()
+}
+function truncateFact(s) {
+  if (s.length <= MAX_FACT_CHARS) return s
+  return s.slice(0, MAX_FACT_CHARS - 1).replace(/\s+\S*$/, '') + '…'
+}
+function sentence(s) {
+  return /[.!?…]$/.test(s) ? s : s + '.'
+}
+function findBlock(blocks, num) {
+  return blocks.find(b => b.heading && new RegExp(`^${num}\\.`).test(b.heading))
+}
+function buildSummary(blocks) {
+  const facts = [1, 2, 3, 4, 5]
+    .map(n => {
+      const block = findBlock(blocks, n)
+      if (!block) return ''
+      const line = block.lines.map(cleanSheetLine).find(Boolean)
+      return line ? truncateFact(line) : ''
+    })
+    .filter(Boolean)
+
+  // Cleaning first, then matching, keeps this working whether the model wrote
+  // "Value Pitch: ..." or "* **Value Pitch:** ..." — the markers are gone by
+  // the time the prefix is tested.
+  const roleBlock = findBlock(blocks, 6)
+  let pitch = ''
+  if (roleBlock) {
+    const pitchLine = roleBlock.lines.map(cleanSheetLine).find(l => /^Value Pitch\s*:/i.test(l))
+    if (pitchLine) pitch = truncateFact(pitchLine.replace(/^Value Pitch\s*:\s*/i, ''))
+  }
+
+  return { facts, pitch, roleBlock }
+}
+
 // Renders one line, turning provenance labels into badges and bolding the
 // role-block field prefixes. Plain text otherwise — never reflowed.
 function renderLine(line, key) {
@@ -89,7 +159,10 @@ function renderLine(line, key) {
 
   const indent = (line.match(/^\s*/)?.[0].length || 0)
   const bullet = /^\s*[-•*]\s+/.test(line)
-  const body = bullet ? trimmed.replace(/^[-•*]\s+/, '') : trimmed
+  // Markdown markers are stripped before the field prefix is matched, so
+  // "* **Value Pitch:** …" bolds the same way "Value Pitch: …" always has,
+  // instead of printing the asterisks and backticks literally.
+  const body = stripMd(bullet ? trimmed.replace(/^[-•*]\s+/, '') : trimmed).trim()
 
   const fieldMatch = body.match(FIELD_RE)
   const afterField = fieldMatch ? body.slice(fieldMatch[0].length) : body
@@ -166,6 +239,11 @@ export default function CompanyIntelligence({ company }) {
 
   const blocks = result ? parseSheet(result.sheet) : []
   const src = result?.sources
+  const { facts, pitch, roleBlock } = result ? buildSummary(blocks) : { facts: [], pitch: '', roleBlock: null }
+  // If the model's output doesn't parse into the expected numbered sections
+  // (an older cached sheet, or a reworded prompt), fall back to the full
+  // block-by-block view rather than showing a blank card.
+  const summaryUnavailable = facts.length === 0 && !pitch && !roleBlock
 
   return (
     <div className="detail-section" style={{ marginBottom: 20 }}>
@@ -270,24 +348,54 @@ export default function CompanyIntelligence({ company }) {
               </span>
             </div>
 
-            <div style={{ border: '1px solid #eef1f5', borderRadius: 9, overflow: 'hidden' }}>
-              {blocks.map((b, bi) => (
-                <div key={bi} style={{ borderTop: bi === 0 ? 'none' : '1px solid #f1f5f9' }}>
-                  {b.heading && (
+            {summaryUnavailable ? (
+              <div style={{ border: '1px solid #eef1f5', borderRadius: 9, overflow: 'hidden' }}>
+                {blocks.map((b, bi) => (
+                  <div key={bi} style={{ borderTop: bi === 0 ? 'none' : '1px solid #f1f5f9' }}>
+                    {b.heading && (
+                      <div style={{
+                        fontSize: 14.5, fontWeight: 700, color: '#334155', letterSpacing: '.4px',
+                        textTransform: 'uppercase', padding: '8px 13px', background: '#f8fafc',
+                        borderBottom: '1px solid #f1f5f9',
+                      }}>
+                        {b.heading}
+                      </div>
+                    )}
+                    <div style={{ padding: '9px 13px' }}>
+                      {b.lines.map((l, li) => renderLine(l, li))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <>
+                {(facts.length > 0 || pitch) && (
+                  <div style={{
+                    border: '1px solid #eef1f5', borderRadius: 9, background: '#fafbfc',
+                    padding: '12px 14px', marginBottom: roleBlock ? 12 : 0,
+                    fontSize: 16, lineHeight: 1.6, color: '#0f172a',
+                  }}>
+                    {facts.map((f, i) => <span key={i}>{sentence(f)} </span>)}
+                    {pitch && <><strong style={{ color: '#334155' }}>Value Pitch: </strong>{sentence(pitch)}</>}
+                  </div>
+                )}
+
+                {roleBlock && (
+                  <div style={{ border: '1px solid #eef1f5', borderRadius: 9, overflow: 'hidden' }}>
                     <div style={{
                       fontSize: 14.5, fontWeight: 700, color: '#334155', letterSpacing: '.4px',
                       textTransform: 'uppercase', padding: '8px 13px', background: '#f8fafc',
                       borderBottom: '1px solid #f1f5f9',
                     }}>
-                      {b.heading}
+                      {roleBlock.heading}
                     </div>
-                  )}
-                  <div style={{ padding: '9px 13px' }}>
-                    {b.lines.map((l, li) => renderLine(l, li))}
+                    <div style={{ padding: '9px 13px' }}>
+                      {roleBlock.lines.map((l, li) => renderLine(l, li))}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                )}
+              </>
+            )}
 
             <div style={{ fontSize: 14, color: '#475467', borderTop: '1px solid #f1f5f9', paddingTop: 8, marginTop: 10 }}>
               Generated {fmtGeneratedAt(result.generatedAt)} ({result.model}) from CRM data

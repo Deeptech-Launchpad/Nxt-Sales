@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { APP_CONFIG } from '../config/app'
@@ -46,6 +46,16 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [success, setSuccess] = useState(false)
+
+  // The Google OAuth callback redirects here with ?error=google when the
+  // server-side sign-in failed (account issue, token exchange, etc.) — show
+  // it the same way any other login error shows, instead of a silent no-op.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('error') === 'google') {
+      setServerError('Google sign-in failed. Please try again or sign in with your work email.')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search])
 
   const passwordChecks = useMemo(() => ({
     length: form.password.length >= 8,
