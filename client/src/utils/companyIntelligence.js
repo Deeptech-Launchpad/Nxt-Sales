@@ -126,46 +126,39 @@ Any commitments the rep should honor or reference
 ------------------------------------------------
 6. ROLE-BASED CALL / EMAIL TALKING POINTS
 ------------------------------------------------
-Generate a tailored icebreaker + value angle + discovery question for
-WHICHEVER decision-maker role is set in CRM_DATA (contact job title). If
-multiple stakeholders are relevant, provide a short block for each of the
-following that applies:
+Do NOT output role templates, and do not reuse the wording of any generic
+script. This section is the one part of the sheet the rep could not have
+written without this analysis, so every line must trace back to something
+actually observed in CRM_DATA, PAGE_SOURCE or GMAIL_THREAD_SUMMARIES for THIS
+company.
 
-  CEO / Owner
-    - Angle: revenue growth, competitive positioning, ROI of enrichment
-    - Discovery Q: "How is online revenue trending vs. your in-store or
-      trade channel right now?"
+Read the contact's job title from CRM_DATA and pitch to that person's
+concerns, but do NOT label or split the output by role. Produce ONE
+consolidated set of talking points for the call that is about to happen.
 
-  Category Manager
-    - Angle: catalog completeness, SKU-level performance, supplier data
-      quality
-    - Discovery Q: "How much of your current catalog has full specs vs.
-      pages you know are still thin?"
+Output exactly these five labels, each starting its own line, in this order:
 
-  General Manager
-    - Angle: operational efficiency, reduced manual catalog work, team
-      bandwidth
-    - Discovery Q: "Who on your team currently owns writing and updating
-      product descriptions?"
+Icebreaker: One natural opening line. Reference something specific and
+  verifiable — a product range or category seen on their site, a recent thread
+  from GMAIL_THREAD_SUMMARIES, their location, their vertical. Never flattery,
+  never a generic greeting.
+Pain Points: The one or two concrete gaps or opportunities actually observed —
+  thin specifications, missing documentation, weak imagery, an objection or
+  delay raised over email, a platform limitation. State what was seen and where
+  it was seen.
+Value Pitch: One or two sentences on what Altisunxt does about those specific
+  gaps and why that matters commercially to this company. Tie it to the pain
+  points above, not to a general list of services.
+Sales Points: Two or three short bullets the rep should be ready to raise, each
+  on its own line beginning with '- '. Use proof points, catalog scale, prior
+  commitments from email, timing or seasonal hooks, or platform-specific
+  delivery detail. Skip anything not grounded in the inputs.
+Discovery Question: One open question that moves THIS deal to a next step,
+  informed by where the relationship actually stands. If an earlier thread
+  promised something, ask the question that follows from it.
 
-  Digital Marketing Manager
-    - Angle: SEO performance, content quality driving traffic and
-      conversion, campaign-ready assets
-    - Discovery Q: "Are you seeing thin product pages hurt your organic
-      search rankings against competitors?"
-
-  IT Manager
-    - Angle: clean integration with existing CMS/PIM, low-lift data feed
-      or bulk import process, minimal engineering burden
-    - Discovery Q: "What's your current process for pushing product data
-      updates live -- manual entry or feed-based?"
-
-For each applicable role, output:
-  Icebreaker: one natural, non-salesy opening line
-  The Hook: one specific, data-driven observation tied to PDP_URL/DOMAIN
-  Value Pitch: 1-2 sentences on what Altisunxt does and why it matters to
-    that role specifically
-  Discovery Question: the role-specific question above (or a close variant)
+Where the inputs do not support a line, write 'Not enough data' for that line
+rather than inventing something plausible. Mark reasoning as [AI inference].
 
 ------------------------------------------------
 OUTPUT RULES:

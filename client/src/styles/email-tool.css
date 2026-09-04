@@ -2007,3 +2007,33 @@ select.et-input{
 /* Divider -> details, and a steadier rhythm between the rows. */
 .et-preview-meta{padding-top:14px;padding-bottom:14px;gap:6px}
 .et-preview-attachments{padding-top:10px;padding-bottom:10px}
+
+/* ── Compose: column alignment + body editor ──────────────────────────
+   The section grid is 12 columns, but the paired label+input rows each
+   chose their own split — 5/7 for sender+recipient, 4/8 for client type
+   +template, 5/7 for mode+client name — while the nested Cc/Bcc row is a
+   plain 50/50. Four different boundaries meant the second column started
+   at a different x in every row. These put every paired row on the same
+   midpoint, so the left and right columns line up down the whole form.
+   The assets row is deliberately left at 8/4: it holds two upload boxes
+   against one, so an even split would squeeze the pair. */
+.et-section-recipients .et-field-sender{grid-column:1/span 6}
+.et-section-recipients .et-field-recipient{grid-column:7/-1}
+.et-section-setup .et-field-client-type{grid-column:1/span 6;grid-row:1}
+.et-section-setup .et-field-template{grid-column:7/-1;grid-row:1}
+.et-section-setup .et-field-mode{grid-column:1/span 6;grid-row:2}
+.et-section-setup .et-field-client-name{grid-column:7/-1;grid-row:2}
+
+/* The body was 86px tall with no ceiling: too small to write in, yet free
+   to grow past the viewport and push the sticky Send bar out of reach.
+   A real working height, capped against the viewport so the textarea
+   scrolls internally instead of the page scrolling under the action bar. */
+.et-section-message .et-textarea{
+  min-height:180px;
+  max-height:min(420px,42vh);
+  overflow-y:auto;
+  resize:vertical;
+}
+@media (max-width:720px){
+  .et-section-message .et-textarea{min-height:132px;max-height:min(320px,38vh)}
+}

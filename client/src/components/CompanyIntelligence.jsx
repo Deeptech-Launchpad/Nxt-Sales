@@ -67,7 +67,7 @@ const LABEL_RE = /(\[CRM data\]|\[Page data\]|\[Email summary\]|\[AI inference\]
 
 // The role blocks use these as inline field prefixes — bolding them makes the
 // sheet scannable on a live call, which is the whole point of the format.
-const FIELD_RE = /^(Icebreaker|The Hook|Value Pitch|Discovery Question|Angle|Discovery Q|Sentiment read|Last contact date and channel)\s*:/i
+const FIELD_RE = /^(Icebreaker|The Hook|Value Pitch|Discovery Question|Pain Points|Sales Points|Angle|Discovery Q|Sentiment read|Last contact date and channel)\s*:/i
 
 function fmtGeneratedAt(iso) {
   const d = new Date(iso)
