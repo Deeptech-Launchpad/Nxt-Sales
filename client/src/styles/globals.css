@@ -29,3 +29,110 @@ html, body, #root { height: 100%; }
 body { font-family: var(--font); font-size:13px; -webkit-font-smoothing: antialiased; color: var(--color-text); background: var(--color-section); }
 button { font-family: var(--font); }
 a { text-decoration: none; }
+
+/* Global readability pass. Main h1 typography is intentionally untouched. */
+:root {
+  --color-text-secondary: #111827;
+  --color-text-muted: #111827;
+  --readable-body-size: 13.5px;
+  --readable-supporting-size: 12.5px;
+}
+
+p {
+  color: #000000 !important;
+  font-size: var(--readable-body-size) !important;
+}
+
+small,
+:where(
+  [class*="subtitle"], [class*="sub-title"],
+  [class*="subheading"], [class*="sub-heading"],
+  [class*="description"], [class*="helper"],
+  [class*="hint"], [class*="caption"]
+) {
+  color: #000000 !important;
+  font-size: var(--readable-supporting-size) !important;
+}
+
+/* Dashboard supporting labels and secondary lines shown in cards and queues. */
+.md-page :where(
+  .md-eyebrow, .md-section-kicker, .md-pulse-copy small, .md-pulse-copy em,
+  .md-card-head p, .md-best-action-copy > span, .md-best-action-copy > small,
+  .md-best-action-copy > em, .md-task-copy small, .md-attention-row small,
+  .md-quick strong, .md-quick small, .md-deal-name small,
+  .md-momentum-card > p, .md-momentum-stat span, .md-empty-state p
+) {
+  color: #000000 !important;
+  font-size: 11.5px !important;
+}
+
+.md-page .md-lead-score small {
+  color: #000000 !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+}
+
+/* Prospect/company table secondary lines shown below primary values. */
+.pb-page :where(
+  .pb-company-main small, .pb-contact-person small, .pb-owner-line,
+  .pb-last-line, .pb-offer-link small, .pb-expand small,
+  .pb-contact-channel strong, .pb-contact-channel small,
+  .pb-card-head p, .pb-section-title p, .pb-channel-value span,
+  .pb-channel-meta span, .pb-timeline-row p, .pb-timeline-row small,
+  .pb-offer-card p, .pb-mini-offer span, .pb-mini-offer p,
+  .pb-personalized-note
+) {
+  color: #000000 !important;
+  font-size: 12px !important;
+}
+
+/* Explicit dark hero contrast. Light hero sections keep their own brand colors. */
+.md-page .md-hero .md-eyebrow,
+.md-page .md-hero .md-section-kicker,
+.md-page .md-hero .md-hero-copy > p,
+.md-page .md-hero .md-hero-message,
+.md-page .md-hero .md-hero-actions > span,
+.md-page .md-hero .md-quote-profile span,
+.md-page .md-hero .md-daily-quote > p,
+.md-page .md-hero .md-hero-pulse span,
+.dd-page .dd-hero .dd-eyebrow,
+.dd-page .dd-hero .dd-section-kicker,
+.dd-page .dd-hero .dd-hero-copy p,
+.dd-page .dd-hero .dd-hero-value > span,
+.dd-page .dd-hero .dd-hero-value small,
+.companies-page .companies-hero .companies-hero-eyebrow,
+.companies-page .companies-hero p,
+.deals-workspace .deals-hero .deals-hero-eyebrow,
+.deals-workspace .deals-hero .deals-meta,
+.tasks-workspace .tasks-hero .tasks-eyebrow,
+.tasks-workspace .tasks-hero p,
+.inbox-workspace .inbox-hero .inbox-eyebrow,
+.inbox-workspace .inbox-hero p,
+.inbox-workspace .inbox-hero-side p,
+.inbox-workspace .inbox-hero .inbox-total-card > span,
+.inbox-workspace .inbox-hero .inbox-total-card > small,
+.meetings-workspace .meetings-hero .meetings-eyebrow,
+.meetings-workspace .meetings-hero p,
+.recents-workspace .recents-hero .recents-eyebrow,
+.recents-workspace .recents-hero .recents-hero-copy > p,
+.recents-workspace .recents-hero .recents-hero-meta span,
+.recents-workspace .recents-hero .recents-hero-stats span,
+.st-page .st-hero > div > span,
+.st-page .st-hero p,
+.um-page .um-hero .um-hero-copy > span,
+.um-page .um-hero p {
+  color: #ffffff !important;
+}
+
+/* The Enrichment Reports hero is light, so its eyebrow must remain visible. */
+.er-page .er-hero .er-eyebrow {
+  color: #1d4ed8 !important;
+}
+
+@media (max-width: 1024px) {
+  :root { --readable-body-size: 13.5px; --readable-supporting-size: 12.5px; }
+}
+
+@media (max-width: 700px) {
+  :root { --readable-body-size: 13.5px; --readable-supporting-size: 12.5px; }
+}

@@ -26,3 +26,5 @@ server/uploads/
 # Temp directory
 tmp/
 
+# Generated report artifacts
+output/
