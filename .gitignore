@@ -3,10 +3,18 @@ client/node_modules/
 server/node_modules/
 dist/
 .env
+.env.*
+!.env.example
 *.env.local
 .DS_Store
 client/dist/
 server/dist/
+*.log
+*.timestamp-*.mjs
+
+# Local development and comparison workspaces
+.claude/
+temp_github_compare/
 
 # Excluded: contain a hardcoded secret — kept out of the repo
 get-user-and-test.js
@@ -14,3 +22,9 @@ server/test-task-flow.js
 
 # User-uploaded chat files (Update 3 / E5) — local disk storage, not repo content
 server/uploads/
+
+# Temp directory
+tmp/
+
+# Generated report artifacts
+output/
