@@ -136,12 +136,12 @@ export default function DropdownManager() {
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', fontFamily: 'DM Sans, sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <button onClick={() => navigate('/settings')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex' }}>
+        <button onClick={() => navigate('/settings')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#344054', display: 'flex' }}>
           <ArrowLeft size={18} />
         </button>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>Dropdown Lists</h1>
       </div>
-      <p style={{ fontSize: 13, color: '#94a3b8', margin: '4px 0 20px 28px' }}>
+      <p style={{ fontSize: 16, color: '#475467', margin: '4px 0 20px 28px' }}>
         Add, edit, reorder, enable/disable the values used across Company and Deal forms, filters, and Bulk Import.
       </p>
 
@@ -150,7 +150,7 @@ export default function DropdownManager() {
         <div style={{ width: 240, flexShrink: 0 }}>
           {fieldGroups.map(g => (
             <div key={g.group} style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '0 10px 6px' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#475467', textTransform: 'uppercase', letterSpacing: '0.5px', padding: '0 10px 6px' }}>
                 {g.group}
               </div>
               {g.fields.map(f => (
@@ -159,7 +159,7 @@ export default function DropdownManager() {
                   onClick={() => setSelectedKey(f.fieldKey)}
                   style={{
                     display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7,
-                    border: 'none', cursor: 'pointer', fontSize: 13, marginBottom: 2,
+                    border: 'none', cursor: 'pointer', fontSize: 16, marginBottom: 2,
                     background: selectedKey === f.fieldKey ? '#eff6ff' : 'transparent',
                     color: selectedKey === f.fieldKey ? '#1d4ed8' : '#334155',
                     fontWeight: selectedKey === f.fieldKey ? 600 : 400,
@@ -175,20 +175,20 @@ export default function DropdownManager() {
         {/* Right: values for the selected field */}
         <div style={{ flex: 1, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: 18 }}>
           {loading ? (
-            <p style={{ fontSize: 13, color: '#94a3b8' }}>Loading…</p>
+            <p style={{ fontSize: 16, color: '#475467' }}>Loading…</p>
           ) : (
             <>
-              {error && <p style={{ color: '#ef4444', fontSize: 12.5, marginTop: 0 }}>{error}</p>}
+              {error && <p style={{ color: '#ef4444', fontSize: 15.5, marginTop: 0 }}>{error}</p>}
 
               {isLeadOwnerField && (
-                <p style={{ fontSize: 12.5, color: '#64748b', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', marginTop: 0 }}>
+                <p style={{ fontSize: 15.5, color: '#344054', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 7, padding: '8px 10px', marginTop: 0 }}>
                   Lead Owner always shows every active user automatically, plus the permanent "Unassigned" option — it isn't manually managed here. Deactivate a user in User Management to remove them as an assignable owner.
                 </p>
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
                 {options.length === 0 && (
-                  <p style={{ fontSize: 13, color: '#94a3b8' }}>No values yet — add one below.</p>
+                  <p style={{ fontSize: 16, color: '#475467' }}>No values yet — add one below.</p>
                 )}
                 {options.map((opt, i) => (
                   <div key={opt.id} style={{
@@ -197,7 +197,7 @@ export default function DropdownManager() {
                     opacity: opt.enabled ? 1 : 0.5, background: opt.enabled ? '#fff' : '#f8fafc',
                   }}>
                     {isLeadOwnerField ? (
-                      <span style={{ flex: 1, fontSize: 13.5, color: opt.protected ? '#64748b' : '#0f172a', fontStyle: opt.protected ? 'italic' : 'normal' }}>
+                      <span style={{ flex: 1, fontSize: 16.5, color: opt.protected ? '#64748b' : '#0f172a', fontStyle: opt.protected ? 'italic' : 'normal' }}>
                         {opt.label}
                       </span>
                     ) : (
@@ -218,19 +218,19 @@ export default function DropdownManager() {
                               value={editingLabel}
                               onChange={e => setEditingLabel(e.target.value)}
                               onKeyDown={e => e.key === 'Enter' && saveLabel(opt)}
-                              style={{ flex: 1, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 13 }}
+                              style={{ flex: 1, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 16 }}
                             />
                             <button onClick={() => saveLabel(opt)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a' }}><Check size={16} /></button>
-                            <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={16} /></button>
+                            <button onClick={() => setEditingId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475467' }}><X size={16} /></button>
                           </>
                         ) : (
                           <>
-                            <span style={{ flex: 1, fontSize: 13.5, color: '#0f172a' }}>{opt.label}</span>
-                            <button onClick={() => { setEditingId(opt.id); setEditingLabel(opt.label) }} title="Rename" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}>
+                            <span style={{ flex: 1, fontSize: 16.5, color: '#0f172a' }}>{opt.label}</span>
+                            <button onClick={() => { setEditingId(opt.id); setEditingLabel(opt.label) }} title="Rename" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#344054' }}>
                               <Pencil size={14} />
                             </button>
                             <button onClick={() => toggleEnabled(opt)} title={opt.enabled ? 'Disable' : 'Enable'}
-                              style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: '1px solid', cursor: 'pointer',
+                              style={{ fontSize: 14, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: '1px solid', cursor: 'pointer',
                                 borderColor: opt.enabled ? '#bbf7d0' : '#e2e8f0', color: opt.enabled ? '#16a34a' : '#94a3b8', background: opt.enabled ? '#f0fdf4' : '#fff' }}>
                               {opt.enabled ? 'Enabled' : 'Disabled'}
                             </button>
@@ -252,9 +252,9 @@ export default function DropdownManager() {
                     onChange={e => setNewValue(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && addValue()}
                     placeholder="Add a new value…"
-                    style={{ flex: 1, padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
+                    style={{ flex: 1, padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 16 }}
                   />
-                  <button onClick={addValue} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#fff', background: '#3b82f6', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+                  <button onClick={addValue} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: 16, fontWeight: 600, color: '#fff', background: '#3b82f6', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
                     <Plus size={14} /> Add
                   </button>
                 </div>

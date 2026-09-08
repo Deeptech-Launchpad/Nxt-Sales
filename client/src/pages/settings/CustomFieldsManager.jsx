@@ -118,12 +118,12 @@ export default function CustomFieldsManager() {
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', fontFamily: 'DM Sans, sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <button onClick={() => navigate('/settings')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex' }}>
+        <button onClick={() => navigate('/settings')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#344054', display: 'flex' }}>
           <ArrowLeft size={18} />
         </button>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>Custom Fields</h1>
       </div>
-      <p style={{ fontSize: 13, color: '#94a3b8', margin: '4px 0 20px 28px' }}>
+      <p style={{ fontSize: 16, color: '#475467', margin: '4px 0 20px 28px' }}>
         Add business-specific fields to Company, Deal, Task, and Meeting records — they appear automatically in Create/Edit forms, Edit Columns, Import/Export, and filters.
       </p>
 
@@ -136,7 +136,7 @@ export default function CustomFieldsManager() {
               onClick={() => setEntity(e)}
               style={{
                 display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 7,
-                border: 'none', cursor: 'pointer', fontSize: 13, marginBottom: 2,
+                border: 'none', cursor: 'pointer', fontSize: 16, marginBottom: 2,
                 background: entity === e ? '#eff6ff' : 'transparent',
                 color: entity === e ? '#1d4ed8' : '#334155',
                 fontWeight: entity === e ? 600 : 400,
@@ -150,13 +150,13 @@ export default function CustomFieldsManager() {
         {/* Right: fields for the selected entity */}
         <div style={{ flex: 1, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: 18 }}>
           {loading ? (
-            <p style={{ fontSize: 13, color: '#94a3b8' }}>Loading…</p>
+            <p style={{ fontSize: 16, color: '#475467' }}>Loading…</p>
           ) : (
             <>
-              {error && <p style={{ color: '#ef4444', fontSize: 12.5, marginTop: 0 }}>{error}</p>}
+              {error && <p style={{ color: '#ef4444', fontSize: 15.5, marginTop: 0 }}>{error}</p>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
                 {fields.length === 0 && (
-                  <p style={{ fontSize: 13, color: '#94a3b8' }}>No custom fields yet for {entity} — add one below.</p>
+                  <p style={{ fontSize: 16, color: '#475467' }}>No custom fields yet for {entity} — add one below.</p>
                 )}
                 {fields.map((field, i) => (
                   <div key={field.id} style={{
@@ -180,30 +180,30 @@ export default function CustomFieldsManager() {
                           value={editDraft.label}
                           onChange={e => setEditDraft(d => ({ ...d, label: e.target.value }))}
                           onKeyDown={e => e.key === 'Enter' && saveEdit(field)}
-                          style={{ flex: 1, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 13 }}
+                          style={{ flex: 1, padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 16 }}
                         />
                         <select
                           value={editDraft.type}
                           onChange={e => setEditDraft(d => ({ ...d, type: e.target.value }))}
                           title="Field type (only changeable while no values are stored for this field)"
-                          style={{ padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 12.5 }}
+                          style={{ padding: '5px 8px', border: '1px solid #cbd5e1', borderRadius: 5, fontSize: 15.5 }}
                         >
                           {TYPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                         </select>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: '#64748b', whiteSpace: 'nowrap' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 14.5, color: '#344054', whiteSpace: 'nowrap' }}>
                           <input type="checkbox" checked={editDraft.required} onChange={e => setEditDraft(d => ({ ...d, required: e.target.checked }))} />
                           Required
                         </label>
                         <button onClick={() => saveEdit(field)} title="Save" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a' }}><Check size={16} /></button>
-                        <button onClick={() => setEditingId(null)} title="Cancel" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={16} /></button>
+                        <button onClick={() => setEditingId(null)} title="Cancel" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#475467' }}><X size={16} /></button>
                       </>
                     ) : (
                       <>
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontSize: 13.5, color: '#0f172a' }}>
+                          <span style={{ fontSize: 16.5, color: '#0f172a' }}>
                             {field.label}{field.required && <span style={{ color: '#ef4444' }}> *</span>}
                           </span>
-                          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                          <span style={{ fontSize: 14, color: '#475467' }}>
                             {TYPE_LABEL[field.type] || field.type} · key: {field.key}
                           </span>
                         </div>
@@ -211,19 +211,19 @@ export default function CustomFieldsManager() {
                           <button
                             onClick={() => navigate(`/settings/dropdowns?field=${entity.toLowerCase()}.custom.${field.key}`)}
                             title="Manage values"
-                            style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: '1px solid #bfdbfe', color: '#1d4ed8', background: '#eff6ff', cursor: 'pointer' }}
+                            style={{ fontSize: 14, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: '1px solid #bfdbfe', color: '#1d4ed8', background: '#eff6ff', cursor: 'pointer' }}
                           >
                             Manage values
                           </button>
                         )}
                         <button
                           onClick={() => { setEditingId(field.id); setEditDraft({ label: field.label, type: field.type, required: field.required }) }}
-                          title="Edit field" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+                          title="Edit field" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#344054' }}
                         >
                           <Pencil size={14} />
                         </button>
                         <button onClick={() => toggleEnabled(field)} title={field.enabled ? 'Disable' : 'Enable'}
-                          style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: '1px solid', cursor: 'pointer',
+                          style={{ fontSize: 14, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: '1px solid', cursor: 'pointer',
                             borderColor: field.enabled ? '#bbf7d0' : '#e2e8f0', color: field.enabled ? '#16a34a' : '#94a3b8', background: field.enabled ? '#f0fdf4' : '#fff' }}>
                           {field.enabled ? 'Enabled' : 'Disabled'}
                         </button>
@@ -242,25 +242,25 @@ export default function CustomFieldsManager() {
                   onChange={e => setNewLabel(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && addField()}
                   placeholder={`Add a new ${entity} field… (e.g. GST Number)`}
-                  style={{ flex: 1, minWidth: 200, padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
+                  style={{ flex: 1, minWidth: 200, padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 16 }}
                 />
                 <select
                   value={newType}
                   onChange={e => setNewType(e.target.value)}
-                  style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 13 }}
+                  style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 16 }}
                 >
                   {TYPE_OPTIONS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#64748b' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 15, color: '#344054' }}>
                   <input type="checkbox" checked={newRequired} onChange={e => setNewRequired(e.target.checked)} />
                   Required
                 </label>
-                <button onClick={addField} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: 13, fontWeight: 600, color: '#fff', background: '#3b82f6', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+                <button onClick={addField} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: 16, fontWeight: 600, color: '#fff', background: '#3b82f6', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
                   <Plus size={14} /> Add
                 </button>
               </div>
               {CHOICE_TYPES.has(newType) && (
-                <p style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <p style={{ fontSize: 14.5, color: '#475467', marginTop: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
                   <ListPlus size={12} /> After creating a Dropdown/Multi Select field, use "Manage values" to add its option list.
                 </p>
               )}
