@@ -368,6 +368,11 @@
 .company-modal-alert>.material-symbols-rounded{margin-top:1px;color:#d97706;font-size:16px}
 .company-modal-alert p{margin:0 0 2px;font-size:10.5px;font-weight:700}.company-modal-alert span{display:block;font-size:9.5px;line-height:1.4}
 .company-modal-alert a{display:inline-block;margin-top:3px;color:#1d4ed8;font-size:9.5px;font-weight:650;text-decoration:none}.company-modal-alert a:hover{text-decoration:underline}
+/* Duplicate warning renders inline, directly beneath Company URL, so it
+   appears beside the fields the live check reads rather than at the end of
+   the form. Spacing only — the alert box itself is styled above. */
+.company-duplicate-inline{margin:2px 0 0}
+.company-duplicate-inline .company-modal-alert{margin:0}
 .company-modal-custom{min-width:0}.company-modal-custom>div{margin-top:0!important;padding-top:10px!important}
 .company-modal-error{display:flex;align-items:center;gap:6px;margin:0 0 14px;padding:8px 10px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;color:#b42318;font-size:10.5px;font-weight:600}
 .company-modal-error .material-symbols-rounded{font-size:16px}

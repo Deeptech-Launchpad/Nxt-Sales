@@ -206,6 +206,24 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
                 <label><MaterialIcon>language</MaterialIcon>Company URL</label>
                 <input type="text" value={form.domain} onChange={e => set('domain', e.target.value)} placeholder="example.com" />
               </div>
+
+              {/* Sits directly under Company URL, next to the two fields the
+                  live check actually reads (Company name and Company URL), so
+                  the warning appears beside its cause rather than at the far
+                  end of the form. Same markup, same message, same link, same
+                  detection — only the position moved. */}
+              {duplicate && (
+                <div className="company-duplicate-inline field-span-2" role="status" aria-live="polite">
+                  <div className="company-modal-alert">
+                    <MaterialIcon>warning</MaterialIcon>
+                    <div>
+                      <p>Duplicate company detected</p>
+                      <span><strong>{duplicate.name}</strong> already exists with the same name, email, phone, or company URL.</span>
+                      <a href={`/companies/${duplicate.id}`} onClick={() => { reset(); onClose() }}>View existing company →</a>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="form-group">
                 <label><MaterialIcon>link</MaterialIcon>End PDP URL</label>
                 <input type="url" value={form.endPdpUrl} onChange={e => set('endPdpUrl', e.target.value)} placeholder="https://..." />
@@ -269,25 +287,8 @@ export default function CreateCompanyModal({ isOpen, onClose, onSave }) {
 
           {error && <p className="company-modal-error"><MaterialIcon>error</MaterialIcon>{error}</p>}
 
-          {/* Docked to the bottom of the form rather than inserted between the
-              fields. As the LAST element in the scroll area it can only ever
-              extend the end of the form — no field above it can move, so nothing
-              jumps when it appears or clears. position:sticky then keeps it on
-              screen while the user is still up at Company name / Company URL,
-              so it is visible immediately without having to scroll for it.
-              Same markup, same link, same detection. */}
-          {duplicate && (
-            <div className="company-duplicate-dock" role="status" aria-live="polite">
-              <div className="company-modal-alert">
-                <MaterialIcon>warning</MaterialIcon>
-                <div>
-                  <p>Duplicate company detected</p>
-                  <span><strong>{duplicate.name}</strong> already exists with the same name, email, phone, or company URL.</span>
-                  <a href={`/companies/${duplicate.id}`} onClick={() => { reset(); onClose() }}>View existing company →</a>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* The duplicate warning now renders inline, directly beneath the
+              Company URL field — see above. */}
         </div>
 
         <div className="modal-footer company-modal-footer">
