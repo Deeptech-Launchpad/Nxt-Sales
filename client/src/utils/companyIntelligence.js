@@ -289,7 +289,7 @@ async function gatherContext(company) {
           .then(r => r.data)
           .catch(() => ({ ok: false, reason: 'The page could not be fetched.' }))
       : Promise.resolve({ ok: false, reason: 'No PDP URL or domain is stored for this company.' }),
-    api.get(`/ intelligence / email - summaries / ${ company.id } `)
+    api.get(`/intelligence/email-summaries/${company.id}`)
       .then(r => r.data)
       .catch(() => ({ ok: false })),
   ])
