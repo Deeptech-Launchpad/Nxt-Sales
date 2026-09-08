@@ -42,8 +42,8 @@ function isConfigured() {
 
 let cache = { model: null, at: 0, error: null }
 
-async function fetchJson(url, options = {}) {
-  const res = await fetch(url, { ...options, signal: AbortSignal.timeout(ATTEMPT_TIMEOUT_MS) })
+async function fetchJson(url, options = {}, timeoutMs = ATTEMPT_TIMEOUT_MS) {
+  const res = await fetch(url, { ...options, signal: AbortSignal.timeout(timeoutMs) })
   const body = await res.json().catch(() => ({}))
   return { ok: res.ok, status: res.status, body }
 }
@@ -105,7 +105,11 @@ async function getStatus({ refresh = false } = {}) {
 // so one exhausted model does not mean the key is blocked. A bad key or a
 // safety block fails the same way on every model, so those stop immediately
 // rather than burning through the list.
-async function generate(requestBody, { feature = null, userId = null } = {}) {
+// timeoutMs overrides the per-attempt deadline for callers whose requests are
+// legitimately slow — multimodal screenshot analysis takes far longer than the
+// text prompts this default was chosen for. Omitting it keeps the old value,
+// so no existing caller changes behaviour.
+async function generate(requestBody, { feature = null, userId = null, timeoutMs = ATTEMPT_TIMEOUT_MS } = {}) {
   if (!isConfigured()) throw Object.assign(new Error('AI is not configured on the server.'), { status: 503 })
   if (!aiEnabled()) throw Object.assign(new Error('AI is currently disabled.'), { status: 503 })
 
@@ -124,10 +128,10 @@ async function generate(requestBody, { feature = null, userId = null } = {}) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody),
-      })
+      }, timeoutMs)
     } catch (networkErr) {
       lastErr = new Error(networkErr.name === 'TimeoutError'
-        ? `${model} did not respond within ${ATTEMPT_TIMEOUT_MS / 1000}s`
+        ? `${model} did not respond within ${timeoutMs / 1000}s`
         : networkErr.message)
       continue
     }
