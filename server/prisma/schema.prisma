@@ -11,6 +11,7 @@ model User {
   id               String         @id @default(cuid())
   email            String         @unique
   name             String
+  companyName      String?
   passwordHash     String?
   googleId         String?        @unique
   avatar           String?
@@ -20,6 +21,7 @@ model User {
   inviteExpires    DateTime?
   signature        String?
   signatureImage   String?        @db.Text
+  settings         Json?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
   activities       Activity[]     @relation("ActivityCreator")
@@ -35,11 +37,6 @@ model User {
   chatMessageReceipts ChatMessageReceipt[]
   aiUsage          AiUsage[]
   followUpEnrollments FollowUpEnrollment[]
-  // Back-relation required by ProductEnrichmentReport.owner. Deliberately the
-  // ONLY User field taken from the frontend branch: its `settings` and
-  // `companyName` columns belong to unrelated features (user settings and
-  // company favourites) that nothing here uses, and pulling them in would drag
-  // in migrations this integration does not need.
   enrichmentReports ProductEnrichmentReport[]
 }
 
