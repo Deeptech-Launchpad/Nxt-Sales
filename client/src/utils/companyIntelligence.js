@@ -68,7 +68,7 @@ read in under a minute before dialing. Label every claim as one of:
   [CRM data]      -- pulled directly from CRM fields
   [Page data]     -- observed directly on the site/PDP
   [Email summary] -- derived from synced Gmail thread
-  [AI inference]  -- your reasoning, not a verified fact
+  [AI inference]  -- your reasoning for sales related pitch, not a verified fact
 
 ------------------------------------------------
 1. COMPANY SNAPSHOT & ORIGIN
@@ -132,49 +132,68 @@ written without this analysis, so every line must trace back to something
 actually observed in CRM_DATA, PAGE_SOURCE or GMAIL_THREAD_SUMMARIES for THIS
 company.
 
-Read the contact's job title from CRM_DATA and pitch to that person's
-concerns, but do NOT label or split the output by role. Produce ONE
-consolidated set of talking points for the call that is about to happen.
+Read CRM_DATA (contact, company, deal stage), NOTES, TASKS, and
+GMAIL_THREAD_SUMMARIES for this lead. Produce exactly two sections, each
+starting on its own line, in this order. Do not add any other sections,
+headers, or commentary.
 
-Output exactly these five labels, each starting its own line, in this order:
+### Summary
+4-6 lines, plain sentences (no sub-bullets), covering only what is present
+in the inputs:
+Who the contact is and what the company does (from CRM_DATA — name,
+  title if present, company, vertical/category).
+Current deal stage and how long it's been there, if in CRM_DATA.
+What's happened recently: last email thread topic and outcome (from
+  GMAIL_THREAD_SUMMARIES), any open task or follow-up commitment (from
+  TASKS), and anything notable from NOTES.
+If job title is missing from CRM_DATA, state "Title not on file" rather
+  than guessing.
+If a sub-point has no supporting data, omit it silently — do not pad the
+summary to reach a line count.
 
-Icebreaker: One natural opening line. Reference something specific and
-  verifiable — a product range or category seen on their site, a recent thread
-  from GMAIL_THREAD_SUMMARIES, their location, their vertical. Never flattery,
-  never a generic greeting.
-Pain Points: The one or two concrete gaps or opportunities actually observed —
-  thin specifications, missing documentation, weak imagery, an objection or
-  delay raised over email, a platform limitation. State what was seen and where
-  it was seen.
-Value Pitch: One or two sentences on what Altisunxt does about those specific
-  gaps and why that matters commercially to this company. Tie it to the pain
-  points above, not to a general list of services.
-Sales Points: Two or three short bullets the rep should be ready to raise, each
-  on its own line beginning with '- '. Use proof points, catalog scale, prior
-  commitments from email, timing or seasonal hooks, or platform-specific
-  delivery detail. Skip anything not grounded in the inputs.
-Discovery Question: One open question that moves THIS deal to a next step,
-  informed by where the relationship actually stands. If an earlier thread
-  promised something, ask the question that follows from it.
+### Sales Outreach Pitch
+One single paragraph, STRICTLY 3-4 lines (roughly 120 -150 words), no line
+breaks, no bullets, no sub-labels — tight enough for a rep to read
+verbatim on a call. Compress the following into that space, blended into
+natural prose, not marked or headed:
+1. A brief opening reference to something specific and verifiable — a
+   product range/category on their site, a recent thread from
+   GMAIL_THREAD_SUMMARIES, their location, or their vertical.
+2. The commercial opportunity for this account, framed as upside (not a
+   deficiency), tied directly to what Altiusnxt does about it.
+3. At most ONE concrete proof point (catalog scale, a prior email
+   commitment, a seasonal/timing hook, or delivery detail) — only if
+   grounded in the inputs.
+4. A closing open question that moves this deal to a next step. If an
+   earlier thread promised something, this question should follow from
+   it.
+Prioritize the opening reference, the opportunity/value tie, and the
+closing question — drop the proof point first if the word count won't
+fit all four.
 
-Where the inputs do not support a line, write 'Not enough data' for that line
-rather than inventing something plausible. Mark reasoning as [AI inference].
+If the inputs don't support enough of the above to form a genuine
+paragraph, write "Not enough data for a pitch" instead of inventing one.
 
 ------------------------------------------------
-OUTPUT RULES:
+OUTPUT RULES
 ------------------------------------------------
-Keep the full sheet to one page equivalent; role-based section may run
-  slightly longer if multiple contacts are involved
-Never fabricate company history, financials, or contact details --
-  mark uncertain items [AI inference] and keep them brief
-If CRM_DATA has no job title for the contact, default to Category
-  Manager and General Manager blocks (most common CMS/catalog owners)
+Keep the whole output to one page equivalent.
+Never fabricate company history, financials, or contact details. Any
+  inferred (not directly stated) reasoning folded into the paragraph must
+  be marked inline with [AI inference] immediately after the inferred
+  clause, and kept brief — this inline tag does not count toward the
+  3-4 line cap.
+If CRM_DATA has no job title, note it in the Summary as "Title not on
+  file" and keep the pitch role-neutral.
+Do not split or label content by contact role — one consolidated
+  Summary and one consolidated Pitch paragraph, even if multiple contacts
+  exist on the account.
 End with a timestamp and model/source disclosure line, matching the
-existing CRM AI-inference footer convention.`
+  existing CRM AI-inference footer convention.`
 
 function line(label, value) {
   const v = Array.isArray(value) ? value.filter(Boolean).join(', ') : value
-  return `${label}: ${v && String(v).trim() ? String(v).trim() : 'Not available'}`
+  return `${ label }: ${ v && String(v).trim() ? String(v).trim() : 'Not available'}`
 }
 
 // ── Input block builders — one per named input in the prompt ───────────────
@@ -217,17 +236,17 @@ export function buildCompanyDataBlock(company, extraContext = {}) {
 // site because of CORS). Reduced to text + platform signals by the server.
 function buildPageSourceBlock(page) {
   if (!page || !page.ok) {
-    return `PAGE_SOURCE: Not available${page?.reason ? ` — ${page.reason}` : ''}. Work from DOMAIN and CRM_DATA only; do not invent page observations.`
+    return `PAGE_SOURCE: Not available${ page?.reason ? ` — ${page.reason}` : '' }. Work from DOMAIN and CRM_DATA only; do not invent page observations.`
   }
   const s = page.signals || {}
   return [
-    `PAGE_SOURCE (fetched live from ${page.finalUrl}):`,
+    `PAGE_SOURCE(fetched live from ${ page.finalUrl }): `,
     line('Page title', s.title),
     line('Meta description', s.metaDescription),
     line('Platform signatures detected in markup', s.platforms),
     line('Generator meta tag', s.generator),
-    `Structured data present: ${s.hasStructuredData ? 'yes' : 'no'}; Product schema present: ${s.productSchema ? 'yes' : 'no'}`,
-    `Rough page composition: ${s.imageCount} images, ${s.tableCount} tables, ${s.pdfLinks} PDF links`,
+    `Structured data present: ${ s.hasStructuredData ? 'yes' : 'no' }; Product schema present: ${ s.productSchema ? 'yes' : 'no' } `,
+    `Rough page composition: ${ s.imageCount } images, ${ s.tableCount } tables, ${ s.pdfLinks } PDF links`,
     '',
     'Extracted page text:',
     page.text || '(no text extracted)',
@@ -241,15 +260,15 @@ function buildEmailBlock(mail) {
     return 'GMAIL_THREAD_SUMMARIES: Not available — no synced email is stored against this company. Say so plainly in section 5 rather than inferring a relationship.'
   }
   const parts = [
-    `GMAIL_THREAD_SUMMARIES (${mail.messageCount} message(s) across ${mail.threadCount} thread(s); last contact ${mail.lastContactAt || 'unknown'}):`,
+    `GMAIL_THREAD_SUMMARIES(${ mail.messageCount } message(s) across ${ mail.threadCount } thread(s); last contact ${ mail.lastContactAt || 'unknown' }): `,
   ]
   for (const t of mail.threads || []) {
     parts.push('')
-    parts.push(`Thread: ${t.subject}`)
-    parts.push(`  Messages: ${t.messageCount}; first ${t.firstAt}; last ${t.lastAt} (${t.lastDirection})`)
-    if (t.participants?.length) parts.push(`  Participants: ${t.participants.join(', ')}`)
+    parts.push(`Thread: ${ t.subject } `)
+    parts.push(`  Messages: ${ t.messageCount }; first ${ t.firstAt }; last ${ t.lastAt } (${ t.lastDirection })`)
+    if (t.participants?.length) parts.push(`  Participants: ${ t.participants.join(', ') } `)
     for (const e of t.excerpts || []) {
-      parts.push(`  [${e.direction} @ ${e.at}] ${e.text}`)
+      parts.push(`  [${ e.direction } @${ e.at }] ${ e.text } `)
     }
   }
   return parts.join('\n')
@@ -270,7 +289,7 @@ async function gatherContext(company) {
           .then(r => r.data)
           .catch(() => ({ ok: false, reason: 'The page could not be fetched.' }))
       : Promise.resolve({ ok: false, reason: 'No PDP URL or domain is stored for this company.' }),
-    api.get(`/intelligence/email-summaries/${company.id}`)
+    api.get(`/ intelligence / email - summaries / ${ company.id } `)
       .then(r => r.data)
       .catch(() => ({ ok: false })),
   ])
@@ -292,8 +311,8 @@ export async function generateCompanyInsights(company, extraContext = {}) {
   const { page, mail, pdpUrl, domain } = await gatherContext(company)
 
   const userBlock = [
-    `PDP_URL: ${pdpUrl || 'Not available'}`,
-    `DOMAIN: ${domain || 'Not available'}`,
+    `PDP_URL: ${ pdpUrl || 'Not available' } `,
+    `DOMAIN: ${ domain || 'Not available' } `,
     '',
     buildCompanyDataBlock(company, extraContext),
     '',
