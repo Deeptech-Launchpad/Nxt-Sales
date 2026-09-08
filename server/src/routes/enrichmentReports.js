@@ -9,7 +9,7 @@ const { execFileSync } = require('child_process')
 const PDFDocument = require('pdfkit')
 const { GoogleGenAI } = require('@google/genai')
 const axios = require('axios')
-const { buildEnterpriseAssessmentPdf } = require('../services/pdfReportGenerator')
+const { buildReferencePdf: buildEnterpriseAssessmentPdf } = require('../services/referencePdfGenerator')
 
 const prisma = new PrismaClient()
 const ROOT = path.join(__dirname, '../../uploads/enrichment-reports')
@@ -50,6 +50,18 @@ const MATRIX_AREAS = [
 ]
 const RESULT_STATUSES = new Set(['Detected', 'Added', 'Enriched', 'Improved', 'Standardized', 'Normalized', 'Corrected', 'Unchanged', 'Not Detected', 'Needs Verification'])
 const SCORE_AREAS = ['Content Completeness', 'Technical Specifications', 'Taxonomy', 'Structured Attributes', 'Search Readiness', 'Buyer Clarity', 'Digital Assets', 'Compliance Information']
+const ANALYSIS_SCHEMA_VERSION = 'focused-after-specifications-v3'
+const analysisCache = new Map()
+const analysisInFlight = new Map()
+const analysisKey = (ownerId, body) => crypto.createHash('sha256').update(JSON.stringify({
+  ownerId,
+  before: body?.beforeImage?.url,
+  beforePage: body?.beforeImage?.pdfPage || body?.beforePdfPage || 1,
+  after: body?.afterImage?.url,
+  afterPage: body?.afterImage?.pdfPage || body?.afterPdfPage || 1,
+  model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+  schemaVersion: ANALYSIS_SCHEMA_VERSION
+})).digest('hex')
 
 const clean = (v, max = 500) => String(v ?? '').trim().slice(0, max)
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -84,13 +96,15 @@ const generateViaRest = async (apiKey, request) => {
   if (!text) throw new Error('Gemini returned an empty analysis response.')
   return { text }
 }
-const normalize = body => ({
+const normalize = body => {
+  const requestedDate = body.reportDate ? new Date(body.reportDate) : new Date()
+  return ({
   name: clean(body.name, 200),
   clientName: clean(body.clientName, 160),
   clientLogo: body.clientLogo && typeof body.clientLogo === 'object' ? body.clientLogo : null,
   preparedFor: clean(body.preparedFor, 160) || null,
   preparedBy: clean(body.preparedBy, 160) || 'AltiusNxt Technologies Pvt Ltd',
-  reportDate: body.reportDate ? new Date(body.reportDate) : new Date(),
+  reportDate: Number.isNaN(requestedDate.getTime()) ? new Date() : requestedDate,
   projectName: clean(body.projectName, 200) || 'Product Data Enrichment POC',
   executiveSummary: String(body.executiveSummary || '').slice(0, 6000),
   nextSteps: String(body.nextSteps || '').slice(0, 4000),
@@ -99,7 +113,8 @@ const normalize = body => ({
   status: STATUSES.has(body.status) ? body.status : 'Draft',
   products: Array.isArray(body.products) ? body.products : [],
   branding: body.branding && typeof body.branding === 'object' ? body.branding : {},
-})
+  })
+}
 
 router.get('/', auth, async (req, res) => {
   try {
@@ -222,12 +237,22 @@ router.post('/upload/image', auth, (req, res) => upload.single('image')(req, res
 }))
 
 router.post('/analysis/generate', auth, async (req, res) => {
+  const p = req.body || {}
+  if (!p.beforeImage?.url || !p.afterImage?.url) return res.status(422).json({ message: 'Upload both Before and After files.' })
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY') return res.status(503).json({ message: 'Backend Gemini API key is not configured.' })
+  const cacheKey = analysisKey(req.user.id, req.body)
+  if (analysisCache.has(cacheKey)) return res.json({ ...analysisCache.get(cacheKey), cached: true })
+  if (analysisInFlight.has(cacheKey)) {
+    try { return res.json({ ...(await analysisInFlight.get(cacheKey)), cached: true }) }
+    catch (error) { return res.status(500).json({ message: error.message || 'AI analysis failed.' }) }
+  }
+  let resolveAnalysis
+  let rejectAnalysis
+  const pendingAnalysis = new Promise((resolve, reject) => { resolveAnalysis = resolve; rejectAnalysis = reject })
+  pendingAnalysis.catch(() => {})
+  analysisInFlight.set(cacheKey, pendingAnalysis)
   try {
-    const p = req.body || {}
-    if (!p.beforeImage?.url || !p.afterImage?.url) return res.status(422).json({ message: 'Upload both Before and After files.' })
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY') return res.status(503).json({ message: 'Backend Gemini API key is not configured.' })
-
     const toPart = asset => {
       const file = imagePath(asset)
       if (!file || !fs.existsSync(file)) throw new Error(`Uploaded file not found: ${asset.filename || 'file'}`)
@@ -256,11 +281,13 @@ Return ONLY valid JSON with this exact shape:
   "existingSpecificationCount": "count only when directly countable, otherwise blank",
   "enrichedSpecificationCount": "count only when directly countable, otherwise blank",
   "filterFieldsEnabled": "comma-separated fields visibly enabled by enriched data or blank",
-  "beforeSummary": "detailed evidence-based explanation of original listing state, unstructured fields, and missing attributes",
-  "afterSummary": "detailed evidence-based explanation of added attributes, standardized taxonomy, structured specs, and compliance details",
+  "beforeSummary": "3 detailed evidence-based paragraphs covering visible content, structure gaps, SEO/search gaps, technical buyer gaps, schema/filter readiness, and taxonomy depth",
+  "afterSummary": "3 detailed evidence-based paragraphs covering enriched naming, structured specifications, normalized attributes, filter readiness, category mapping, and buyer usability",
   "keyTransformation": "strong commercial and buyer impact statement",
   "businessImpact": "detailed explanation of why this specific enrichment matters (faceted search, SEO, procurement, buyer confidence)",
-  "highlights": ["3 to 6 concise bullet points of specific evidence-based improvements"],
+  "highlights": ["6 to 10 concise product-specific evidence-based improvements"],
+  "standardisationNotes": "detailed notes covering naming, units, taxonomy, attribute normalization, schema readiness, and fields requiring human validation",
+  "recommendedNextSteps": "3 to 5 evidence-led validation and rollout actions for this product/category",
   "extractedFields": {
     "manufacturer": {"value":"visible value or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},
     "mpn": {"value":"visible value or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},
@@ -270,6 +297,10 @@ Return ONLY valid JSON with this exact shape:
     "compliance": {"value":"visible compliance or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0},
     "documents": {"value":"visible downloads or Not detected","source":"BEFORE|AFTER|BOTH","confidence":0}
   },
+  "technicalSpecifications": [
+    {"attribute":"exact visible After-page specification label","value":"complete exact visible value including units, ranges, qualifiers and punctuation","source":"AFTER|BOTH","confidence":0,"status":"Confirmed|Normalized"}
+  ],
+  "technicalSpecificationCount": 0,
   "scores": {
     "Content Completeness":{"before":0,"after":0,"evidence":"short visible evidence"},
     "Technical Specifications":{"before":0,"after":0,"evidence":"short visible evidence"},
@@ -293,8 +324,9 @@ Return ONLY valid JSON with this exact shape:
     }
   ]
 }
+The "technicalSpecifications" array is an exhaustive transcription of the AFTER screenshot/page specification content. Inspect the entire After image from top to bottom, including every visible specification table, accordion, details block, bullet list, and continuation section. Return every distinct visible attribute-value pair without sampling, summarizing, combining unrelated rows, or stopping after the most important fields. Preserve complete multi-part values, units, ranges, symbols, qualifiers, and model-specific details. Do not impose a row limit. Set technicalSpecificationCount to the exact number of returned rows and verify it matches the array length before responding. Include only specifications visibly supported by AFTER (or BOTH); never add recommendations, inferred values, missing fields, placeholders, or Needs Verification rows.
 The "improvements" array should contain only 6 to 10 meaningful, visibly supported changes selected from: ${MATRIX_AREAS.join(', ')}. The server will add any missing matrix rows.
-Keep summaries below 350 characters, transformation and business impact below 220 characters, each highlight below 90 characters, and every improvement field below 90 characters. Prioritize valid complete JSON over verbosity.
+Keep each summary between 700 and 1400 characters when the evidence supports it, transformation and business impact between 250 and 700 characters, each highlight below 150 characters, and every improvement field below 220 characters. Be detailed without repetition. Prioritize valid complete JSON over verbosity.
 Score each category using this explicit 100-point rubric: presence/completeness 40 points, structure/consistency 25, specificity 20, buyer usefulness 15. Scores must be grounded only in visible evidence and include an evidence note. Use 0 when an area is not visible; never invent a value.`
 
     const ai = new GoogleGenAI({ apiKey })
@@ -335,14 +367,68 @@ Score each category using this explicit 100-point rubric: presence/completeness 
       }, 3)
       parsed = parseGeminiJson(compactResponse.text)
     }
+
+    // Specification extraction is deliberately isolated from the narrative
+    // request. Long After-page tables are otherwise likely to be sampled while
+    // the model is also producing summaries, scores and comparison findings.
+    const specificationPrompt = `Inspect only the supplied AFTER product page and transcribe its complete technical specification data.
+Return only valid JSON in this exact shape:
+{
+  "specifications": [
+    { "attribute": "exact visible specification label", "value": "exact complete visible value", "confidence": 0 }
+  ]
+}
+Rules:
+- Read the entire page from top to bottom, including every specification table, continuation, accordion, detail block and technical bullet list visible in the supplied file.
+- Return every visible attribute-value row in original page order. Do not select only important rows and do not impose a row limit.
+- Preserve names, values, units, symbols, ranges, punctuation, capitalization and qualifiers exactly as visible.
+- Never infer, calculate, normalize, rewrite, summarize or complete a value.
+- Never return headings, marketing copy, prices, navigation labels, buttons, blank rows or fields that are not technical specifications.
+- Remove only exact duplicate attribute-value pairs caused by repeated page chrome. If the same label visibly has different values, retain each distinct pair.
+- Before responding, recount the visible rows and confirm internally that the JSON array contains the same number of rows.`
+    const specificationRequest = {
+      model: analysisRequest.model,
+      contents: [toPart(p.afterImage), { text: specificationPrompt }],
+      config: {
+        responseMimeType: 'application/json',
+        temperature: 0,
+        thinkingConfig: { thinkingBudget: 0 },
+        maxOutputTokens: 32768
+      }
+    }
+    let specificationResponse
+    try {
+      specificationResponse = await generateWithRetry(ai, specificationRequest, 3)
+    } catch (sdkError) {
+      if (!isRetryableGeminiError(sdkError)) throw sdkError
+      specificationResponse = await generateViaRest(apiKey, specificationRequest)
+    }
+    const specificationJson = parseGeminiJson(specificationResponse.text)
+    const rawSpecifications = Array.isArray(specificationJson.specifications) ? specificationJson.specifications : []
+    const seenSpecifications = new Set()
+    const focusedTechnicalSpecifications = rawSpecifications.map(item => ({
+      attribute: clean(item?.attribute, 300),
+      value: clean(item?.value, 1500),
+      source: 'AFTER',
+      confidence: Math.max(0, Math.min(100, Number(item?.confidence) || 0)),
+      status: 'Confirmed'
+    })).filter(item => {
+      if (!item.attribute || !item.value || /^(not detected|not available|unknown|n\/a|needs verification)$/i.test(item.value)) return false
+      const key = `${item.attribute.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()}\u0000${item.value.toLocaleLowerCase().replace(/\s+/g, ' ').trim()}`
+      if (seenSpecifications.has(key)) return false
+      seenSpecifications.add(key)
+      return true
+    })
+    if (!focusedTechnicalSpecifications.length) throw new Error('No technical specification rows could be verified from the After page.')
     const byArea = new Map((parsed.improvements || []).map(x => [x.area, x]))
 
     const safeField = field => ({ value: clean(field?.value, 1000) || 'Not detected', source: ['BEFORE','AFTER','BOTH'].includes(field?.source) ? field.source : 'BOTH', confidence: Math.max(0, Math.min(100, Number(field?.confidence) || 0)) })
     const scores = Object.fromEntries(SCORE_AREAS.map(area => { const score = parsed.scores?.[area] || {}; return [area, { before: Math.max(0, Math.min(100, Number(score.before) || 0)), after: Math.max(0, Math.min(100, Number(score.after) || 0)), evidence: clean(score.evidence, 500) || 'No visible evidence supplied.' }] }))
     const extractedFields = Object.fromEntries(['manufacturer','mpn','description','features','dimensions','compliance','documents'].map(key => [key, safeField(parsed.extractedFields?.[key])]))
+    const technicalSpecifications = focusedTechnicalSpecifications
     const confidenceValues = Object.values(extractedFields).map(x => x.confidence).filter(Boolean)
     const confidence = confidenceValues.length ? Math.round(confidenceValues.reduce((a,b)=>a+b,0)/confidenceValues.length) : 0
-    res.json({
+    const result = {
       productName: clean(parsed.productName, 200) || 'Not detected',
       originalProductName: clean(parsed.originalProductName, 200) || 'Not detected',
       enrichedProductName: clean(parsed.enrichedProductName, 200) || 'Not detected',
@@ -366,7 +452,9 @@ Score each category using this explicit 100-point rubric: presence/completeness 
       afterSummary: String(parsed.afterSummary || '').slice(0, 6000),
       keyTransformation: String(parsed.keyTransformation || '').slice(0, 4000),
       businessImpact: String(parsed.businessImpact || '').slice(0, 4000),
-      highlights: Array.isArray(parsed.highlights) ? parsed.highlights.slice(0, 6) : [],
+      highlights: Array.isArray(parsed.highlights) ? parsed.highlights.slice(0, 10) : [],
+      standardisationNotes: String(parsed.standardisationNotes || '').slice(0, 5000),
+      recommendedNextSteps: String(parsed.recommendedNextSteps || '').slice(0, 4000),
       improvements: MATRIX_AREAS.map(area => {
         const item = byArea.get(area) || {}
         return {
@@ -382,13 +470,19 @@ Score each category using this explicit 100-point rubric: presence/completeness 
         }
       }),
       extractedFields,
+      technicalSpecifications,
+      technicalSpecificationCount: technicalSpecifications.length,
       scores,
       scoringMethodology: '100-point evidence rubric: presence/completeness 40, structure/consistency 25, specificity 20, buyer usefulness 15.',
       analysisStatus: 'Complete',
       confidenceScore: confidence ? `${confidence}%` : 'Needs Review',
       confidenceNote: confidence >= 75 ? 'Grounded AI vision comparison complete.' : 'Some extracted fields require review.'
-    })
+    }
+    analysisCache.set(cacheKey, result)
+    resolveAnalysis(result)
+    res.json(result)
   } catch (error) {
+    rejectAnalysis(error)
     const status = Number(error?.status || error?.response?.status || 0)
     const technicalDetails = [error?.message, error?.cause?.code, error?.cause?.message].filter(Boolean).join(' · ')
     console.error('[EnrichmentAnalysis]', technicalDetails)
@@ -401,7 +495,7 @@ Score each category using this explicit 100-point rubric: presence/completeness 
           ? 'AI returned an incomplete result. Please try again.'
           : "Analysis couldn't be completed."
     res.status(status === 429 ? 429 : 502).json({ message, technicalDetails: technicalDetails || 'Unknown AI provider error' })
-  }
+  } finally { analysisInFlight.delete(cacheKey) }
 })
 
 router.post('/analysis/refine-section', auth, async (req, res) => {
@@ -543,11 +637,6 @@ function validateReportEvidence(report) {
     if (product.beforeImage?.url && product.beforeImage.url === product.afterImage?.url) issues.push(`${prefix}: Before and After evidence cannot be the same file.`)
     if (placeholder(product.productName) && placeholder(product.originalProductName) && placeholder(product.enrichedProductName)) issues.push(`${prefix}: product identity is not verified.`)
 
-    const originalSku = product.originalSku || product.sku
-    const enrichedSku = product.enrichedSku || product.sku
-    if (!placeholder(originalSku) && !placeholder(enrichedSku) && String(originalSku).replace(/\W/g, '').toLowerCase() !== String(enrichedSku).replace(/\W/g, '').toLowerCase()) {
-      issues.push(`${prefix}: original and enriched SKU values do not match.`)
-    }
     verifyProductIdentity(product).forEach(message => issues.push(`${prefix}: ${message}`))
   })
   return issues
@@ -1771,11 +1860,13 @@ router.get('/:id/download', auth, async (req, res) => {
     const filename = `${report.id}.pdf`
     const file = path.join(PDF_DIR, filename)
 
-    const pageCount = await buildEnterpriseAssessmentPdf(report, file)
-    await prisma.productEnrichmentReport.update({
-      where: { id: report.id },
-      data: { pdfPath: `/uploads/enrichment-reports/pdfs/${filename}`, pageCount, status: 'PDF Generated' }
-    })
+    if (!report.pdfPath || !fs.existsSync(file)) {
+      const pageCount = await buildEnterpriseAssessmentPdf(report, file)
+      await prisma.productEnrichmentReport.update({
+        where: { id: report.id },
+        data: { pdfPath: `/uploads/enrichment-reports/pdfs/${filename}`, pageCount, status: 'PDF Generated' }
+      })
+    }
 
     const sanitizedName = (report.name || 'Product-Data-Enrichment-Report').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '') || 'Product-Data-Enrichment-Report'
     const downloadName = `${sanitizedName}.pdf`

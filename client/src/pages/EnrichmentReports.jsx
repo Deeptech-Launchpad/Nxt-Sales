@@ -7,11 +7,12 @@ import {
   Mail, RotateCcw, Settings2
 } from 'lucide-react'
 import * as pdfjsLib from 'pdfjs-dist'
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.js?url'
 import api from '../api/client'
 import { callGeminiWithFallback } from '../utils/geminiModel'
 import '../styles/enrichment-reports.css'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 const MATRIX_AREAS = [
   'Product Title & Naming',
@@ -32,6 +33,8 @@ const MATRIX_AREAS = [
 ]
 const RESULT_STATUSES = ['Detected', 'Added', 'Enriched', 'Improved', 'Standardized', 'Normalized', 'Corrected', 'Unchanged', 'Not Detected', 'Needs Verification']
 const POSITIVE_STATUSES = new Set(['Added', 'Enriched', 'Improved', 'Standardized', 'Corrected', 'Structured', 'Normalized'])
+const MY_DETAILS_KEY = 'nxt-sales-enrichment-my-details'
+const loadMyDetails = () => { try { return JSON.parse(localStorage.getItem(MY_DETAILS_KEY) || '{}') } catch { return {} } }
 
 const averageScore = (product, side) => {
   const values = Object.values(product?.scores || {}).map(score => Number(score?.[side])).filter(Number.isFinite)
@@ -158,10 +161,13 @@ const blankProduct = () => ({
   afterSummary: '',
   keyTransformation: '',
   businessImpact: '',
+  standardisationNotes: '',
+  recommendedNextSteps: '',
   imageLayout: 'Side by side',
   imageSize: 'Large',
   imagePosition: 'Center',
   highlights: [],
+  technicalSpecifications: [],
   analysisStatus: 'Not analyzed',
   confidenceScore: '',
   improvements: MATRIX_AREAS.map(area => ({
@@ -177,7 +183,9 @@ const blankProduct = () => ({
   }))
 })
 
-const blankReport = () => ({
+const blankReport = () => {
+  const profile = loadMyDetails()
+  return ({
   name: 'Product Data Enrichment Report',
   clientName: '',
   clientLogo: null,
@@ -188,7 +196,12 @@ const blankReport = () => ({
   industry: '',
   countryMarket: '',
   reportSubtitle: 'Evidence-based product data assessment and enrichment opportunity',
-  preparedBy: 'AltiusNxt Technologies Pvt Ltd',
+  preparedBy: profile.name || '',
+  preparedByDesignation: profile.role || '',
+  preparedByCompany: profile.company || 'AltiusNxt Technologies Pvt Ltd',
+  preparedByPhone: profile.phone || '',
+  preparedByEmail: profile.email || '',
+  preparedByWebsite: profile.website || 'www.altiusnxt.com',
   accountManager: '',
   reportVersion: '1.0',
   confidentialityLabel: 'Confidential',
@@ -223,11 +236,13 @@ const blankReport = () => ({
   status: 'Draft',
   products: [blankProduct()],
   branding: {}
-})
+  })
+}
 
 const REPORT_PROFILE_KEYS = [
   'clientWebsite', 'recipientName', 'recipientDesignation', 'industry', 'countryMarket', 'reportSubtitle',
-  'accountManager', 'reportVersion', 'confidentialityLabel', 'currencyMarket', 'executiveNote', 'clientObjective',
+  'accountManager', 'preparedByDesignation', 'preparedByCompany', 'preparedByPhone', 'preparedByEmail', 'preparedByWebsite',
+  'reportVersion', 'confidentialityLabel', 'currencyMarket', 'executiveNote', 'clientObjective',
   'totalCatalogProducts', 'productsAnalyzedPoc', 'productCategoriesCovered', 'dataSourceType', 'ecommercePlatform',
   'targetPlatforms', 'primaryBusinessGoal', 'clientPainPoints', 'reportMode', 'reportTone', 'sectionOrder', 'sectionVisibility',
   'layoutPreset', 'accentColor', 'contentDensity', 'pageSpacing', 'ctaHeading', 'ctaBody', 'outreachEmail'
@@ -303,6 +318,12 @@ const downloadReportPDF = async report => {
     }
     alert(`Download failed: ${err.message || 'Unknown error'}`)
   }
+}
+
+const pdfPreviewUrl = report => {
+  if (!report?.pdfPath) return ''
+  const version = encodeURIComponent(report.updatedAt || report.pageCount || Date.now())
+  return `${report.pdfPath}${report.pdfPath.includes('?') ? '&' : '?'}preview=${version}`
 }
 
 async function imageAsBase64(asset) {
@@ -439,8 +460,15 @@ export default function EnrichmentReports() {
   const save = async (status = report.status, sourceReport = report, options = {}) => {
     setSaving(true)
     try {
-      const reportProfile = Object.fromEntries(REPORT_PROFILE_KEYS.map(key => [key, sourceReport[key]]))
-      const payload = { ...sourceReport, status, branding: { ...(sourceReport.branding || {}), reportProfile, recipientName: sourceReport.recipientName || '', industry: sourceReport.industry || '', outreachEmail: sourceReport.outreachEmail || '', reportMode: sourceReport.reportMode || 'Sales/POC' } }
+      const firstProduct = sourceReport.products?.[0] || {}
+      const normalizedSource = {
+        ...sourceReport,
+        name: sourceReport.name?.trim() || 'Product Data Enrichment Report',
+        clientName: sourceReport.clientName?.trim() || firstProduct.clientName?.trim() || firstProduct.brand?.trim() || 'Client',
+        reportDate: Number.isNaN(new Date(sourceReport.reportDate).getTime()) ? new Date().toISOString() : sourceReport.reportDate
+      }
+      const reportProfile = Object.fromEntries(REPORT_PROFILE_KEYS.map(key => [key, normalizedSource[key]]))
+      const payload = { ...normalizedSource, status, branding: { ...(normalizedSource.branding || {}), reportProfile, recipientName: normalizedSource.recipientName || '', industry: normalizedSource.industry || '', outreachEmail: normalizedSource.outreachEmail || '', reportMode: normalizedSource.reportMode || 'Sales/POC' } }
       const r = id && id !== 'new'
         ? await api.put(`/enrichment-reports/${id}`, payload)
         : await api.post('/enrichment-reports', payload)
@@ -449,7 +477,7 @@ export default function EnrichmentReports() {
       if (id === 'new') navigate(`/enrichment-reports/${r.data.id}`, { replace: true })
       return r.data
     } catch (e) {
-      setToast(e.response?.data?.message || 'Save failed.')
+      setToast(e.response?.data?.message || e.message || 'Save failed.')
     } finally {
       setSaving(false)
     }
@@ -706,6 +734,10 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
   const [reportActionMenuOpen, setReportActionMenuOpen] = useState(false)
   const [productNavCollapsed, setProductNavCollapsed] = useState(false)
   const [presentationMode, setPresentationMode] = useState(false)
+  const [myDetailsOpen, setMyDetailsOpen] = useState(false)
+  const [myDetails, setMyDetails] = useState(() => loadMyDetails())
+  const [editDrawerOpen, setEditDrawerOpen] = useState(false)
+  const [editDraft, setEditDraft] = useState(null)
   const bulkInputRef = useRef(null)
   const autoAnalysisRef = useRef(new Set())
   const previewViewportRef = useRef(null)
@@ -779,8 +811,10 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
     setGenerating(true)
     try {
       const upload = async file => { const form = new FormData(); form.append('image', file); return (await api.post('/enrichment-reports/upload/image', form, { headers: { 'Content-Type': 'multipart/form-data' } })).data }
-      const products = []
-      for (const [key, pair] of pairs) products.push({ ...blankProduct(), productName: key.replaceAll('-', ' '), beforeImage: await upload(pair.before), afterImage: await upload(pair.after) })
+      const products = await Promise.all(pairs.map(async ([key, pair]) => {
+        const [beforeImage, afterImage] = await Promise.all([upload(pair.before), upload(pair.after)])
+        return { ...blankProduct(), productName: key.replaceAll('-', ' '), beforeImage, afterImage }
+      }))
       const nextProducts = report.products.length === 1 && !report.products[0].beforeImage && !report.products[0].afterImage ? products : [...report.products, ...products]
       pushHistory({ ...report, products: nextProducts })
       setActiveProduct(Math.max(0, nextProducts.length - products.length))
@@ -823,7 +857,7 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
     setActiveProduct(to)
   }
 
-  const analyzeAll = async () => {
+  const analyzeAll = async (generateAfter = false) => {
     const missing = report.products.findIndex(p => !p.beforeImage || !p.afterImage)
     if (missing >= 0) {
       setToast(`Upload Before and After files for Product ${missing + 1} before running Analyze All.`)
@@ -831,11 +865,11 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
     }
     setGenerating(true)
     try {
-      const analyzed = []
-      for (let i = 0; i < report.products.length; i++) {
-        const result = await analyzeScreenshots(report.products[i])
-        analyzed.push({ ...report.products[i], ...result })
-      }
+      const analyzed = await Promise.all(report.products.map(async product => {
+        if (product.analysisStatus === 'Complete') return product
+        const result = await analyzeScreenshots(product)
+        return { ...product, ...result }
+      }))
 
       const nextReport = {
         ...report,
@@ -846,6 +880,15 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
       nextReport.outreachEmail = buildOutreachEmail(nextReport)
       pushHistory(nextReport)
       setToast(`Analyzed all ${analyzed.length} products successfully`)
+      if (generateAfter) {
+        const saved = await save('Ready for Review', nextReport, { silent: true })
+        if (!saved) return
+        const res = await api.post(`/enrichment-reports/${saved.id}/generate-pdf`, { generateAnyway: true })
+        setReport(hydrateReport(res.data))
+        setPreviewOpen(true)
+        setActiveTab('preview')
+        setToast(`Report generated successfully - ${res.data.pageCount} pages`)
+      }
     } catch (e) {
       setToast(e.message || 'Analyze all failed.')
     } finally {
@@ -862,9 +905,6 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
       if (!p.beforeImage?.url || !p.afterImage?.url) issues.push({ label: `${label}: upload both Before and After files`, tab: 'editor', product: index, section: 'upload' })
       if (p.beforeImage?.url && p.beforeImage.url === p.afterImage?.url) issues.push({ label: `${label}: Before and After must be different evidence files`, tab: 'editor', product: index, section: 'upload' })
       if (!p.productName || !p.category) issues.push({ label: `${label}: complete Product Name and Category`, tab: 'editor', product: index, section: 'details' })
-      const originalSku = p.originalSku || p.sku
-      const enrichedSku = p.enrichedSku || p.sku
-      if (originalSku && enrichedSku && String(originalSku).replace(/\W/g, '').toLowerCase() !== String(enrichedSku).replace(/\W/g, '').toLowerCase()) issues.push({ label: `${label}: original and enriched SKU values do not match`, tab: 'editor', product: index, section: 'details' })
       if (!p.beforeSummary || !p.afterSummary) issues.push({ label: `${label}: complete Before and After findings`, tab: 'editor', product: index, section: 'summaries' })
       if (!p.keyTransformation) issues.push({ label: `${label}: add the Key Transformation`, tab: 'editor', product: index, section: 'transformation' })
     })
@@ -928,14 +968,12 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
   const analysisComplete = report.products.length > 0 && analyzedCount === report.products.length
   const reportReady = analysisComplete && Boolean(report.executiveSummary || report.overallBusinessValue)
   const workflowSteps = [
-    { number: '01', label: 'Upload', tab: 'editor', complete: productsReady },
-    { number: '02', label: 'Analyze', tab: 'editor', complete: analysisComplete },
-    { number: '03', label: 'Edit Content', tab: 'report', complete: reportReady },
-    { number: '04', label: 'Customize Layout', tab: 'layout', complete: Boolean(report.layoutPreset) },
-    { number: '05', label: 'Preview', tab: 'preview', complete: Boolean(report.pdfPath) },
-    { number: '06', label: 'Generate PDF', tab: 'generate', complete: report.status === 'PDF Generated' }
+    { number: '01', label: 'Upload Before & After', tab: 'editor', complete: productsReady },
+    { number: '02', label: 'Generate', tab: 'editor', complete: Boolean(report.pdfPath) },
+    { number: '03', label: 'Preview / Edit', tab: report.pdfPath ? 'preview' : 'editor', complete: Boolean(report.pdfPath) },
+    { number: '04', label: 'Download', tab: 'preview', complete: report.status === 'PDF Generated' }
   ]
-  const activeWorkflowIndex = activeTab === 'editor' ? Math.min(1, workflowFocus) : activeTab === 'report' || activeTab === 'summary' || activeTab === 'setup' ? 2 : activeTab === 'layout' ? 3 : activeTab === 'preview' ? 4 : 5
+  const activeWorkflowIndex = !productsReady ? 0 : !report.pdfPath ? 1 : activeTab === 'report' ? 2 : 3
 
   useEffect(() => {
     if (!presentationMode) return
@@ -953,6 +991,13 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [presentationMode, totalPages])
+
+  useEffect(() => {
+    if (activeTab === 'preview' && !report.pdfPath) {
+      setActiveTab('editor')
+      setPreviewOpen(false)
+    }
+  }, [activeTab, report.pdfPath])
 
   const analyzeProduct = async (index = activeProduct, automatic = false) => {
     const product = report.products[index]
@@ -1028,6 +1073,34 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
     return item.resultStatus === comparisonFilter
   })
 
+  const saveMyProfile = () => {
+    localStorage.setItem(MY_DETAILS_KEY, JSON.stringify(myDetails))
+    pushHistory({
+      ...report,
+      preparedBy: myDetails.name || '',
+      preparedByCompany: myDetails.company || '',
+      preparedByDesignation: myDetails.role || '',
+      preparedByWebsite: myDetails.website || '',
+      preparedByEmail: myDetails.email || '',
+      preparedByPhone: myDetails.phone || ''
+    })
+    setMyDetailsOpen(false)
+    setToast('My Details saved and applied to this report')
+  }
+
+  const saveEditAndUpdatePreview = async () => {
+    if (!editDraft) return
+    setGenerating(true)
+    try {
+      const saved = await save('Ready for Review', editDraft, { silent: true })
+      if (!saved) return
+      const res = await api.post(`/enrichment-reports/${saved.id}/generate-pdf`, { generateAnyway: true })
+      setReport(hydrateReport(res.data)); setEditDrawerOpen(false); setEditDraft(null)
+      setActiveTab('preview'); setPreviewOpen(true); setToast('Report updated successfully')
+    } catch (e) { setToast(e.response?.data?.message || 'Could not update report.') }
+    finally { setGenerating(false) }
+  }
+
   return (
     <div className="er-dual-app">
       {/* Sleek Ultra-Slim Top Bar */}
@@ -1036,57 +1109,34 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
           <button className="er-back-btn" onClick={() => navigate('/enrichment-reports')}>
             <ChevronLeft /> Reports
           </button>
-          <div className="er-title-wrap">
-            <h1>{report.name || 'Product Data Enrichment Report'}</h1>
-            <span><strong>{report.clientName || 'Unassigned client'}</strong><i className={`er-report-status ${reportReady ? 'ready' : ''}`}>{reportReady ? 'Report ready' : report.status || 'Draft'}</i></span>
-          </div>
+          <label className="er-simple-client"><span>Client Name</span><input value={report.clientName || ''} onChange={e => update('clientName', e.target.value)} placeholder="Enter client name" /></label>
         </div>
 
         <div className="er-bar-right">
-          <span className={`er-autosave ${autosaveState === 'Save failed' ? 'error' : ''}`}><CheckCircle2 /> {autosaveState}</span>
-          <button className="er-secondary" onClick={() => save('Draft')} disabled={saving}>
-            <Save /> {saving ? 'Saving...' : 'Save Draft'}
+          <button className="er-secondary" onClick={() => setMyDetailsOpen(true)}>
+            <Settings2 /> My Details
           </button>
-          <button className="er-secondary er-preview-action" onClick={() => { setActiveTab('preview'); setPreviewOpen(true) }}>
-            <Eye /> Preview
-          </button>
-          <button className={reportReady ? 'er-primary' : 'er-secondary'} onClick={() => generatePDF()} disabled={generating}>
-            <Download /> {generating ? 'Generating...' : 'Generate PDF'}
-          </button>
-          {report.pdfPath && (
-            <button className="er-download-btn" onClick={async () => {
-              try { await downloadReportPDF(report); setToast('PDF download started') }
-              catch (error) { setToast(error.response?.data?.message || 'PDF download failed. Please try again.') }
-            }}>
-              <Download /> PDF
-            </button>
-          )}
-          <div className="er-report-action-menu">
-            <button className="er-icon-menu-button" aria-label="More report actions" aria-expanded={reportActionMenuOpen} onClick={() => setReportActionMenuOpen(value => !value)}><MoreHorizontal /></button>
-            {reportActionMenuOpen && <div>
-              <button onClick={() => { handleUndo(); setReportActionMenuOpen(false) }} disabled={!history.length}><Undo /> Undo</button>
-              <button onClick={() => { handleRedo(); setReportActionMenuOpen(false) }} disabled={!redoStack.length}><Redo /> Redo</button>
-              <button onClick={() => { setEmailOpen(true); setReportActionMenuOpen(false) }} disabled={!analyzedCount}><Mail /> Email report</button>
-            </div>}
-          </div>
+          {!report.pdfPath && <button className="er-secondary" onClick={addProduct}><Plus /> Add Product</button>}
+          {report.pdfPath && <><button className="er-secondary" onClick={() => { setEditDraft(structuredClone(report)); setEditDrawerOpen(true) }}><FileText /> Edit Report</button><button className="er-download-btn" onClick={() => downloadReportPDF(report)}><Download /> Download PDF</button></>}
         </div>
       </header>
 
-      <nav className="er-workflow-stepper" aria-label="Report workflow">
+      {false && <nav className="er-workflow-stepper" aria-label="Report workflow">
         {workflowSteps.map((step, index) => <Fragment key={step.number}>
-          <button className={`${index === activeWorkflowIndex ? 'current' : ''} ${step.complete ? 'complete' : ''}`} onClick={() => { setActiveTab(step.tab); if (step.tab === 'editor') setWorkflowFocus(index); if (step.tab === 'preview') setPreviewOpen(true) }}>
+          <button className={`${index === activeWorkflowIndex ? 'current' : ''} ${step.complete ? 'complete' : ''}`} onClick={() => { if (index === 3 && report.pdfPath) { void downloadReportPDF(report); return } setActiveTab(step.tab); if (step.tab === 'editor') setWorkflowFocus(index); if (step.tab === 'preview') setPreviewOpen(true) }}>
             <span>{step.complete ? <Check /> : step.number}</span>
             <small>{step.label}</small>
             <i>{step.complete ? 'Completed' : index === activeWorkflowIndex ? 'Current' : 'Not started'}</i>
           </button>
           {index < workflowSteps.length - 1 && <b />}
         </Fragment>)}
-      </nav>
+      </nav>}
 
       {/* Dual Pane Layout (45% Editor / 55% Preview) */}
       <div className={`er-split-workspace ${activeTab === 'preview' ? 'preview-active' : ''}`}>
         {/* Left Pane Editor (45% Width) */}
         <main className="er-editor-pane">
+          {activeTab === 'editor' && <section className="er-simple-builder"><header><div><h1>Build your enrichment report</h1><p>Upload the original and enriched product pages. We will handle the analysis and report layout.</p></div></header>{report.products.map((product, index) => <article className="er-simple-product" key={product.id}><div className="er-simple-product-head"><div><small>PRODUCT {String(index + 1).padStart(2, '0')}</small><strong>{product.productName || `Product ${index + 1}`}</strong></div>{report.products.length > 1 && <button onClick={() => { setActiveProduct(index); setConfirmRemoveProduct(true) }}><Trash2 /> Remove</button>}</div><div className="er-simple-uploads"><SleekUploadDropzone simple badgeText="BEFORE" subTitle="Original product page" tone="before" image={product.beforeImage} pdfPage={product.beforePdfPage || 1} onPdfPageChange={page => updateProduct('beforePdfPage', page, index)} onChange={value => updateProduct('beforeImage', value, index)} onZoom={() => onZoomImage(product.beforeImage)} setToast={setToast} /><SleekUploadDropzone simple badgeText="AFTER" subTitle="Enriched product page" tone="after" image={product.afterImage} pdfPage={product.afterPdfPage || 1} onPdfPageChange={page => updateProduct('afterPdfPage', page, index)} onChange={value => updateProduct('afterImage', value, index)} onZoom={() => onZoomImage(product.afterImage)} setToast={setToast} /></div></article>)}<footer><button className="er-simple-generate" disabled={!productsReady || generating} onClick={() => analysisComplete ? generatePDF(true) : analyzeAll(true)}><Sparkles /> {generating ? 'Generating report...' : 'Generate Report'}</button><span>{!productsReady ? 'Upload Before and After for every product' : 'Ready to generate'}</span></footer></section>}
           {activeTab === 'setup' && <ClientSetupPanel report={report} update={update} crmClients={crmClients} refineSection={refineSection} setToast={setToast} />}
           {activeTab === 'report' && <ReportReviewWorkspace report={report} update={update} refineSection={refineSection} setActiveTab={setActiveTab} />}
           {activeTab === 'layout' && <LayoutCustomizationPanel report={report} update={update} activeProduct={activeProduct} updateProduct={updateProduct} setActiveProduct={setActiveProduct} setActiveTab={setActiveTab} />}
@@ -1100,7 +1150,7 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
             />
           )}
 
-          {activeTab === 'editor' && <div className={`er-new-product-workspace ${productNavCollapsed ? 'navigator-collapsed' : ''}`}>
+          {false && activeTab === 'editor' && <div className={`er-new-product-workspace ${productNavCollapsed ? 'navigator-collapsed' : ''}`}>
             <aside className="er-product-navigator">
               <header><div><button className="er-collapse-products" title={productNavCollapsed ? 'Expand products' : 'Collapse products'} onClick={() => setProductNavCollapsed(value => !value)}><ChevronLeft /></button><span className="er-products-heading"><strong>Products</strong><small>{report.products.length} Products</small></span></div><div className="er-add-product-menu"><button onClick={() => setAddMenuOpen(value => !value)}><Plus /> Add Product</button>{addMenuOpen && <div><button onClick={() => { addProduct(); setAddMenuOpen(false) }}>Add Single Product</button><button onClick={() => bulkInputRef.current?.click()}>Bulk Upload</button></div>}<input ref={bulkInputRef} hidden multiple type="file" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf" onChange={event => bulkUploadProducts(event.target.files)} /></div></header>
               <label className="er-mobile-product-select"><span>Current product</span><select value={activeProduct} onChange={event => setActiveProduct(Number(event.target.value))}>{report.products.map((product, index) => <option key={product.id} value={index}>{String(index + 1).padStart(2, '0')} — {product.productName || `Product ${index + 1}`}</option>)}</select></label>
@@ -1275,7 +1325,7 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
                   </div>
                 </section>
                 <section><h3>Client Insights</h3><div className="er-insight-list">{(activeProd.highlights || []).slice(0, 5).map((item, index) => <article key={index}><small>{(activeProd.improvements || [])[index]?.area || 'ENRICHMENT IMPACT'}</small><p>{item}</p></article>)}</div></section>
-                <footer><button onClick={() => analyzeProduct()}><RefreshCw /> Re-analyze</button><button onClick={() => setActiveTab('report')}><FileText /> Review Report</button><button className="primary" onClick={() => { setActiveTab('preview'); setPreviewOpen(true) }}><Eye /> Preview PDF</button></footer>
+                <footer><button onClick={() => analyzeProduct()}><RefreshCw /> Re-analyze</button><button onClick={() => setActiveTab('report')}><FileText /> Review Report</button>{report.pdfPath && <button className="primary" onClick={() => { setActiveTab('preview'); setPreviewOpen(true) }}><Eye /> Preview PDF</button>}</footer>
               </div>}
             </section>
           </div>}
@@ -1532,6 +1582,24 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
                       </tbody>
                     </table>
                   </div>
+                  <div className="er-section-heading" style={{ marginTop: 18 }}>
+                    <div><h3>Full Technical Specification Matrix</h3><span className="er-count-badge">{(activeProd.technicalSpecifications || []).length} attributes</span></div>
+                    <button type="button" onClick={() => updateProduct('technicalSpecifications', [...(activeProd.technicalSpecifications || []), { attribute: '', value: 'Needs Verification', source: 'RECOMMENDED', confidence: 0, status: 'Needs Verification' }])}><Plus /> Add attribute</button>
+                  </div>
+                  <div className="er-matrix-table-wrap">
+                    <table className="er-matrix-table">
+                      <thead><tr><th>Technical Attribute</th><th>Value</th><th>Evidence</th><th>Status</th><th /></tr></thead>
+                      <tbody>{(activeProd.technicalSpecifications || []).map((spec, idx) => <tr key={`${spec.attribute}-${idx}`}>
+                        <td><input value={spec.attribute || ''} placeholder="e.g. Operating temperature" onChange={event => updateProduct('technicalSpecifications', activeProd.technicalSpecifications.map((item, i) => i === idx ? { ...item, attribute: event.target.value } : item))} /></td>
+                        <td><input value={spec.value || ''} placeholder="Visible value or Needs Verification" onChange={event => updateProduct('technicalSpecifications', activeProd.technicalSpecifications.map((item, i) => i === idx ? { ...item, value: event.target.value } : item))} /></td>
+                        <td><select value={spec.source || 'RECOMMENDED'} onChange={event => updateProduct('technicalSpecifications', activeProd.technicalSpecifications.map((item, i) => i === idx ? { ...item, source: event.target.value } : item))}>{['BEFORE','AFTER','BOTH','RECOMMENDED'].map(value => <option key={value}>{value}</option>)}</select></td>
+                        <td><select value={spec.status || 'Needs Verification'} onChange={event => updateProduct('technicalSpecifications', activeProd.technicalSpecifications.map((item, i) => i === idx ? { ...item, status: event.target.value } : item))}>{['Confirmed','Normalized','Needs Verification'].map(value => <option key={value}>{value}</option>)}</select></td>
+                        <td><button type="button" aria-label="Remove technical attribute" onClick={() => updateProduct('technicalSpecifications', activeProd.technicalSpecifications.filter((_, i) => i !== idx))}><X /></button></td>
+                      </tr>)}</tbody>
+                    </table>
+                  </div>
+                  <TextAreaWithRefinement label="Standardisation & Normalization Notes" value={activeProd.standardisationNotes || ''} onChange={value => updateProduct('standardisationNotes', value)} placeholder="Explain naming, units, taxonomy, schema readiness and validation gaps..." refineSection={refineSection} fieldName="Standardisation Notes" />
+                  <TextAreaWithRefinement label="Product-specific Next Steps" value={activeProd.recommendedNextSteps || ''} onChange={value => updateProduct('recommendedNextSteps', value)} placeholder="Add evidence review, taxonomy approval and rollout actions..." refineSection={refineSection} fieldName="Recommended Next Steps" />
                 </CollapsibleSection>
 
                 {/* Collapsible Section 07: Business Impact */}
@@ -1556,7 +1624,7 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
         </main>
 
         {/* Collapsible preview uses the same structured report template as PDF generation. */}
-        {activeTab === 'preview' && <aside className="er-preview-pane open">
+        {activeTab === 'preview' && report.pdfPath && <aside className="er-preview-pane open">
           <div className="er-preview-toolbar-top">
             <div className="er-preview-title">
               <Eye /> <strong>Report Preview</strong>
@@ -1570,7 +1638,10 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
               <button title="Next page" disabled={!totalPages || currentPreviewPage === totalPages} onClick={() => setCurrentPreviewPage(page => Math.min(totalPages, page + 1))}><ChevronRight /></button>
               <button title="Zoom Out" onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.1))}><ZoomOut /></button>
               <span>{Math.round(zoomLevel * 100)}%</span>
-              <button title="Zoom In" onClick={() => setZoomLevel(z => Math.min(1.5, z + 0.1))}><ZoomIn /></button>
+              <button title="Zoom In" onClick={() => setZoomLevel(z => Math.min(4, z + 0.25))}><ZoomIn /></button>
+              <select className="er-zoom-select" aria-label="Preview zoom" value={zoomLevel} onChange={event => setZoomLevel(Number(event.target.value))}>
+                {[1, 1.25, 1.5, 2, 4].map(value => <option key={value} value={value}>{Math.round(value * 100)}%</option>)}
+              </select>
               <button title="Fit Page" onClick={() => setPreviewFit('page')}><Maximize2 /></button>
               <button className="er-fit-text" title="Fit Width" onClick={() => setPreviewFit('width')}>Fit width</button>
               <button className="er-fit-text" onClick={() => { setCurrentPreviewPage(1); setPresentationMode(true) }}><FileCode /> Present</button>
@@ -1591,9 +1662,7 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
             setCurrentPreviewPage(nearest.index + 1)
           }}>
             <div className={`er-preview-scale-wrapper ${report.pdfPath ? 'generated' : 'pending'}`}>
-              {report.pdfPath
-                ? <GeneratedPdfPreview url={report.pdfPath} page={currentPreviewPage} zoom={zoomLevel} />
-                : <div className="er-preview-regenerate"><FileText /><h3>Generate the final preview</h3><p>The preview uses the exact exported PDF renderer. Generate it after your edits to review the final typography, spacing and page flow.</p><button onClick={() => generatePDF()} disabled={generating}><Sparkles /> {generating ? 'Generating...' : 'Generate matching preview'}</button></div>}
+              <GeneratedPdfPreview url={pdfPreviewUrl(report)} page={currentPreviewPage} zoom={zoomLevel} />
             </div>
           </div>
           <aside className="er-preview-properties" hidden>
@@ -1610,11 +1679,13 @@ function ReportBuilderDualPane({ id, report, setReport, save, saving, toast, set
       </div>
       {presentationMode && <div className="er-presentation-mode" role="dialog" aria-label="Report presentation">
         <header><span>{report.clientName || 'Client'} · Product Data Enrichment Report</span><strong>{currentPreviewPage} / {totalPages}</strong><button onClick={() => setPresentationMode(false)}><X /> Exit presentation</button></header>
-        <main ref={presentationRef}>{report.pdfPath ? <GeneratedPdfPreview url={report.pdfPath} page={currentPreviewPage} zoom={1} /> : <div className="er-preview-regenerate"><p>Generate the PDF before presenting.</p></div>}</main>
+        <main ref={presentationRef}>{report.pdfPath ? <GeneratedPdfPreview url={pdfPreviewUrl(report)} page={currentPreviewPage} zoom={1} /> : <div className="er-preview-regenerate"><p>Generate the PDF before presenting.</p></div>}</main>
         <footer><button disabled={currentPreviewPage === 1} onClick={() => setCurrentPreviewPage(page => Math.max(1, page - 1))}><ChevronLeft /> Previous</button><span>Use arrow keys to navigate</span><button disabled={currentPreviewPage === totalPages} onClick={() => setCurrentPreviewPage(page => Math.min(totalPages, page + 1))}>Next <ChevronRight /></button></footer>
       </div>}
       {toast && !(analysisError && toast === analysisError) && <div className="er-live-toast" role="status"><CheckCircle2 /><span>{toast}</span><button onClick={() => setToast('')}><X /></button></div>}
       {confirmRemoveProduct && <div className="er-modal-backdrop"><div className="er-confirm"><Trash2 /><h3>Remove Product {activeProduct + 1}?</h3><p>This removes its files, findings and matrix from the combined report. You can undo immediately afterward.</p><div><button onClick={() => setConfirmRemoveProduct(false)}>Cancel</button><button className="danger" onClick={removeProduct}>Remove product</button></div></div></div>}
+      {editDrawerOpen && editDraft && <ReportEditDrawer draft={editDraft} setDraft={setEditDraft} saving={generating} onClose={() => setEditDrawerOpen(false)} onSave={saveEditAndUpdatePreview} />}
+      {myDetailsOpen && <div className="er-modal-backdrop"><div className="er-profile-modal" role="dialog" aria-modal="true" aria-label="My Details"><header><div><span><Settings2 /></span><div><h3>My Details</h3><p>Save once and reuse these details in every future PDF.</p></div></div><button onClick={() => setMyDetailsOpen(false)} aria-label="Close"><X /></button></header><div className="er-profile-grid"><label><span>Name</span><input value={myDetails.name || ''} onChange={e => setMyDetails({ ...myDetails, name: e.target.value })} placeholder="Your name" /></label><label><span>Role</span><input value={myDetails.role || ''} onChange={e => setMyDetails({ ...myDetails, role: e.target.value })} placeholder="Your role" /></label><label className="wide"><span>Company</span><input value={myDetails.company || ''} onChange={e => setMyDetails({ ...myDetails, company: e.target.value })} placeholder="Company name" /></label><label><span>Website</span><input value={myDetails.website || ''} onChange={e => setMyDetails({ ...myDetails, website: e.target.value })} placeholder="www.example.com" /></label><label><span>Email</span><input type="email" value={myDetails.email || ''} onChange={e => setMyDetails({ ...myDetails, email: e.target.value })} placeholder="name@example.com" /></label><label className="wide"><span>Phone Number</span><input type="tel" value={myDetails.phone || ''} onChange={e => setMyDetails({ ...myDetails, phone: e.target.value })} placeholder="+1 234 567 890" /></label></div><footer><button onClick={() => setMyDetailsOpen(false)}>Cancel</button><button className="primary" onClick={saveMyProfile}><Save /> Save & Use</button></footer></div></div>}
       {emailOpen && <div className="er-modal-backdrop"><div className="er-email-modal"><header><div><span><Mail /></span><div><h3>Client-ready outreach email</h3><p>Generated from the analyzed product evidence. Review before sending.</p></div></div><button onClick={() => setEmailOpen(false)}><X /></button></header><div className="er-email-fields"><label><span>Recipient name</span><input value={report.recipientName || ''} onChange={e => update('recipientName', e.target.value)} placeholder="Recipient name" /></label><button onClick={() => update('outreachEmail', buildOutreachEmail(report))}><RefreshCw /> Regenerate from analysis</button></div><textarea value={report.outreachEmail || buildOutreachEmail(report)} onChange={e => update('outreachEmail', e.target.value)} /><footer><span>User edits are saved with this report.</span><button onClick={async () => { await navigator.clipboard.writeText(report.outreachEmail || buildOutreachEmail(report)); setToast('Email copied to clipboard') }}><Copy /> Copy email</button><a href={`mailto:?subject=${encodeURIComponent(`${report.clientName || 'Product'} — Product Data Enrichment Review`)}&body=${encodeURIComponent(report.outreachEmail || buildOutreachEmail(report))}`}><Mail /> Open email app</a></footer></div></div>}
       {qualityCheck && <div className="er-modal-backdrop"><div className="er-quality-modal"><header><span><CheckCircle2/></span><div><h3>Report Quality Check</h3><p>Review evidence gaps before creating the client PDF.</p></div><button onClick={()=>setQualityCheck(null)}><X/></button></header><div className="er-quality-metrics"><div><strong>{qualityCheck.verified}</strong><span>Fields verified</span></div><div><strong>{qualityCheck.reviewFields.length}</strong><span>Fields need review</span></div><div><strong>{qualityCheck.issues.filter(x=>/upload both|required/i.test(x.label)).length}</strong><span>Critical issues</span></div></div><div className="er-quality-issues">{qualityCheck.issues.slice(0,8).map((issue,i)=><div key={i}><AlertCircle/><span>{issue.label}</span><button onClick={()=>fixIssue(issue)}>Review</button></div>)}</div><footer><button onClick={()=>setQualityCheck(null)}>Cancel</button><button onClick={()=>{const first=qualityCheck.issues[0];setQualityCheck(null);fixIssue(first)}}>Review Issues</button><button className="primary" disabled={qualityCheck.issues.some(x=>/upload both|required/i.test(x.label))} onClick={()=>generatePDF(true)}>Generate Anyway</button></footer></div></div>}
     </div>
@@ -1671,7 +1742,7 @@ function LayoutCustomizationPanel({ report, update, activeProduct, updateProduct
         <section className="er-studio-card">
           <div className="er-studio-title"><div><strong>Before / After images</strong><span>Choose how product evidence appears</span></div></div>
           <label className="er-control-label"><span>Product</span><select value={activeProduct} onChange={event => setActiveProduct(Number(event.target.value))}>{report.products.map((product, index) => <option key={product.id} value={index}>{product.productName || `Product ${index + 1}`}</option>)}</select></label>
-          <label className="er-control-label"><span>Image arrangement</span><div className="er-choice-grid">{['Side by side','Stacked','Before focus'].map(option => <button key={option} className={currentProduct.imageLayout === option ? 'active' : ''} onClick={() => updateProduct('imageLayout', option)}>{option}</button>)}</div></label>
+          <label className="er-control-label"><span>Screenshot presentation</span><div className="er-choice-grid">{['Dedicated pages','Contain','Fit width'].map(option => <button key={option} className={(currentProduct.imageLayout || 'Dedicated pages') === option ? 'active' : ''} onClick={() => updateProduct('imageLayout', option)}>{option}</button>)}</div></label>
           <div className="er-control-pair"><label className="er-control-label"><span>Image size</span><select value={currentProduct.imageSize || 'Large'} onChange={event => updateProduct('imageSize', event.target.value)}><option>Medium</option><option>Large</option><option>Full width</option></select></label><label className="er-control-label"><span>Position</span><select value={currentProduct.imagePosition || 'Center'} onChange={event => updateProduct('imagePosition', event.target.value)}><option>Top</option><option>Center</option><option>Bottom</option></select></label></div>
           <button className="er-replace-image-action" onClick={() => setActiveTab('editor')}><ImageIcon /> Replace or review screenshots</button>
         </section>
@@ -1783,7 +1854,7 @@ function ClientSetupPanel({ report, update, crmClients, refineSection, setToast 
           <Field label="Industry" value={report.industry} onChange={v => update('industry', v)} />
           <Field label="Country / Market" value={report.countryMarket} onChange={v => update('countryMarket', v)} />
           <Field label="Report Subtitle" value={report.reportSubtitle} onChange={v => update('reportSubtitle', v)} />
-          <Field label="Prepared By" value={report.preparedBy} onChange={v => update('preparedBy', v)} />
+          <Field label="Prepared By - Name" value={report.preparedBy} onChange={v => update('preparedBy', v)} placeholder="e.g. Manoj S" />
           <Field label="Account Manager" value={report.accountManager} onChange={v => update('accountManager', v)} />
           <Field label="Report Date" type="date" value={String(report.reportDate || '').slice(0, 10)} onChange={v => update('reportDate', v)} />
           <Field label="Report Version" value={report.reportVersion} onChange={v => update('reportVersion', v)} />
@@ -1792,6 +1863,18 @@ function ClientSetupPanel({ report, update, crmClients, refineSection, setToast 
           <Field label="Currency / Market" value={report.currencyMarket} onChange={v => update('currencyMarket', v)} placeholder="Optional" />
           <label className="er-field"><span>Report Mode</span><select value={report.reportMode || 'Sales/POC'} onChange={e => update('reportMode', e.target.value)}><option>Sales/POC</option><option>Executive</option><option>Technical Audit</option><option>Detailed Assessment</option></select></label>
           <label className="er-field"><span>Report Tone</span><select value={report.reportTone || 'Consultative'} onChange={e => update('reportTone', e.target.value)}><option>Consultative</option><option>Executive</option><option>Technical</option><option>Concise</option></select></label>
+        </div>
+
+        <div className="er-form-block">
+          <h3>PDF Prepared By Details</h3>
+          <p className="er-field-help">Saved with this report and displayed dynamically in the final PDF sign-off. Empty optional fields are omitted.</p>
+          <div className="er-grid-2">
+            <Field label="Designation" value={report.preparedByDesignation} onChange={v => update('preparedByDesignation', v)} placeholder="e.g. Digital Commerce Lead" />
+            <Field label="Company" value={report.preparedByCompany} onChange={v => update('preparedByCompany', v)} placeholder="AltiusNxt Technologies Pvt Ltd" />
+            <Field label="Mobile" type="tel" value={report.preparedByPhone} onChange={v => update('preparedByPhone', v)} placeholder="+91 00000 00000" />
+            <Field label="Email" type="email" value={report.preparedByEmail} onChange={v => update('preparedByEmail', v)} placeholder="name@altiusnxt.com" />
+            <Field label="Website" value={report.preparedByWebsite} onChange={v => update('preparedByWebsite', v)} placeholder="www.altiusnxt.com" />
+          </div>
         </div>
 
         <div className="er-logo-upload-row">
@@ -1905,6 +1988,46 @@ function TextAreaWithRefinement({ label, value, onChange, placeholder, refineSec
   )
 }
 
+function ReportEditDrawer({ draft, setDraft, saving, onClose, onSave }) {
+  const reportField = (key, value) => setDraft(current => ({ ...current, [key]: value }))
+  const productField = (index, key, value) => setDraft(current => ({ ...current, products: current.products.map((product, i) => i === index ? { ...product, [key]: value } : product) }))
+  const contentField = (key, value) => setDraft(current => ({ ...current, branding: { ...(current.branding || {}), reportContent: { ...(current.branding?.reportContent || {}), [key]: value } } }))
+  const arrayField = (productIndex, key, rowIndex, field, value) => setDraft(current => ({ ...current, products: current.products.map((product, i) => i === productIndex ? { ...product, [key]: product[key].map((row, j) => j === rowIndex ? (field ? { ...row, [field]: value } : value) : row) } : product) }))
+  const content = draft.branding?.reportContent || {}
+  const textField = (label, value, onChange, multiline = false) => <label><span>{label}</span>{multiline ? <textarea value={value || ''} onChange={e => onChange(e.target.value)} /> : <input value={value || ''} onChange={e => onChange(e.target.value)} />}</label>
+  return <div className="er-edit-backdrop" onClick={onClose}><aside className="er-edit-drawer er-edit-drawer-wide" onClick={event => event.stopPropagation()}>
+    <header><div><h2>Edit Report</h2><p>Every editable PDF value is grouped here. The PDF layout remains unchanged.</p></div><button onClick={onClose}><X /></button></header>
+    <div className="er-edit-body">
+      <section><h3>Report headings</h3>
+        {textField('Report title', content.reportTitle || 'Product Data Page (PDP) Enrichment Report', value => contentField('reportTitle', value))}
+        {textField('Executive summary heading', content.executiveSummaryHeading || 'Strategic Executive Summary', value => contentField('executiveSummaryHeading', value))}
+        {textField('Transformation heading', content.transformationHeading || 'KEY TRANSFORMATION', value => contentField('transformationHeading', value))}
+        {textField('Attributes heading', content.attributesHeading || 'KEY ENRICHED ATTRIBUTES CAPTURED', value => contentField('attributesHeading', value))}
+        {textField('Specifications heading', content.specificationsHeading || 'Full Technical Specification Matrix', value => contentField('specificationsHeading', value))}
+        {textField('Specifications introduction', content.specificationsIntro || 'Attributes and values shown exactly from the supplied After evidence.', value => contentField('specificationsIntro', value), true)}
+        {textField('Standardisation heading', content.standardisationHeading || 'STANDARDISATION & NORMALIZATION NOTES', value => contentField('standardisationHeading', value))}
+        {textField('Summary heading', content.summaryHeading || 'SUMMARY & NEXT STEPS', value => contentField('summaryHeading', value))}
+        {textField('Audit summary heading', content.auditSummaryHeading || 'Catalog Enrichment Audit Summary', value => contentField('auditSummaryHeading', value))}
+      </section>
+      <section><h3>Report details and summaries</h3>
+        {['name','clientName','preparedFor','reportDate'].map(key => textField(key.replace(/([A-Z])/g, ' $1'), draft[key], value => reportField(key, value)))}
+        {textField('Executive summary', draft.executiveSummary, value => reportField('executiveSummary', value), true)}
+        {textField('Overall business value', draft.overallBusinessValue, value => reportField('overallBusinessValue', value), true)}
+        {textField('Next steps', draft.nextSteps, value => reportField('nextSteps', value), true)}
+      </section>
+      <section><h3>Prepared By details</h3>{['preparedBy','preparedByDesignation','preparedByCompany','preparedByPhone','preparedByEmail','preparedByWebsite'].map(key => textField(key.replace(/([A-Z])/g, ' $1'), draft[key], value => reportField(key, value)))}</section>
+      {draft.products.map((product, productIndex) => <section key={product.id}><h3>Product {productIndex + 1}</h3>
+        {['productName','originalProductName','enrichedProductName','category','originalTaxonomy','enrichedTaxonomy','originalSku','enrichedSku'].map(key => textField(key.replace(/([A-Z])/g, ' $1'), product[key], value => productField(productIndex, key, value)))}
+        {['beforeSummary','afterSummary','keyTransformation','businessImpact','standardisationNotes','recommendedNextSteps'].map(key => textField(key.replace(/([A-Z])/g, ' $1'), product[key], value => productField(productIndex, key, value), true))}
+        <h4>Highlights</h4>{(product.highlights || []).map((item, index) => textField(`Highlight ${index + 1}`, item, value => arrayField(productIndex, 'highlights', index, null, value)))}
+        <h4>Technical specifications</h4><div className="er-edit-table">{(product.technicalSpecifications || []).map((row, index) => <div className="er-edit-table-row" key={index}><input aria-label="Specification name" value={row.attribute || ''} onChange={e => arrayField(productIndex, 'technicalSpecifications', index, 'attribute', e.target.value)} /><input aria-label="Specification value" value={row.value || ''} onChange={e => arrayField(productIndex, 'technicalSpecifications', index, 'value', e.target.value)} /></div>)}</div>
+        <h4>Comparison table</h4><div className="er-edit-table">{(product.improvements || []).map((row, index) => <div className="er-edit-comparison-row" key={index}><input aria-label="Area" value={row.area || ''} onChange={e => arrayField(productIndex, 'improvements', index, 'area', e.target.value)} /><textarea aria-label="Before" value={row.beforeState || ''} onChange={e => arrayField(productIndex, 'improvements', index, 'beforeState', e.target.value)} /><textarea aria-label="After" value={row.afterState || ''} onChange={e => arrayField(productIndex, 'improvements', index, 'afterState', e.target.value)} /><textarea aria-label="Business benefit" value={row.businessBenefit || ''} onChange={e => arrayField(productIndex, 'improvements', index, 'businessBenefit', e.target.value)} /></div>)}</div>
+      </section>)}
+    </div>
+    <footer><button onClick={onClose}>Cancel</button><button className="primary" disabled={saving} onClick={onSave}><RefreshCw /> {saving ? 'Updating...' : 'Save & Update Preview'}</button></footer>
+  </aside></div>
+}
+
 function Field({ label, value, onChange, ...props }) {
   return (
     <label className="er-field">
@@ -1914,7 +2037,7 @@ function Field({ label, value, onChange, ...props }) {
   )
 }
 
-function SleekUploadDropzone({ badgeText, subTitle, tone, image, pdfPage, onPdfPageChange, onChange, onZoom, setToast }) {
+function SleekUploadDropzone({ badgeText, subTitle, tone, image, pdfPage, onPdfPageChange, onChange, onZoom, setToast, simple = false }) {
   const ref = useRef()
   const canvasRef = useRef()
   const [pdfTotalPages, setPdfTotalPages] = useState(1)
@@ -1968,11 +2091,11 @@ function SleekUploadDropzone({ badgeText, subTitle, tone, image, pdfPage, onPdfP
   }
 
   return (
-    <div className={`er-upload-card ${tone}`}>
+    <div className={`er-upload-card ${tone} ${simple ? 'simple' : ''}`}>
       <div className="er-upload-head">
         <span className={`badge-label ${tone}`}>{badgeText}</span>
         <span className="er-card-title-sub">{subTitle}</span>
-        {image && (
+        {image && !simple && (
           <div className="er-head-btns">
             <button className={fitMode === 'width' ? 'active' : ''} title="Fit Width" onClick={() => { setFitMode('width'); setPreviewZoom(1) }}>Width</button>
             <button className={fitMode === 'page' ? 'active' : ''} title="Fit Page" onClick={() => { setFitMode('page'); setPreviewZoom(1) }}>Page</button>
@@ -1990,11 +2113,11 @@ function SleekUploadDropzone({ badgeText, subTitle, tone, image, pdfPage, onPdfP
             {isPdf ? (
               <div className="er-pdf-canvas-container" style={{ '--preview-zoom': previewZoom }}>
                 <canvas ref={canvasRef} onDoubleClick={onZoom} />
-                <div className="er-pdf-page-bar" onClick={e => e.stopPropagation()}>
+                {!simple && <div className="er-pdf-page-bar" onClick={e => e.stopPropagation()}>
                   <button disabled={pdfPage <= 1} onClick={() => onPdfPageChange(pdfPage - 1)}>&lt;</button>
                   <span>Page {pdfPage} of {pdfTotalPages}</span>
                   <button disabled={pdfPage >= pdfTotalPages} onClick={() => onPdfPageChange(pdfPage + 1)}>&gt;</button>
-                </div>
+                </div>}
               </div>
             ) : (
               <img src={image.url} alt={badgeText} style={{ '--preview-zoom': previewZoom }} onDoubleClick={onZoom} />
@@ -2003,7 +2126,7 @@ function SleekUploadDropzone({ badgeText, subTitle, tone, image, pdfPage, onPdfP
 
           <div className="er-upload-foot">
             <div className="er-file-meta"><span className="fname">{image.filename}</span><small>{(image.mimeType || 'Uploaded file').replace('image/', '').replace('application/', '').toUpperCase()} · {image.size ? `${Math.max(1, Math.round(image.size / 1024))} KB` : 'Ready'}</small></div>
-            <div><button onClick={onZoom}>View</button><button onClick={() => ref.current.click()}>Replace</button><button className="remove" onClick={() => onChange(null)}>Remove</button></div>
+            <div><button onClick={onZoom}>View</button><button onClick={() => ref.current.click()}>Replace</button>{!simple && <button className="remove" onClick={() => onChange(null)}>Remove</button>}</div>
           </div>
         </>
       ) : (
@@ -2025,7 +2148,8 @@ function GeneratedPdfPreview({ url, page, zoom = 1 }) {
   useEffect(() => {
     let cancelled = false
     let renderTask
-    const loadingTask = pdfjsLib.getDocument(url)
+    setError('')
+    const loadingTask = pdfjsLib.getDocument({ url })
     loadingTask.promise.then(async pdf => {
       const safePage = Math.min(Math.max(1, page), pdf.numPages)
       const pdfPage = await pdf.getPage(safePage)
@@ -2044,7 +2168,10 @@ function GeneratedPdfPreview({ url, page, zoom = 1 }) {
       await renderTask.promise
       if (!cancelled) setError('')
     }).catch(err => {
-      if (!cancelled && err?.name !== 'RenderingCancelledException') setError('The generated PDF preview could not be loaded. Download the PDF to review it.')
+      if (!cancelled && err?.name !== 'RenderingCancelledException') {
+        console.error('[GeneratedPdfPreview]', err)
+        setError('The generated PDF preview could not be loaded. Please regenerate the preview or download the PDF.')
+      }
     })
     return () => {
       cancelled = true

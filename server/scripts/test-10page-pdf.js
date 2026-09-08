@@ -1,12 +1,17 @@
 const path = require('path')
 const fs = require('fs')
-const { buildEnterpriseAssessmentPdf } = require('../src/services/pdfReportGenerator')
+const { buildReferencePdf: buildEnterpriseAssessmentPdf } = require('../src/services/referencePdfGenerator')
 
 const mockReport = {
   name: 'Product Data Enrichment Assessment',
   clientName: 'Adelab Scientific',
   preparedFor: 'Adelab Scientific Procurement & E-Commerce Team',
-  preparedBy: 'AltiusNxt Technologies Pvt Ltd',
+  preparedBy: 'Manoj S',
+  preparedByDesignation: 'Digital Commerce Lead',
+  preparedByCompany: 'AltiusNxt Technologies Pvt Ltd',
+  preparedByPhone: '+1 313 486 9697',
+  preparedByEmail: 'Manoj@altiusnxt.com',
+  preparedByWebsite: 'www.altiusnxt.com',
   reportDate: new Date().toISOString(),
   reportVersion: '1.0',
   accountManager: 'Alex Morgan',
@@ -29,6 +34,11 @@ const mockReport = {
       enrichedAttributeCount: 11,
       existingSpecificationCount: 2,
       enrichedSpecificationCount: 11,
+      technicalSpecifications: [
+        ['Product Type','Disposable nitrile glove'],['Brand','Ansell'],['Series','93 Series'],['Material','Nitrile'],['Size','Small 6.5'],['Colour','Black'],['Powdering','Powder-free'],['Cuff Style','Beaded cuff'],['Glove Length','240 mm'],['Palm Thickness','0.12 mm'],['Safety Standard','ASTM D6319'],['Chemical Resistance','Visible claim - validation required'],['Puncture Resistance','Visible claim - validation required'],['Pack Quantity','Needs Verification'],['AQL Rating','Needs Verification'],['Food Contact Approval','Needs Verification'],['Sterility','Needs Verification'],['Country of Origin','Needs Verification']
+      ].map(([attribute,value]) => ({ attribute, value, source: value === 'Needs Verification' ? 'RECOMMENDED' : 'AFTER', confidence: value === 'Needs Verification' ? 0 : 85, status: value === 'Needs Verification' ? 'Needs Verification' : 'Confirmed' })),
+      standardisationNotes: 'Product naming, material, size, cuff style, dimensions and safety-standard terminology have been separated into normalized attribute-value pairs. Pack quantity, AQL rating, food-contact approval, sterility and country of origin remain clearly marked for supplier validation before publication.',
+      recommendedNextSteps: 'Validate the five outstanding supplier fields, approve the proposed disposable-glove taxonomy, map confirmed attributes into the PIM schema, and test filter behavior across the priority safety-products category.',
       filterFieldsEnabled: 'Material, Size, Colour, Cuff Style, Palm Thickness, Glove Length, Safety Standard, Pack Quantity',
       beforeImage: { filename: 'Original product evidence.png', url: '/uploads/enrichment-reports/images/01089f6f-155a-4f84-afca-bb55e4109f70.png' },
       afterImage: { filename: 'Enriched product evidence.png', url: '/uploads/enrichment-reports/images/1e7aee4b-4a5d-46da-b32d-7a460ec69024.png' },
@@ -46,7 +56,14 @@ const mockReport = {
   ]
 }
 
-const outputPath = path.join(__dirname, '../uploads/enrichment-reports/pdfs/test-output.pdf')
+const requestedProducts = Math.max(1, Number(process.env.PDF_TEST_PRODUCTS || 1))
+const requestedSpecs = Math.max(1, Number(process.env.PDF_TEST_SPECS || mockReport.products[0].technicalSpecifications.length))
+const baseProduct = mockReport.products[0]
+baseProduct.technicalSpecifications = Array.from({ length: requestedSpecs }, (_, index) => baseProduct.technicalSpecifications[index % baseProduct.technicalSpecifications.length]).map((spec, index) => ({ ...spec, attribute: index < baseProduct.technicalSpecifications.length ? spec.attribute : `${spec.attribute} ${index + 1}` }))
+mockReport.products = Array.from({ length: requestedProducts }, (_, index) => ({ ...baseProduct, productName: `${baseProduct.productName}${index ? ` ${index + 1}` : ''}`, enrichedProductName: `${baseProduct.enrichedProductName}${index ? ` - Variant ${index + 1}` : ''}`, technicalSpecifications: baseProduct.technicalSpecifications.map(spec => ({ ...spec })) }))
+
+const suffix = requestedProducts > 1 || requestedSpecs > 18 ? `-${requestedProducts}products-${requestedSpecs}specs` : ''
+const outputPath = path.join(__dirname, `../../output/pdf/reference-style-enrichment-report${suffix}.pdf`)
 fs.mkdirSync(path.dirname(outputPath), { recursive: true })
 
 buildEnterpriseAssessmentPdf(mockReport, outputPath).then(count => {

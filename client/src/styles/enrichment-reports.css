@@ -1211,6 +1211,7 @@
   width: 100%;
   box-sizing: border-box;
 }
+.er-field-help { margin:-2px 0 5px; color:#667085; font-size:10px; line-height:1.5; }
 
 .er-field {
   display: flex;
@@ -2087,6 +2088,7 @@
 .er-zoom-controls button { width: 26px; height: 26px; }
 .er-zoom-controls button svg { width: 16px; height: 16px; }
 .er-zoom-controls span { font-size: 10px; }
+.er-zoom-select { height:26px; min-width:66px; padding:0 5px; border:1px solid #d7dce3; border-radius:4px; background:#fff; color:#273142; font-size:10px; font-weight:700; }
 .er-preview-viewport { padding: 18px 14px; }
 
 @media (max-width: 1450px) {
@@ -2957,6 +2959,59 @@
   .er-presentation-mode .er-a4-stack { transform:scale(.5); }
 }
 
+/* Minimal report journey */
+.er-simple-client { display:flex; align-items:center; gap:10px; }
+.er-simple-client span { color:#667085; font-size:12px; font-weight:700; }
+.er-simple-client input { width:250px; height:38px; padding:0 12px; border:1px solid #d2dae5; border-radius:7px; color:#172b4d; font:inherit; }
+.er-simple-builder { width:min(1120px,calc(100% - 48px)); margin:32px auto 80px; }
+.er-simple-builder > header h1 { margin:0 0 7px; color:#102d66; font-size:25px; }
+.er-simple-builder > header p { margin:0 0 25px; color:#667085; font-size:14px; }
+.er-simple-product { margin-bottom:22px; padding:22px; background:#fff; border:1px solid #dce3ec; border-radius:10px; }
+.er-simple-product-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:17px; }
+.er-simple-product-head > div { display:flex; flex-direction:column; gap:3px; }
+.er-simple-product-head small { color:#78869a; font-size:10px; font-weight:800; letter-spacing:.08em; }
+.er-simple-product-head strong { color:#172b4d; font-size:16px; }
+.er-simple-product-head button { display:flex; align-items:center; gap:6px; color:#667085; background:transparent; border:0; }
+.er-simple-product-head button svg { width:14px; }
+.er-simple-uploads { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+.er-upload-card.simple { min-width:0; box-shadow:none; }
+.er-upload-card.simple .er-img-preview-box { height:300px; }
+.er-upload-card.simple .er-upload-foot { padding:12px 14px; }
+.er-simple-builder > footer { display:flex; flex-direction:column; align-items:center; gap:10px; padding-top:8px; }
+.er-simple-builder > footer span { color:#667085; font-size:12px; }
+.er-simple-generate { min-width:220px; min-height:46px; display:flex; align-items:center; justify-content:center; gap:9px; padding:0 22px; color:#fff; background:#173f7a; border:0; border-radius:8px; font-size:14px; font-weight:800; }
+.er-simple-generate:disabled { opacity:.45; }
+.er-simple-generate svg { width:17px; }
+.er-edit-backdrop { position:fixed; inset:0; z-index:1200; display:flex; justify-content:flex-end; background:rgba(15,23,42,.38); }
+.er-edit-drawer { width:min(520px,100vw); height:100%; display:flex; flex-direction:column; background:#fff; box-shadow:-18px 0 50px rgba(15,35,68,.18); }
+.er-edit-drawer-wide { width:min(760px,100vw); }
+.er-edit-drawer > header { display:flex; justify-content:space-between; padding:22px; border-bottom:1px solid #e2e8f0; }
+.er-edit-drawer h2,.er-edit-drawer h3 { margin:0; color:#102d66; }.er-edit-drawer header p { margin:5px 0 0; color:#667085; font-size:12px; }
+.er-edit-drawer header button { background:transparent; border:0; }.er-edit-drawer header svg { width:18px; }
+.er-edit-body { flex:1; overflow:auto; padding:22px; }.er-edit-body section { margin:22px 0; padding-top:18px; border-top:1px solid #e2e8f0; }
+.er-edit-body label { display:flex; flex-direction:column; gap:7px; margin:14px 0; }.er-edit-body label span { color:#344054; font-size:12px; font-weight:750; }
+.er-edit-body input,.er-edit-body textarea { width:100%; box-sizing:border-box; padding:11px; border:1px solid #cfd8e3; border-radius:7px; font:inherit; line-height:1.5; }
+.er-edit-body textarea { min-height:110px; resize:vertical; }
+.er-edit-body h4 { margin:18px 0 8px; color:#344054; font-size:12px; }
+.er-edit-table { display:flex; flex-direction:column; gap:8px; }
+.er-edit-table-row { display:grid; grid-template-columns:minmax(160px,.7fr) minmax(220px,1.3fr); gap:8px; }
+.er-edit-comparison-row { display:grid; grid-template-columns:150px repeat(3,minmax(180px,1fr)); gap:8px; overflow-x:auto; padding-bottom:4px; }
+.er-edit-comparison-row textarea { min-height:76px; }
+.er-edit-drawer > footer { display:flex; justify-content:flex-end; gap:10px; padding:16px 22px; border-top:1px solid #e2e8f0; }
+.er-edit-drawer > footer button { min-height:40px; padding:0 16px; border:1px solid #cfd8e3; border-radius:7px; background:#fff; font-weight:750; }.er-edit-drawer > footer .primary { display:flex; align-items:center; gap:7px; color:#fff; background:#173f7a; border-color:#173f7a; }
+.er-split-workspace:not(.preview-active) { background:#f6f8fb; }
+.er-split-workspace:not(.preview-active) .er-editor-pane { width:100%; }
+.er-split-workspace.preview-active .er-thumbnail-toggle,
+.er-split-workspace.preview-active .er-fit-text,
+.er-split-workspace.preview-active .er-zoom-select,
+.er-split-workspace.preview-active .er-preview-title + * button[title="Fit Page"] { display:none !important; }
+@media(max-width:760px){
+  .er-simple-client span { display:none; }
+  .er-simple-client input { width:145px; }
+  .er-simple-builder { width:calc(100% - 24px); margin-top:18px; }
+  .er-simple-uploads { grid-template-columns:1fr; }
+}
+
 /* Report creation design studio */
 .er-layout-studio,.er-generate-workspace{width:100%;max-width:1360px;margin:0 auto;color:#172033}
 .er-studio-hero{padding:24px 26px;display:flex;align-items:center;justify-content:space-between;gap:24px;border-radius:14px;background:linear-gradient(120deg,#0b2550,#215ac4);color:#fff;box-shadow:0 14px 34px rgba(23,59,114,.14)}
@@ -3193,6 +3248,26 @@
   flex-wrap:nowrap;
 }
 
+.er-profile-modal { width:min(620px,calc(100vw - 32px)); overflow:hidden; background:#fff; border:1px solid #d9e1eb; border-radius:12px; box-shadow:0 24px 70px rgba(15,35,68,.2); }
+.er-profile-modal > header { display:flex; align-items:center; justify-content:space-between; padding:20px 22px; border-bottom:1px solid #e4e9f0; }
+.er-profile-modal > header > div { display:flex; align-items:center; gap:12px; }
+.er-profile-modal > header > div > span { width:38px; height:38px; display:grid; place-items:center; color:#173f7a; background:#eef4fb; border-radius:8px; }
+.er-profile-modal > header svg { width:18px; height:18px; }
+.er-profile-modal h3 { margin:0 0 3px; color:#102d66; font-size:17px; }
+.er-profile-modal p { margin:0; color:#667085; font-size:12px; }
+.er-profile-modal > header > button { width:34px; height:34px; display:grid; place-items:center; padding:0; color:#667085; background:transparent; border:0; border-radius:6px; }
+.er-profile-modal > header > button:hover { background:#f2f5f8; }
+.er-profile-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:22px; }
+.er-profile-grid label { display:flex; flex-direction:column; gap:7px; }
+.er-profile-grid label.wide { grid-column:1 / -1; }
+.er-profile-grid label > span { color:#344054; font-size:12px; font-weight:700; }
+.er-profile-grid input { width:100%; height:42px; padding:0 12px; color:#172b4d; background:#fff; border:1px solid #cfd8e3; border-radius:7px; font:inherit; outline:none; }
+.er-profile-grid input:focus { border-color:#173f7a; box-shadow:0 0 0 3px rgba(23,63,122,.1); }
+.er-profile-modal > footer { display:flex; justify-content:flex-end; gap:10px; padding:16px 22px; background:#f8fafc; border-top:1px solid #e4e9f0; }
+.er-profile-modal > footer button { min-height:38px; display:inline-flex; align-items:center; gap:7px; padding:0 16px; color:#344054; background:#fff; border:1px solid #cfd8e3; border-radius:7px; font-weight:700; }
+.er-profile-modal > footer button.primary { color:#fff; background:#173f7a; border-color:#173f7a; }
+.er-profile-modal > footer svg { width:15px; height:15px; }
+
 @media(max-width:760px){
   .er-split-workspace.preview-active .er-preview-pane.open { height:calc(100vh - 60px); min-height:520px; }
   .er-split-workspace.preview-active .er-preview-toolbar-top { height:auto; min-height:58px; max-height:none; padding:8px 10px; gap:8px; }
@@ -3200,4 +3275,6 @@
   .er-split-workspace.preview-active .er-zoom-controls { overflow-x:auto; padding-bottom:2px; }
   .er-split-workspace.preview-active .er-preview-viewport { padding:18px 8px 42px; }
   .er-generated-pdf { min-height:520px; overflow-x:auto; justify-content:flex-start; }
+  .er-profile-grid { grid-template-columns:1fr; padding:18px; }
+  .er-profile-grid label.wide { grid-column:auto; }
 }
