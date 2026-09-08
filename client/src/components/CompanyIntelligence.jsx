@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Sparkles, RefreshCw, Loader2, AlertCircle, Globe, Mail, Copy, Check } from 'lucide-react'
+import { Sparkles, RefreshCw, Loader2, AlertCircle, Globe, Mail, Copy, Check, Info, ChevronDown, ChevronUp } from 'lucide-react'
 import { generateCompanyInsights, getCachedInsights } from '../utils/companyIntelligence'
 import { getAiStatus, aiUnavailableMessage } from '../utils/geminiModel'
 
@@ -200,6 +200,10 @@ export default function CompanyIntelligence({ company }) {
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
   const [copied,  setCopied]  = useState(false)
+  // The provenance/disclaimer line matters when a rep is deciding how far to
+  // trust a claim, but it is the same text every time and it sat under the
+  // sheet competing with it. Collapsed by default, one click away, unchanged.
+  const [showMeta, setShowMeta] = useState(false)
 
   // There is no API key in the browser to check any more — the server holds
   // it. Ask the backend whether AI is actually usable instead, which is also
@@ -397,11 +401,34 @@ export default function CompanyIntelligence({ company }) {
               </>
             )}
 
-            <div style={{ fontSize: 14, color: '#475467', borderTop: '1px solid #f1f5f9', paddingTop: 8, marginTop: 10 }}>
-              Generated {fmtGeneratedAt(result.generatedAt)} ({result.model}) from CRM data
-              {src?.pageFetched ? `, a live read of ${src.pageUrl}` : ''}
-              {src?.emailThreads ? ', and synced Gmail history' : ''}.
-              Items marked <strong>AI inference</strong> are the model's reasoning, not verified facts — review before contacting the customer.
+            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 8, marginTop: 10 }}>
+              <button
+                type="button"
+                onClick={() => setShowMeta(v => !v)}
+                aria-expanded={showMeta}
+                aria-controls="ci-ai-details"
+                title={showMeta ? 'Hide how this sheet was produced' : 'Show how this sheet was produced'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '4px 9px', borderRadius: 6, border: '1px solid #e2e8f0',
+                  background: showMeta ? '#f8fafc' : '#fff', color: '#475569',
+                  fontSize: 13.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                <Info size={12} />
+                AI Details
+                {showMeta ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+
+              {/* Same sentence as before, verbatim — only its visibility changed. */}
+              {showMeta && (
+                <div id="ci-ai-details" style={{ fontSize: 14, color: '#475467', marginTop: 8 }}>
+                  Generated {fmtGeneratedAt(result.generatedAt)} ({result.model}) from CRM data
+                  {src?.pageFetched ? `, a live read of ${src.pageUrl}` : ''}
+                  {src?.emailThreads ? ', and synced Gmail history' : ''}.
+                  Items marked <strong>AI inference</strong> are the model's reasoning, not verified facts — review before contacting the customer.
+                </div>
+              )}
             </div>
           </>
         )}
