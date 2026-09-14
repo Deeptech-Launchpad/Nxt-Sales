@@ -238,9 +238,41 @@ function partC() {
     pickSuccessor(d2, [real, unrelated])?.messageId, real.messageId)
 }
 
+// ── Part D — G2: the successor must be a REAL SENT email ───────────────────
+// Mirrors the successor-label gate in reconcile-draft-imports.js. Existence is
+// not enough: Atlas Machinery's "real send" existed but carried DRAFT, and
+// hiding its predecessor would have left an unsent draft posing as delivered
+// mail.
+const successorIsRealSend = (labels) => Array.isArray(labels) && labels.includes('SENT')
+
+function partD() {
+  console.log('\nPart D — G2, the successor must actually be sent\n')
+
+  check('35. successor labelled SENT is accepted', successorIsRealSend(['SENT']), true)
+  check('36. SENT alongside other labels is accepted',
+    successorIsRealSend(['SENT', 'IMPORTANT', 'CATEGORY_PERSONAL']), true)
+
+  // THE REGRESSION — the real Atlas Machinery case.
+  check('37. successor labelled DRAFT is REJECTED (Atlas Machinery)',
+    successorIsRealSend(['DRAFT']), false)
+  check('38. successor in TRASH but not SENT is rejected', successorIsRealSend(['TRASH']), false)
+  check('39. successor with no labels is rejected', successorIsRealSend([]), false)
+  check('40. missing labelIds is rejected — never assume sent',
+    successorIsRealSend(undefined), false)
+  check('41. lowercase "sent" is not Gmail\'s system label', successorIsRealSend(['sent']), false)
+
+  // The audit tier: what counts as Gmail PROVING a row is a draft.
+  const isProvenDraft = (labels) => Array.isArray(labels) && labels.includes('DRAFT')
+  check('42. DRAFT label proves a draft', isProvenDraft(['DRAFT']), true)
+  check('43. SENT does not prove a draft', isProvenDraft(['SENT']), false)
+  check('44. a label merely containing DRAFT does not count',
+    isProvenDraft(['Label_MY_DRAFTS']), false)
+}
+
 ;(async () => {
   partA()
   partC()
+  partD()
   await partB()
   console.log(`\n${pass} passed, ${fail} failed\n`)
   process.exitCode = fail ? 1 : 0
