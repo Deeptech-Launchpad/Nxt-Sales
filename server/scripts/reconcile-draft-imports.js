@@ -139,24 +139,48 @@ async function findLocalCandidates() {
       // L1 — the From address must be the mailbox this row was synced from.
       if (!c.mailboxEmail || !addrsOf(c.fromEmail).includes(c.mailboxEmail.toLowerCase())) continue
 
-      // L3 + L4 — the real send this draft became.
-      const successor = list.slice(i + 1).find(s =>
-        normSubject(s.subject) === normSubject(c.subject) &&
-        addrsOf(s.toEmail).some(a => addrsOf(c.toEmail).includes(a)) &&
-        s.createdAt > c.createdAt &&
-        (s.createdAt - c.createdAt) <= GAP_MS)
-      if (!successor) continue
-
-      // L5 — strict subset of attachments.
-      const ca = fileNames(c.attachments), sa = fileNames(successor.attachments)
-      if (!ca.every(f => sa.includes(f))) continue
-      if (ca.length > 0 && ca.length >= sa.length) continue
-
-      // L6 — same text, caught earlier.
-      const cb = normBody(c.body), sb = normBody(successor.body)
+      const cb = normBody(c.body)
       if (!cb) continue
       const probe = cb.slice(0, Math.min(cb.length, 500))
-      if (!(cb === sb || sb.startsWith(probe))) continue
+      const ca = fileNames(c.attachments)
+
+      // Every later message that could be the real send this draft became:
+      //   L3  same normalised subject, an overlapping recipient
+      //   L4  inside the composing window
+      //   L5  the candidate's attachments are a strict subset of it
+      //   L6  the candidate's body is an earlier prefix of the same text
+      const qualifying = list.slice(i + 1).filter(s => {
+        if (normSubject(s.subject) !== normSubject(c.subject)) return false
+        if (!addrsOf(s.toEmail).some(a => addrsOf(c.toEmail).includes(a))) return false
+        if (!(s.createdAt > c.createdAt && (s.createdAt - c.createdAt) <= GAP_MS)) return false
+        const sa = fileNames(s.attachments)
+        if (!ca.every(f => sa.includes(f))) return false
+        if (ca.length > 0 && ca.length >= sa.length) return false
+        const sb = normBody(s.body)
+        return cb === sb || sb.startsWith(probe)
+      })
+      if (!qualifying.length) continue
+
+      // Take the LAST qualifying message, not the first.
+      //
+      // Gmail keeps exactly ONE message out of a composing session — the send —
+      // and discards every draft snapshot before it. A long compose therefore
+      // leaves a CHAIN in the CRM: draft -> draft -> send. Pairing with the
+      // FIRST match walks only one link, so an early snapshot is paired with a
+      // later snapshot that is itself gone from Gmail; gate G2 then rejects the
+      // pair and that row stays visible forever.
+      //
+      // Observed in production on the Gunz Dental thread (1a08fdcca503f8b4):
+      //   09:50:10  1 attachment   ← rejected, because its "successor" was…
+      //   09:52:35  2 attachments  ← …this, also a draft and also gone
+      //   10:50:13  4 attachments  ← the real send, still in Gmail
+      //
+      // Every link now resolves to the send itself, so each candidate is judged
+      // against a message that still exists. This cannot loosen the result: the
+      // pair still has to clear G1 and G2 against Gmail, and a candidate whose
+      // real counterpart is genuinely absent is still rejected.
+      const successor = qualifying[qualifying.length - 1]
+      const sa = fileNames(successor.attachments)
 
       pairs.push({
         candidate: c,
