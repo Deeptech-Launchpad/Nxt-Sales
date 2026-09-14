@@ -10,6 +10,15 @@
 //   node scripts/reconcile-draft-imports.js --include-live-drafts  also mark drafts still open in Gmail
 //   node scripts/reconcile-draft-imports.js --unmark --marked-at <ISO>   undo exactly one apply run
 //
+//   node scripts/reconcile-draft-imports.js --label-audit                READ-ONLY, never writes
+//   node scripts/reconcile-draft-imports.js --label-audit --mailbox a@b.c --days 30 --limit 500
+//
+// --label-audit asks Gmail for the labels of every outbound row and reports the
+// ones Gmail itself calls DRAFT. It needs no successor, no attachment subset and
+// no body comparison, so it finds lone drafts the pair matching below cannot see
+// — and its verdict is Gmail's own, not an inference. It NEVER writes, with or
+// without --apply.
+//
 // ── Why a dedicated script, separate from reconcile-gmail-deletions.js ──────
 // That script marks anything Gmail answers 404 for. A sent email the user
 // genuinely deleted also answers 404, so on its own "404" cannot tell a draft
@@ -66,6 +75,8 @@ const val = (f, d = null) => { const i = argv.indexOf(f); return i !== -1 ? argv
 const APPLY = has('--apply')
 const UNMARK = has('--unmark')
 const INCLUDE_LIVE = has('--include-live-drafts')
+const LABEL_AUDIT = has('--label-audit')
+const LIMIT = val('--limit') ? parseInt(val('--limit'), 10) : null
 const DAYS = val('--days') ? parseInt(val('--days'), 10) : null
 const ONLY_MAILBOX = val('--mailbox') ? String(val('--mailbox')).toLowerCase() : null
 const GAP_MS = (parseFloat(val('--gap-hours', '6')) || 6) * 3600 * 1000
@@ -194,7 +205,146 @@ async function findLocalCandidates() {
   return pairs
 }
 
+// ── Label audit (--label-audit) ────────────────────────────────────────────
+// The pair-based reconcile above can only see a row that HAS a qualifying
+// successor. A lone unsent draft — nothing before it, nothing after it — is
+// invisible to it, however obviously wrong the row is. Atlas Machinery was
+// exactly that: after its earlier snapshot vanished, the remaining row was a
+// live draft sitting alone in its thread, shown in the CRM as a sent email.
+//
+// This mode asks Gmail directly, row by row: "what are this message's labels?"
+// A message carrying DRAFT is a draft — stated by Gmail, not inferred from
+// attachments, timing or body similarity. It is the only tier that needs no
+// judgement call, which makes it the right basis for a cleanup.
+//
+// READ-ONLY. This mode never writes, with or without --apply.
+async function labelAudit() {
+  console.log('MODE: label audit — READ-ONLY, asks Gmail for each row\'s labels\n')
+  console.log(`window        : ${DAYS ? `last ${DAYS} day(s)` : 'all time'}`)
+  console.log(`mailbox filter: ${ONLY_MAILBOX || '(all connected)'}`)
+  console.log(`row cap       : ${LIMIT || '(none)'}\n`)
+
+  const rows = await prisma.activity.findMany({
+    where: {
+      type: 'email',
+      direction: 'outbound',   // only our own compositions can be drafts
+      trackingId: null,        // a CRM-composer send is never a draft
+      messageId: { not: null },
+      gmailDeletedAt: null,    // not already hidden
+      ...(DAYS ? { createdAt: { gte: new Date(Date.now() - DAYS * 86400000) } } : {}),
+      ...(ONLY_MAILBOX ? { mailboxEmail: ONLY_MAILBOX } : {}),
+    },
+    select: {
+      id: true, messageId: true, rfcMessageId: true, threadId: true, createdAt: true,
+      subject: true, toEmail: true, mailboxEmail: true, companyId: true,
+      attachments: true, openCount: true,
+    },
+    orderBy: { createdAt: 'desc' },
+    ...(LIMIT ? { take: LIMIT } : {}),
+  })
+  console.log(`${rows.length} outbound row(s) to check against Gmail.\n`)
+  if (!rows.length) return
+
+  const accounts = await prisma.emailAccount.findMany({ where: { provider: 'gmail' } })
+  const byMailbox = new Map()
+  for (const r of rows) {
+    const mb = (r.mailboxEmail || '').toLowerCase()
+    if (!byMailbox.has(mb)) byMailbox.set(mb, [])
+    byMailbox.get(mb).push(r)
+  }
+
+  const drafts = [], gone = [], other = []
+  let sentOk = 0, checked = 0
+
+  // Transient failures (rate limit, 5xx) are retried rather than aborting a
+  // whole mailbox — an audit of thousands of rows will meet one eventually.
+  const getWithRetry = async (gmail, id) => {
+    let delay = 500
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        return await gmail.users.messages.get({ userId: 'me', id, format: 'minimal' })
+      } catch (err) {
+        const code = err?.code || err?.response?.status
+        if (code === 429 || (code >= 500 && code < 600)) {
+          await new Promise(r => setTimeout(r, delay)); delay *= 2; continue
+        }
+        throw err
+      }
+    }
+    throw new Error(`gave up after retries on ${id}`)
+  }
+
+  for (const [mb, list] of byMailbox) {
+    const account = accounts.find(a => (a.email || '').toLowerCase() === mb)
+    if (!account) { console.log(`${mb}: NOT CONNECTED — ${list.length} row(s) skipped.`); continue }
+    const gmail = google.gmail({ version: 'v1', auth: oauthFor(account) })
+    console.log(`${mb}: checking ${list.length} row(s)…`)
+
+    let aborted = null, cursor = 0
+    const worker = async () => {
+      while (cursor < list.length && !aborted) {
+        const r = list[cursor++]
+        try {
+          const got = await getWithRetry(gmail, r.messageId)
+          const labels = got.data.labelIds || []
+          if (labels.includes('DRAFT')) drafts.push({ ...r, labels })
+          else if (labels.includes('SENT')) sentOk++
+          else other.push({ ...r, labels })
+        } catch (err) {
+          if (isDefinitelyGone(err)) gone.push(r)
+          else { aborted = err.message; return }
+        }
+        checked++
+        if (checked % 250 === 0) console.log(`  …${checked} checked`)
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker))
+    if (aborted) console.log(`  !! ${mb} aborted — ${aborted}\n     Results for this mailbox are incomplete.`)
+  }
+
+  const companyIds = [...new Set([...drafts, ...other].map(r => r.companyId).filter(Boolean))]
+  const nameById = new Map(
+    (companyIds.length
+      ? await prisma.company.findMany({ where: { id: { in: companyIds } }, select: { id: true, name: true } })
+      : []).map(c => [c.id, c.name]))
+
+  if (drafts.length) {
+    console.log(`\n${'='.repeat(78)}`)
+    console.log('PROVEN DRAFTS — Gmail reports the DRAFT label on these messages')
+    console.log(`${'='.repeat(78)}`)
+    for (const r of drafts.sort((a, b) => a.createdAt - b.createdAt)) {
+      console.log(`\n  row ${r.id}`)
+      console.log(`    company  : ${r.companyId ? `${nameById.get(r.companyId) || '(unknown)'} [${r.companyId}]` : '(unassigned)'}`)
+      console.log(`    to       : ${r.toEmail}`)
+      console.log(`    subject  : ${r.subject}`)
+      console.log(`    gmailId  : ${r.messageId}   thread ${r.threadId}`)
+      console.log(`    labels   : [${r.labels.join(', ')}]   date ${r.createdAt.toISOString()}`)
+      console.log(`    attach   : ${(Array.isArray(r.attachments) ? r.attachments : []).length}`)
+      if (r.openCount) console.log(`    NOTE     : openCount=${r.openCount}`)
+    }
+  }
+
+  if (other.length) {
+    console.log(`\n${'='.repeat(78)}`)
+    console.log('NEITHER SENT NOR DRAFT — worth a look, not acted on')
+    console.log(`${'='.repeat(78)}`)
+    for (const r of other) {
+      console.log(`  ${r.id}  ${r.messageId}  labels=[${r.labels.join(', ')}]  ${String(r.subject).slice(0, 50)}`)
+    }
+  }
+
+  console.log(`\n${'-'.repeat(78)}`)
+  console.log(`rows checked        : ${checked}`)
+  console.log(`confirmed SENT      : ${sentOk}`)
+  console.log(`PROVEN DRAFTS       : ${drafts.length}   <-- Gmail says DRAFT, no inference`)
+  console.log(`gone from Gmail     : ${gone.length}   (404 — label unknowable, NOT actionable here)`)
+  console.log(`neither sent/draft  : ${other.length}`)
+  console.log('\nREAD-ONLY: nothing was written to the database, and Gmail was only read.')
+}
+
 async function run() {
+  if (LABEL_AUDIT) return labelAudit()
+
   if (UNMARK) {
     if (!MARKED_AT) {
       console.log('--unmark needs --marked-at <ISO timestamp>, the value printed by the --apply run.')
@@ -272,12 +422,26 @@ async function run() {
           else throw err
         }
 
-        // G2 — the real send must still exist. If it does not, this is not the
-        // "draft superseded by a real email" shape and we must not touch it.
+        // G2 — the successor must be a REAL SENT EMAIL: present in Gmail AND
+        // carrying the SENT label.
+        //
+        // Checking mere existence is not enough, and this bit us for real.
+        // Atlas Machinery (thread 1a09060e90f43da5, mohanapriya's mailbox):
+        //   12:16:42  gone from Gmail          ← would have been hidden
+        //   12:21:22  EXISTS, labels=["DRAFT"] ← treated as "the real send"
+        // That message was never sent to anybody. Hiding the earlier snapshot
+        // would have left an unsent draft standing alone, looking for all the
+        // world like a delivered email — strictly worse than the mess we were
+        // cleaning up. The label is what tells the two apart, so demand it.
         try {
-          await gmail.users.messages.get({
+          const succ = await gmail.users.messages.get({
             userId: 'me', id: p.successor.messageId, format: 'minimal',
           })
+          const succLabels = succ.data.labelIds || []
+          if (!succLabels.includes('SENT')) {
+            rejected.push({ ...p, why: `the successor is NOT a sent email — Gmail labels [${succLabels.join(', ')}]${succLabels.includes('DRAFT') ? ' (it is itself an unsent draft)' : ''} — left untouched` })
+            continue
+          }
         } catch (err) {
           if (isDefinitelyGone(err)) {
             rejected.push({ ...p, why: 'the successor is ALSO gone from Gmail — not a draft/send pair, left untouched' })
