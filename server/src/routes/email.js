@@ -1179,7 +1179,35 @@ async function runEmailSync({
     // already made on every other thread.
     try {
       const threadRes = await gmail.users.threads.get({ userId: 'me', id: threadId, format: 'full' })
-      const threadMessages = threadRes.data.messages || []
+      // A Gmail DRAFT is not an email — it was never sent to anybody — and must
+      // never become an Activity.
+      //
+      // Gmail stores every auto-save of a half-written message as a real
+      // message resource: its own message id, its own generated Message-ID
+      // header, sitting inside the very thread it will eventually be sent in.
+      // threads.get returns it alongside genuinely sent mail, and nothing here
+      // used to tell the two apart — direction was decided from the From header
+      // alone, so a draft written by the mailbox owner was stored as `sent`.
+      //
+      // What that produced, exactly: the sweep catches a draft mid-composition
+      // and stores whatever text and attachments existed at that instant. When
+      // the user finally hits Send, Gmail DISCARDS the draft message and mints
+      // a brand-new one with a different Message-ID — so the stored row is
+      // orphaned forever, pointing at a message id that no longer exists, and
+      // shows up beside the real email as an extra, earlier, less-complete
+      // copy of it. Attaching files one at a time across two sweeps yields two
+      // such rows, which is how one sent email came to read as "2 messages"
+      // with 2 of its 4 attachments.
+      //
+      // Dropped at the thread level so every downstream step — matching,
+      // adoption of existing rows, creation — sees only real mail.
+      const threadMessages = (threadRes.data.messages || [])
+        .filter(m => !(Array.isArray(m.labelIds) && m.labelIds.includes('DRAFT')))
+      // A thread holding nothing but an unsent draft has no mail in it yet.
+      // Returning here (rather than falling through with an empty list) keeps
+      // it out of the unassigned-thread tally, which counts real mail that
+      // matched no company.
+      if (threadMessages.length === 0) { skippedThreads++; return }
 
       // Company resolution is PER MESSAGE, not per thread.
       //
