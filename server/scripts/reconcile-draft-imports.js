@@ -256,17 +256,46 @@ async function labelAudit() {
   const drafts = [], gone = [], other = []
   let sentOk = 0, checked = 0
 
-  // Transient failures (rate limit, 5xx) are retried rather than aborting a
-  // whole mailbox — an audit of thousands of rows will meet one eventually.
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+
+  // Production tripped 'Total Query Cost units per minute per user' three runs
+  // in a row, always around the same ~300th request — 4 concurrent workers
+  // with no pacing burst through a mailbox's newest rows in seconds, and a
+  // fixed cursor means every retry re-attempts the SAME newest-first slice and
+  // re-trips at the SAME point. Blind retries could not converge; only pacing
+  // does.
+  //
+  // PACE_MS spreads requests thin enough to stay under the limit in the first
+  // place (proactive), rather than only reacting after tripping it. At 200ms
+  // sequential that is 5 req/s — comfortably under any per-minute quota in the
+  // low hundreds, and a full mailbox the size seen here (346 rows) finishes in
+  // roughly a minute.
+  const PACE_MS = 200
+
+  // Backoff if the quota is still hit despite pacing (e.g. another process
+  // sharing the same quota). This is a FIXED per-minute window, so the earlier
+  // 500ms-doubling-to-4s backoff could never outlast it — that is exactly why
+  // three consecutive runs all stalled at the same request count. 25s is
+  // comfortably past a 60s window reset without being needlessly long.
+  const QUOTA_BACKOFF_MS = 25_000
+  const QUOTA_MAX_RETRIES = 3
+
   const getWithRetry = async (gmail, id) => {
-    let delay = 500
-    for (let attempt = 0; attempt < 4; attempt++) {
+    let serverErrDelay = 500
+    for (let attempt = 0; attempt <= QUOTA_MAX_RETRIES; attempt++) {
       try {
         return await gmail.users.messages.get({ userId: 'me', id, format: 'minimal' })
       } catch (err) {
         const code = err?.code || err?.response?.status
-        if (code === 429 || (code >= 500 && code < 600)) {
-          await new Promise(r => setTimeout(r, delay)); delay *= 2; continue
+        const isQuota = code === 429 || /quota exceeded/i.test(String(err?.message || ''))
+        if (isQuota) {
+          if (attempt === QUOTA_MAX_RETRIES) break
+          console.log(`  … quota hit, waiting ${QUOTA_BACKOFF_MS / 1000}s before retrying (attempt ${attempt + 1}/${QUOTA_MAX_RETRIES})`)
+          await sleep(QUOTA_BACKOFF_MS)
+          continue
+        }
+        if (code >= 500 && code < 600) {
+          await sleep(serverErrDelay); serverErrDelay *= 2; continue
         }
         throw err
       }
@@ -278,27 +307,29 @@ async function labelAudit() {
     const account = accounts.find(a => (a.email || '').toLowerCase() === mb)
     if (!account) { console.log(`${mb}: NOT CONNECTED — ${list.length} row(s) skipped.`); continue }
     const gmail = google.gmail({ version: 'v1', auth: oauthFor(account) })
-    console.log(`${mb}: checking ${list.length} row(s)…`)
+    const etaSec = Math.ceil((list.length * PACE_MS) / 1000)
+    console.log(`${mb}: checking ${list.length} row(s), paced at ${1000 / PACE_MS}/s (~${etaSec}s)…`)
 
-    let aborted = null, cursor = 0
-    const worker = async () => {
-      while (cursor < list.length && !aborted) {
-        const r = list[cursor++]
-        try {
-          const got = await getWithRetry(gmail, r.messageId)
-          const labels = got.data.labelIds || []
-          if (labels.includes('DRAFT')) drafts.push({ ...r, labels })
-          else if (labels.includes('SENT')) sentOk++
-          else other.push({ ...r, labels })
-        } catch (err) {
-          if (isDefinitelyGone(err)) gone.push(r)
-          else { aborted = err.message; return }
-        }
-        checked++
-        if (checked % 250 === 0) console.log(`  …${checked} checked`)
+    // Sequential by design — see PACE_MS above. This is a diagnostic sweep run
+    // by hand, not a latency-sensitive path, so trading speed for reliably
+    // finishing the WHOLE mailbox in one pass is the right tradeoff.
+    let aborted = null
+    for (const r of list) {
+      if (aborted) break
+      try {
+        const got = await getWithRetry(gmail, r.messageId)
+        const labels = got.data.labelIds || []
+        if (labels.includes('DRAFT')) drafts.push({ ...r, labels })
+        else if (labels.includes('SENT')) sentOk++
+        else other.push({ ...r, labels })
+      } catch (err) {
+        if (isDefinitelyGone(err)) gone.push(r)
+        else { aborted = err.message; break }
       }
+      checked++
+      if (checked % 50 === 0) console.log(`  …${checked} checked`)
+      await sleep(PACE_MS)
     }
-    await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker))
     if (aborted) console.log(`  !! ${mb} aborted — ${aborted}\n     Results for this mailbox are incomplete.`)
   }
 
