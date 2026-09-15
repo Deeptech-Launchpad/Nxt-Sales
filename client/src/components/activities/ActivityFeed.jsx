@@ -270,7 +270,7 @@ function ThreadMessage({ msg, isLast }) {
 }
 
 // Thread card — groups all messages in a conversation
-function EmailThreadCard({ thread }) {
+function EmailThreadCard({ thread, ownerName }) {
   const [expanded, setExpanded] = useState(false)
   const { messages, subject, latestDate } = thread
   const count    = messages.length
@@ -301,8 +301,12 @@ function EmailThreadCard({ thread }) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
               <span className="af-time">{formatDate(latestDate)} at {formatTime(latestDate)}</span>
-              {latest.user?.name && (
-                <span style={{ fontSize: 14, color: '#475467' }}>{latest.user.name}</span>
+              {/* Company's Lead Owner (passed down from CompanyDetail's own
+                  already-fetched company.owner), not latest.user — that was
+                  whoever's CRM session the message happened to sync through,
+                  not the company's actual owner. */}
+              {ownerName && (
+                <span style={{ fontSize: 14, color: '#475467' }}>{ownerName}</span>
               )}
             </div>
           </div>
@@ -360,7 +364,7 @@ function EmailThreadCard({ thread }) {
 // onDeleteNote only ever fire for act.type === 'note', onEditTask only for
 // act.type === 'task' — Calls/Emails/Meetings render exactly as before,
 // with no action icons, so this can't affect them.
-function ActivityCard({ act, onEditNote, onDeleteNote, onEditTask }) {
+function ActivityCard({ act, onEditNote, onDeleteNote, onEditTask, ownerName }) {
   const [expanded, setExpanded] = useState(false)
   const { Icon, cls } = ICON_MAP[act.type] || ICON_MAP.note
 
@@ -481,7 +485,9 @@ function ActivityCard({ act, onEditNote, onDeleteNote, onEditTask }) {
               </div>
             )}
             <span className="af-time">{formatDate(act.createdAt)} at {formatTime(act.createdAt)}</span>
-            {act.user?.name && <span style={{ fontSize: 14, color: '#475467' }}>{act.user.name}</span>}
+            {/* Company's Lead Owner, not act.user — see the identical note in
+                EmailThreadCard above for why. */}
+            {ownerName && <span style={{ fontSize: 14, color: '#475467' }}>{ownerName}</span>}
           </div>
         </div>
         {subtitle && (
@@ -518,7 +524,7 @@ function EmptyState({ subTab }) {
   )
 }
 
-export default function ActivityFeed({ companyId, companyName, contactEmail, onAction, refreshKey = 0 }) {
+export default function ActivityFeed({ companyId, companyName, contactEmail, ownerName, onAction, refreshKey = 0 }) {
   const [subTab,      setSubTab]      = useState('All activities')
   const [query,       setQuery]       = useState('')
   const [acts,        setActs]        = useState([])
@@ -624,9 +630,10 @@ export default function ActivityFeed({ companyId, companyName, contactEmail, onA
                 <div className="activity-date-header">{date.toUpperCase()}</div>
                 {items.map(item =>
                   item._type === 'thread'
-                    ? <EmailThreadCard key={item.threadId} thread={item} />
+                    ? <EmailThreadCard key={item.threadId} thread={item} ownerName={ownerName} />
                     : <ActivityCard    key={item.id}       act={item}
-                        onEditNote={setEditingNote} onDeleteNote={handleDeleteNote} onEditTask={setEditingTask} />
+                        onEditNote={setEditingNote} onDeleteNote={handleDeleteNote} onEditTask={setEditingTask}
+                        ownerName={ownerName} />
                 )}
               </div>
             ))}

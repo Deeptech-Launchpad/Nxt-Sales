@@ -545,7 +545,7 @@ export default function CompanyDetail() {
 
         {centerTab === 'Activities' && (
           <main className="company-workspace-body company-activities-body">
-            <ActivityFeed companyId={id} companyName={company.name} contactEmail={company.email} onAction={openModal} refreshKey={feedRefreshKey} />
+            <ActivityFeed companyId={id} companyName={company.name} contactEmail={company.email} ownerName={company.owner?.name} onAction={openModal} refreshKey={feedRefreshKey} />
           </main>
         )}
 

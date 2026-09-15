@@ -11,9 +11,14 @@ const prisma = new PrismaClient()
 // defaults — see POST /seed — so there is exactly ONE prompt system, not two:
 // once a row exists it is what the composer uses.
 //
-// The originals are marked isSystem so they cannot be deleted (deleting one
-// would silently remove a template the composer still offers), but they remain
-// fully editable and can be disabled.
+// The originals are marked isSystem, kept fully editable and disable-able.
+// Deleting one is allowed (explicit user decision, 2026-09-15) — it does not
+// remove the composer's option for that slot, since EmailTool.jsx's template
+// dropdown (BUILT_IN_TEMPLATE_OPTIONS) is a hardcoded client-side list, not
+// derived from these rows. What actually happens: compilePreview()'s
+// savedFor(key) finds nothing once the row is gone, so it falls through to
+// the same hardcoded default content that slot used before Update 8 ever
+// existed — any customization made to it here is lost, not the slot itself.
 //
 // No AI configuration lives here — generation still uses the existing Gemini
 // key/model from Email Tool Settings.
@@ -126,16 +131,15 @@ router.put('/:id', auth, async (req, res) => {
   }
 })
 
-// DELETE /api/prompt-templates/:id — only user-created templates. The eight
-// originals are protected: the composer still offers them, so removing one
-// would leave it selectable but empty. Disable it instead.
+// DELETE /api/prompt-templates/:id — any template, built-in included
+// (explicit user decision, 2026-09-15 — see the comment above). Deleting a
+// built-in row does not remove the composer's option for that slot; it
+// reverts that slot's content to the original hardcoded default. Row must
+// still exist to be deleted; that 404 is the only guard left here.
 router.delete('/:id', auth, async (req, res) => {
   try {
     const row = await prisma.promptTemplate.findUnique({ where: { id: req.params.id } })
     if (!row) return res.status(404).json({ message: 'Template not found.' })
-    if (row.isSystem) {
-      return res.status(400).json({ message: 'Built-in templates cannot be deleted. You can edit or disable them instead.' })
-    }
     await prisma.promptTemplate.delete({ where: { id: req.params.id } })
     res.json({ ok: true })
   } catch (err) {

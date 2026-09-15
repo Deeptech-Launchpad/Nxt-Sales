@@ -96,8 +96,15 @@ export default function PromptTemplates() {
   }
 
   const remove = async () => {
-    if (!draft || draft.isSystem) return
-    if (!window.confirm(`Delete "${draft.label}"? This cannot be undone.`)) return
+    if (!draft) return
+    // Built-in templates are deletable too (explicit decision, 2026-09-15) —
+    // the confirmation just says something more specific for them, since the
+    // consequence differs: it doesn't remove the composer's option for that
+    // slot, it reverts that slot's content to the original hardcoded default.
+    const question = draft.isSystem
+      ? `Delete the built-in template "${draft.label}"? This composer slot will fall back to its original default content — any customization made here will be lost. This cannot be undone.`
+      : `Delete "${draft.label}"? This cannot be undone.`
+    if (!window.confirm(question)) return
     setSaving(true); setError('')
     try {
       await api.delete(`/prompt-templates/${draft.id}`)
@@ -219,9 +226,9 @@ export default function PromptTemplates() {
                 </div>
 
                 <footer className="pt-editor-footer">
-                  <div className="pt-footer-note">{draft.isSystem ? <><Lock size={13} /> Built-in templates can be edited or disabled, but not deleted.</> : 'Custom template'}</div>
+                  <div className="pt-footer-note">{draft.isSystem ? <><Lock size={13} /> Built-in template — deleting it reverts this slot to its original default.</> : 'Custom template'}</div>
                   <div className="pt-footer-actions">
-                    {!draft.isSystem && <button type="button" className="pt-delete" onClick={remove} disabled={saving}><Trash2 size={14} /> Delete</button>}
+                    <button type="button" className="pt-delete" onClick={remove} disabled={saving}><Trash2 size={14} /> Delete</button>
                     <button type="button" className="pt-revert" onClick={revert} disabled={!dirty || saving}><RotateCcw size={14} /> Revert</button>
                     <button type="button" className="pt-save" onClick={save} disabled={saving || !dirty}>{saving ? <Loader2 size={14} className="pt-spin" /> : <Save size={14} />}{saving ? 'Saving…' : 'Save changes'}</button>
                   </div>
