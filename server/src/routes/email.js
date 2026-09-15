@@ -684,10 +684,28 @@ router.post('/send', auth, async (req, res) => {
     const hasAttachments = Array.isArray(attachments) && attachments.length > 0
     if (hasAttachments) {
       try {
+        // media.body must be a Readable stream — googleapis-common's own
+        // multipart uploader branches on `typeof part.body === 'string'`,
+        // and anything else is assumed to expose .pipe(). rawBuffer is a
+        // plain Buffer (typeof 'object', no .pipe), so this call has always
+        // thrown ("part.body.pipe is not a function") and silently fallen
+        // through to the JSON `raw` path below — confirmed via
+        // [Email Send] Multipart upload failed... in a real local send.
+        // That fallback re-encodes the ALREADY-base64 attachment content
+        // (each file base64-encoded once by the browser) as base64url a
+        // SECOND time for the raw field, nearly doubling the effective
+        // inflation over the original file bytes and pushing a realistic
+        // multi-attachment send far closer to Gmail's size ceiling than the
+        // single-encoded multipart path ever would have.
+        // Readable.from(buffer) is a real stream and satisfies the
+        // library's own isReadableStream() check, so this restores the
+        // multipart path to actually being taken instead of dead code that
+        // always excepts.
+        const { Readable } = require('stream')
         sent = await gmail.users.messages.send({
           userId: 'me',
           requestBody: { ...(threadId && { threadId }) },
-          media: { mimeType: 'message/rfc822', body: rawBuffer },
+          media: { mimeType: 'message/rfc822', body: Readable.from(rawBuffer) },
         })
       } catch (mediaErr) {
         console.warn('[Email Send] Multipart upload failed, falling back to simple send:', mediaErr.message)

@@ -310,6 +310,15 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
   const autoTimer  = useRef(null)   // debounce for auto-generation
   const lastAiKey  = useRef('')     // guards Template 3 against duplicate AI calls
 
+  // What `body`/`subject` were set to by the MOST RECENT compilePreview() call
+  // — i.e. what previewHtml/previewSubject currently represent. Compared
+  // against the live body/subject at send time (see getFinalContent below) to
+  // detect an edit made since that compile, which previewHtml would otherwise
+  // silently miss: the "Review & Send" gate only checks that previewHtml is
+  // non-empty, not that it still matches the current body/subject.
+  const lastCompiledBody    = useRef('')
+  const lastCompiledSubject = useRef('')
+
   const isBeforeAfter = template === '1' || template === '3'
   const isManual = template === 'manual'
 
@@ -474,6 +483,35 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
   const wrapDefaultFont = (html) =>
     `<div style="font-family:Verdana,Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${html}</div>`
 
+  // Plain text (as typed in the Email Body field) -> simple paragraph HTML.
+  // Exactly the transform the 'manual' branch of compilePreview already used
+  // below — factored out so getFinalContent can reuse it verbatim rather than
+  // risk drifting from it.
+  const bodyToHtml = (text) =>
+    text.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('')
+
+  // The HTML/subject that will actually go out if Send is clicked right now.
+  //
+  // previewHtml/previewSubject are a SNAPSHOT from the last compilePreview()
+  // call — sendEmail() used to send that snapshot directly, so an edit made to
+  // the Email Body field afterward (the field's own placeholder literally says
+  // "You can edit") was silently discarded: previewHtml doesn't change just
+  // because body did, and the only gate before sending checks that previewHtml
+  // is non-empty, not that it is still current.
+  //
+  // If body/subject match what was last compiled, nothing has been edited
+  // since — return previewHtml/previewSubject unchanged, so template and AI
+  // output keep whatever richer formatting they produced (bold, links, lists),
+  // none of which survives body's plain-text round trip. Only when they have
+  // diverged is fresh HTML built from the live body text, using the same
+  // paragraph-wrapping manual mode already relies on — guaranteeing whatever
+  // is currently on screen is what gets sent, for every template.
+  const getFinalContent = () => {
+    const edited = body !== lastCompiledBody.current || subject !== lastCompiledSubject.current
+    if (!edited) return { html: previewHtml, subject: previewSubject || subject }
+    return { html: wrapDefaultFont(bodyToHtml(body)), subject: subject || '(No Subject)' }
+  }
+
   // auto=true → silent auto-generation (no recipient required, no success toast).
   const compilePreview = async (auto = false) => {
     if (generating) return
@@ -495,7 +533,10 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
         setPreviewHtml(wrapDefaultFont(finalBody))
         setPreviewSubject(finalSubj)
         setSubject(finalSubj)
-        setBody(finalBody.replace(/<[^>]*>/g, '\n').replace(/\n\n+/g, '\n\n').trim())
+        const finalBodyText = finalBody.replace(/<[^>]*>/g, '\n').replace(/\n\n+/g, '\n\n').trim()
+        setBody(finalBodyText)
+        lastCompiledSubject.current = finalSubj
+        lastCompiledBody.current    = finalBodyText
         lastAiKey.current = aiKeyStr
         showToast('AI Audit email generated!', 'success')
       } catch (err) {
@@ -531,7 +572,17 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
     setPreviewSubject(subj)
     setPreviewHtml(wrapDefaultFont(bod))
     setSubject(subj)
-    if (template !== 'manual') setBody(bod.replace(/<[^>]*>/g, '\n').replace(/\n\n+/g, '\n\n').trim())
+    lastCompiledSubject.current = subj
+    if (template !== 'manual') {
+      const bodyText = bod.replace(/<[^>]*>/g, '\n').replace(/\n\n+/g, '\n\n').trim()
+      setBody(bodyText)
+      lastCompiledBody.current = bodyText
+    } else {
+      // Manual mode never rewrites body from bod (bod is DERIVED from body,
+      // the reverse direction) — the baseline is simply whatever body already
+      // holds at this compile.
+      lastCompiledBody.current = body
+    }
     if (!auto) showToast('Email preview compiled!', 'success')
   }
 
@@ -566,8 +617,10 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
       timestamp: Date.now(),
       attachmentNames: []
     }
-    if (isBeforeAfter && beforeFile) draft.attachmentNames.push(beforeFile.name)
-    if (isBeforeAfter && afterFile)  draft.attachmentNames.push(afterFile.name)
+    // Gated on the file actually being present, not on isBeforeAfter — see the
+    // identical fix in sendEmail() below for why.
+    if (beforeFile) draft.attachmentNames.push(beforeFile.name)
+    if (afterFile)  draft.attachmentNames.push(afterFile.name)
     additionalFiles.forEach(f => draft.attachmentNames.push(f.name))
 
     const existing = JSON.parse(localStorage.getItem('altius_draft_emails') || '[]')
@@ -590,9 +643,12 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
     }
     if (!to) { showToast('Recipient "To" address is required.', 'error'); return }
     setReport(null); setAnalyzing(true); setShowReport(true)
+    // Analyze exactly what would be sent right now, not a stale compile —
+    // see getFinalContent above.
+    const final = getFinalContent()
     const r = await runDeliverabilityAnalysis({
-      subject: previewSubject || subject,
-      html: previewHtml,
+      subject: final.subject,
+      html: final.html,
       fromEmail: gmailStatus?.email,
       aiProvider: localStorage.getItem('ai_provider') || 'gemini',
       aiKey: localStorage.getItem('ai_key') || '',
@@ -602,10 +658,18 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
   }
 
   const applyAiSuggestion = ({ subject: s, html }) => {
-    if (s) { setSubject(s); setPreviewSubject(s) }
+    // Sets previewHtml/body to a matching pair, same as compilePreview does —
+    // so the baseline must move too. Without this, getFinalContent() would
+    // see body != lastCompiledBody immediately after accepting a suggestion
+    // (nobody typed anything; this path just never told it about the change)
+    // and rebuild from plain text on the next send, throwing away exactly the
+    // richer HTML the suggestion was meant to add.
+    if (s) { setSubject(s); setPreviewSubject(s); lastCompiledSubject.current = s }
     if (html) {
       setPreviewHtml(html)
-      setBody(html.replace(/<[^>]+>/g, '\n').replace(/\n\n+/g, '\n\n').trim())
+      const bodyText = html.replace(/<[^>]+>/g, '\n').replace(/\n\n+/g, '\n\n').trim()
+      setBody(bodyText)
+      lastCompiledBody.current = bodyText
     }
     setShowReport(false)
   }
@@ -626,11 +690,23 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
       return
     }
 
+    // Gated on the file actually being present, NOT on isBeforeAfter.
+    //
+    // The Before/After upload boxes render for every non-manual template
+    // ({!isManual && ...} — see the Assets section below), so a file uploaded
+    // while on template 1 or 3 stays in beforeFile/afterFile if the user then
+    // switches to template 2, 4, or a saved template — handleTemplateChange
+    // never clears them. Gating inclusion here on isBeforeAfter meant that
+    // switch silently dropped both files from the actual send while the
+    // upload boxes kept showing "PDF Attached" the whole time: confirmed live
+    // — after switching away from template 1 with both files still uploaded
+    // and visibly attached, the send payload had zero attachments.
+    // isBeforeAfter still correctly drives the "(Required)" vs "(Optional)"
+    // label and the required styling below — only whether an uploaded file
+    // gets SENT needed to stop depending on it.
     const attachments = []
-    if (isBeforeAfter) {
-      if (beforeFile) attachments.push(beforeFile)
-      if (afterFile)  attachments.push(afterFile)
-    }
+    if (beforeFile) attachments.push(beforeFile)
+    if (afterFile)  attachments.push(afterFile)
     additionalFiles.forEach(f => attachments.push(f))
 
     setSending(true)
@@ -643,10 +719,14 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
       // Gmail connection (EmailAccount row) — otherwise it's ignored there in
       // favor of the real connected account, so passing it here is harmless
       // even when gmailStatus.connected is already true via the backend.
+      // Whatever is currently in the Email Body/Subject fields — see
+      // getFinalContent above. Falls back to previewHtml/previewSubject
+      // unchanged whenever nothing has been edited since the last compile.
+      const final = getFinalContent()
       await api.post('/email/send', {
         to, cc: cc || undefined, bcc: bcc || undefined,
-        subject: previewSubject || subject,
-        htmlBody: previewHtml,
+        subject: final.subject,
+        htmlBody: final.html,
         emailMode,
         threadId: threadId || undefined,
         quotedHtml: quotedHtml || undefined,
@@ -666,6 +746,14 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
 
       showToast(`Email sent successfully to ${to}!`, 'success')
       clearForm()
+      // Close only on confirmed success. Previously nothing here ever touched
+      // showReport, on success OR failure — the modal was left open regardless,
+      // sitting over a form clearForm() had just emptied out, with the only
+      // signal either way being a toast. The catch block below deliberately
+      // still does NOT close it: on failure the report should stay exactly
+      // where it is, with the error now visible, so the user can retry or
+      // back out without having lost their place.
+      setShowReport(false)
     } catch (err) {
       showToast('Send failed: ' + (err.response?.data?.message || err.message), 'error')
     } finally {
@@ -683,13 +771,18 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
     setPreviewHtml(''); setPreviewSubject('')
   }
 
-  // Attachment names for preview panel
+  // Attachment names for preview panel — must list exactly what sendEmail()
+  // will attach (see the isBeforeAfter fix there), or the preview goes back
+  // to promising attachments the send silently drops.
   const previewAttachNames = []
-  if (isBeforeAfter) {
-    if (beforeFile) previewAttachNames.push(beforeFile.name)
-    if (afterFile)  previewAttachNames.push(afterFile.name)
-  }
+  if (beforeFile) previewAttachNames.push(beforeFile.name)
+  if (afterFile)  previewAttachNames.push(afterFile.name)
   additionalFiles.forEach(f => previewAttachNames.push(f.name))
+
+  // What the preview panel below shows, and what Send/Review will actually
+  // use — see getFinalContent above. Computed once per render so the panel,
+  // the deliverability report, and the eventual send all agree.
+  const finalContent = getFinalContent()
 
   return (
     <div className="et-section">
@@ -874,7 +967,10 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
                           </svg>
-                          <span className="et-file-name" title={f.name}>{f.name}</span>
+                          {/* Size moved into the tooltip (still one hover away) rather than
+                              its own visible span — freed the width a second compact chip
+                              needed to fit on the same row; nothing about upload/remove changed. */}
+                          <span className="et-file-name" title={`${f.name} (${formatBytes(f.size)})`}>{f.name}</span>
                           <span className="et-file-size">({formatBytes(f.size)})</span>
                         </div>
                         <button className="et-file-remove" onClick={() => removeAdditional(i)}>
@@ -955,7 +1051,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
           open={showReport}
           analyzing={analyzing}
           report={report}
-          currentSubject={previewSubject || subject}
+          currentSubject={finalContent.subject}
           sending={sending}
           onClose={() => setShowReport(false)}
           onApplyAI={applyAiSuggestion}
@@ -991,14 +1087,14 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
             )}
             <div className="et-meta-row">
               <span className="et-meta-label">SUBJECT</span>
-              <span className="et-meta-val">{previewSubject || subject || '(No Subject)'}</span>
+              <span className="et-meta-val">{finalContent.subject || '(No Subject)'}</span>
             </div>
           </div>
 
           <div className="et-preview-body">
             <div className="et-gmail-envelope">
               {previewHtml
-                ? <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                ? <div dangerouslySetInnerHTML={{ __html: finalContent.html }} />
                 : <p className="et-preview-placeholder">
                     Configure client name, email, and select an outreach type on the left, then click <strong>Compile Preview</strong> to generate the live email content here.
                   </p>

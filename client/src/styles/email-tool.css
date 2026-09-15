@@ -385,6 +385,15 @@ select.et-input {
   align-items: center;
   justify-content: center;
   gap: 0.35rem;
+  /* Grid items default to min-width:auto — refusing to shrink below their
+     content's natural size — so a long attached filename forced this box
+     wider than its 1fr track in .et-upload-grid and spilled it into the
+     Additional Attachments column next to it. .et-upload-filename already
+     has overflow:hidden + ellipsis, but that can't take effect while this
+     box (and .et-upload-grid, its own parent) never shrinks small enough to
+     need it. Matches the min-width:0 pattern already used throughout this
+     file (.et-content-panel, .et-section, etc.) — just missing here. */
+  min-width: 0;
 }
 
 .et-upload-box.required { border-color: rgba(225,29,72,0.4); }
@@ -457,8 +466,13 @@ select.et-input {
 .et-drop-zone p span { color: var(--et-red); font-weight: 600; }
 
 .et-file-list {
+  /* Was flex-direction:column — one full-width row per file. With several
+     additional attachments that stacked tall enough to push the rest of the
+     composer down noticeably. Wrapping horizontally instead lets several
+     compact chips share a row; the max-height/overflow-y below still caps
+     runaway growth exactly as before. */
   display: flex;
-  flex-direction: column;
+  flex-flow: row wrap;
   gap: 0.4rem;
   margin-top: 0.4rem;
   max-height: 130px;
@@ -474,6 +488,10 @@ select.et-input {
   align-items: center;
   justify-content: space-between;
   font-size: 0.72rem;
+  /* Flex-item default (auto) is width:fit-content in a row — chips stay
+     compact instead of stretching to fill the row like the old vertical
+     stack relied on. */
+  flex: 0 1 auto;
 }
 
 .et-file-info {
@@ -489,10 +507,21 @@ select.et-input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 200px;
+  /* Was 200px — in the Additional Attachments column's actual allotted
+     width (a fraction of the Assets row, unchanged here), a 200px name
+     alone left no room for a second chip to ever share a row with the new
+     wrapping layout above. Narrower still truncates via the ellipsis
+     already in place; full names remain visible in the Live Preview panel
+     and in the title tooltip on hover (unchanged). */
+  max-width: 110px;
 }
 
 .et-file-size { color: var(--et-txt-m); }
+/* Hidden specifically within the compact chip list — the size is still
+   available on hover (see the filename's title attribute in EmailTool.jsx).
+   This class isn't used anywhere else in the file, so scoping it to
+   .et-file-list changes nothing outside this one list. */
+.et-file-list .et-file-size { display: none; }
 
 .et-file-remove {
   background: none;
@@ -1556,7 +1585,16 @@ select.et-input{
 }
 .et-flow-badge .material-symbols-rounded{font-size:16px}
 .et-form-section-head{
-  align-items:center;
+  /* Was align-items:center — vertically centering the step number/title
+     against the FULL HEIGHT of the section's grid row (CSS Grid's default
+     align-items:stretch makes this box as tall as the section's content).
+     For a short, near-uniform-height section (Recipients, Message) that is
+     barely visible; for Assets — which grows with however many additional
+     attachments are listed, and wraps more at narrower desktop widths — the
+     "3 Assets" marker visibly drifts down away from the row it labels,
+     looking like broken/colliding layout. Restored to the original
+     flex-start (top) alignment used everywhere else in this file. */
+  align-items:flex-start;
   padding-top:0;
 }
 .et-form-section-head h3{margin:0}
