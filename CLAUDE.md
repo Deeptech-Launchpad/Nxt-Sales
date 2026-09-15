@@ -82,19 +82,43 @@ modified files that are real work (see PROJECT_CONTEXT §Deployment). Use
 path-scoped `git checkout -- <path>` instead, and only after proving the
 discarded content is not unique.
 
-**5. Do not merge the `Frotend---Devlopement` branch.** It is an *unrelated
-history* (its own initial commit; `git merge-base` with main is empty). All
-integration is file-level porting, never a merge.
+**5. Do not merge the `Frotend---Devlopement` branch, or any other developer's
+branch.** As of 2026-09-15 the user is the sole code owner — there is no other
+active contributor to assume changes from or merge on behalf of. This branch
+specifically is also an *unrelated history* (its own initial commit;
+`git merge-base` with main is empty). All integration is file-level porting,
+never a merge, and never unattended — see rule 8.
 
-**6. The branch is not always ahead of main.** The frontend developer also
-uploads directly to `main` via the GitHub web UI ("Add files via upload"). Before
-porting any file, run `git log --oneline -- <path>` on main; if a direct upload
-touched it more recently, **main wins**. Confirm by reading the actual hunk, never
-by line counts. This has caused a real regression — see PROJECT_CONTEXT §Decisions.
+**6. The branch is not always ahead of main.** Historically the (now former)
+frontend developer sometimes uploaded directly to `main` via the GitHub web UI
+("Add files via upload") rather than through the branch. If porting any file
+whose history predates 2026-09-15, still run `git log --oneline -- <path>` on
+main first; if a direct upload touched it more recently, **main wins**. Confirm
+by reading the actual hunk, never by line counts. This has caused a real
+regression — see PROJECT_CONTEXT §Decisions. For anything after 2026-09-15,
+`main` is unconditionally the single source of truth — there is no competing
+upload path left to reconcile against.
 
-**7. Backend changes are scoped per request.** Several requests have said
-"frontend only" or "do not modify the backend". Honour the scope given in the
-current conversation; do not carry a previous grant forward.
+**7. Every change is scoped to exactly what was asked.** Make the smallest
+change that fixes the reported issue; do not refactor unrelated code, rename
+things in passing, or "clean up" nearby code that wasn't part of the request.
+Preserve all existing working functionality — a fix must not become a
+redesign. When a request says "frontend only" or "do not modify the backend",
+honour that scope for the current conversation only; do not carry a previous
+grant forward into a later one.
+
+**8. Never blindly merge or push to `main`.** Before every merge and every
+push — no exceptions, no matter how small the change looks —:
+- Run `git status`, `git diff --stat`, and read the actual `git diff` for
+  every changed file. Know precisely which files and which functionality are
+  being added or changed before the merge happens, not after.
+- State that file list back before merging, so a mismatch between "what this
+  was supposed to touch" and "what actually changed" is caught before it
+  reaches `main`.
+- Before any production deployment specifically, additionally verify the
+  build (and any relevant tests) succeed against the exact commit being
+  deployed, and do one final review of the diff between the last-deployed
+  commit and this one — see §Deploying below for the full sequence.
 
 ---
 
@@ -112,7 +136,11 @@ longer applies; pushes succeeded throughout Sep 2026.)
 - CRLF makes `git status` report untouched files as modified. Use
   `git diff --stat` for the authoritative changed-file list, and avoid
   `git add -A` when copying trees in from `project/`.
-- Merge with `--no-ff` and a message explaining *why*, then push `main`.
+- Before merging to `main`: `git status`, `git diff --stat`, and read the
+  full `git diff` — see Hard rule 8. State the changed-file list back before
+  merging.
+- Merge with `--no-ff` and a message explaining *why*, then push `main` only
+  when the user has explicitly said to push.
 - Verify the push: `git ls-remote origin refs/heads/main` must equal
   `git rev-parse HEAD`.
 
@@ -126,6 +154,11 @@ Always hand the user commands; never run them. The full annotated sequence —
 backup, pull, migrate, restart, rebuild, verify, rollback — is in
 `docs/PROJECT_CONTEXT.md §Deployment`. Non-negotiables:
 
+- Before handing over the deploy commands: confirm the build succeeds (and
+  any relevant tests pass) against the exact commit being deployed, and do a
+  final read of the diff between the currently-deployed commit and this one
+  — see Hard rule 8. Deploy commands are for the user to run either way;
+  this verification happens before they're given, not instead of it.
 - Back up the database **and** `client/dist` **and** record the current commit
   before anything else.
 - `npx prisma migrate deploy` — **never** `migrate dev` on production.
