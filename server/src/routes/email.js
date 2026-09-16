@@ -104,17 +104,23 @@ function stripHtml(html) {
 // Recursively extract plain-text body from nested MIME parts.
 // Gmail wraps text/plain inside multipart/alternative inside multipart/mixed,
 // so a flat .parts.find() misses it on most real emails.
+//
+// Capped at the same size as extractHtmlBody's MAX_STORED_HTML below (was
+// previously a much smaller 3000-char cap, which hard-truncated ordinary
+// business emails mid-sentence — the two caps are now aligned since both are
+// a display-size safety valve, not an intentional content limit).
+const MAX_STORED_TEXT = 400_000
 function extractTextBody(payload) {
   if (!payload) return ''
   // Inline body (simple messages with no parts)
   if (payload.body?.data) {
-    return Buffer.from(payload.body.data, 'base64').toString('utf-8').slice(0, 3000)
+    return Buffer.from(payload.body.data, 'base64').toString('utf-8').slice(0, MAX_STORED_TEXT)
   }
   if (!payload.parts) return ''
   // Prefer text/plain at this level
   for (const part of payload.parts) {
     if (part.mimeType === 'text/plain' && part.body?.data) {
-      return Buffer.from(part.body.data, 'base64').toString('utf-8').slice(0, 3000)
+      return Buffer.from(part.body.data, 'base64').toString('utf-8').slice(0, MAX_STORED_TEXT)
     }
   }
   // Recurse into any multipart container (multipart/alternative, multipart/mixed, etc.)
@@ -128,7 +134,7 @@ function extractTextBody(payload) {
   for (const part of payload.parts) {
     if (part.mimeType === 'text/html' && part.body?.data) {
       const html = Buffer.from(part.body.data, 'base64').toString('utf-8')
-      return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 3000)
+      return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_STORED_TEXT)
     }
   }
   return ''
@@ -294,6 +300,72 @@ function popupHtml(status, clientUrl) {
 </html>`
 }
 
+// Typographic entities the email templates use. Deliberately excludes lt/gt/
+// quot/amp/apos — those are handled separately below, after this map runs, so
+// that &amp; is always the last thing decoded.
+const HTML_ENTITIES = {
+  ndash: '–', mdash: '—', hellip: '…', bull: '•', middot: '·',
+  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
+  copy: '©', reg: '®', trade: '™', deg: '°', euro: '€', pound: '£', rarr: '→', larr: '←',
+}
+
+// A readable plain-text rendering of an HTML email body, for the text/plain
+// half of the multipart/alternative pair in buildRawEmail below.
+//
+// Not a general-purpose HTML→text converter: it only has to handle the tags
+// our own templates/composer emit (p, br, div, li, h1-6, a, strong/em) plus
+// whatever markup a Gmail signature brings with it. Block-level tags become
+// line breaks BEFORE the tags are stripped, so the result keeps the message's
+// paragraph structure instead of collapsing into one run-on line the way
+// stripHtml() (used for matching, not for display) deliberately does.
+function htmlToPlainText(html) {
+  if (!html) return ''
+  return String(html)
+    // No text meaning at all — drop these tags AND their contents.
+    .replace(/<(script|style|head)\b[\s\S]*?<\/\1>/gi, '')
+    // Block boundaries → line breaks.
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|h[1-6]|ul|ol|blockquote)>/gi, '\n\n')
+    .replace(/<li[^>]*>/gi, '\n• ')
+    .replace(/<\/li>/gi, '')
+    .replace(/<\/td>/gi, '\t')
+    // Every remaining tag goes; the text inside it stays.
+    .replace(/<[^>]+>/g, '')
+    // Entities. Typographic ones (&ndash;, &rsquo;, …) matter here because the
+    // templates are full of them and an undecoded "15&ndash;20" is exactly the
+    // kind of thing a recipient reading the plain-text half would see raw.
+    // &amp; is decoded LAST so an encoded entity ("&amp;lt;") doesn't get
+    // double-decoded into markup.
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&([a-z]+);/gi, (m, name) => HTML_ENTITIES[name.toLowerCase()] ?? m)
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&apos;/gi, "'")
+    .replace(/&amp;/gi, '&')
+    // Tidy up: no trailing spaces, never more than one blank line in a row.
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+// Base64 split into lines, as MIME requires.
+//
+// RFC 2045 §6.8 caps a base64 line at 76 characters, and SMTP (RFC 5321
+// §4.5.3.1.6) caps ANY line at 1000 octets including CRLF. A single
+// unwrapped base64 blob — which is what both the HTML body and every
+// client-supplied attachment used to be — breaks both: a 10MB PDF arrived
+// here as one ~13.6-million-character line.
+function b64Lines(input) {
+  const b64 = (Buffer.isBuffer(input) ? input.toString('base64') : String(input || ''))
+    .replace(/\s+/g, '')
+  const lines = []
+  for (let i = 0; i < b64.length; i += 76) lines.push(b64.slice(i, i + 76))
+  return lines.join('\r\n')
+}
+
 // ── helper: build a proper RFC 2822 MIME message ─────────
 // inReplyTo / references (RFC 2822 Message-ID header values) are set only when
 // continuing an existing Gmail thread; when null the message behaves as before.
@@ -303,9 +375,37 @@ function popupHtml(status, clientUrl) {
 // the plain JSON `raw` field path (no-attachment emails — unchanged) base64url-
 // encodes it once at the call site. Either way the message content is byte-for-
 // byte identical; only how it's handed to the Gmail API differs.
+//
+// Structure matches what Gmail's own compose window produces:
+//
+//   multipart/mixed                 (only when there are attachments)
+//     multipart/alternative
+//       text/plain                  ← the plain-text half
+//       text/html
+//     <attachment> ...
+//
+// The text/plain half is the part that was missing. An HTML-only message is a
+// recognised spam signal (SpamAssassin scores it as MIME_HTML_ONLY) because
+// effectively no ordinary mail client sends one — Gmail, Outlook and Apple
+// Mail all emit both halves. It also leaves plain-text readers with nothing to
+// display. Nothing else about the message changes: same headers, same HTML,
+// same attachment bytes, same threading.
 function buildRawEmail({ from, to, cc, bcc, subject, htmlBody, attachments = [], inReplyTo = null, references = null }) {
-  const boundary = `nxts_${Date.now()}`
-  const encSubject = `=?UTF-8?B?${Buffer.from(subject || '').toString('base64')}?=`
+  // Random, not `Date.now()`: two sends in the same millisecond used to be
+  // able to pick the same delimiter, and a predictable one is also a delimiter
+  // a body could contain by accident.
+  const mixB = `nxts_mixed_${crypto.randomBytes(12).toString('hex')}`
+  const altB = `nxts_alt_${crypto.randomBytes(12).toString('hex')}`
+
+  // CR/LF stripped first: a newline in a header value would let the rest of
+  // the subject be read as additional headers (this was previously prevented
+  // only as a side effect of always base64-encoding). Encode only when the
+  // subject actually needs it — RFC 2047 encoding a pure-ASCII subject is
+  // legal but unusual, and unusual is what filters notice.
+  const safeSubject = String(subject || '').replace(/[\r\n]+/g, ' ')
+  const encSubject = /^[\x20-\x7E]*$/.test(safeSubject)
+    ? safeSubject
+    : `=?UTF-8?B?${Buffer.from(safeSubject, 'utf8').toString('base64')}?=`
 
   const headers = [
     'MIME-Version: 1.0',
@@ -318,32 +418,47 @@ function buildRawEmail({ from, to, cc, bcc, subject, htmlBody, attachments = [],
     `Subject: ${encSubject}`,
   ].filter(Boolean)
 
+  // The two representations of the same message: plain text first, richest
+  // last — the order MIME requires, since a client renders the last part it
+  // understands.
+  const altSection = [
+    `--${altB}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64Lines(Buffer.from(htmlToPlainText(htmlBody), 'utf8')),
+    `--${altB}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64Lines(Buffer.from(htmlBody || '', 'utf8')),
+    `--${altB}--`,
+  ]
+
   let body
   if (attachments.length > 0) {
-    headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`)
-
-    const htmlPart = [
-      `--${boundary}`,
-      'Content-Type: text/html; charset=utf-8',
-      'Content-Transfer-Encoding: base64',
-      '',
-      Buffer.from(htmlBody || '').toString('base64'),
-    ].join('\r\n')
+    headers.push(`Content-Type: multipart/mixed; boundary="${mixB}"`)
 
     const attParts = attachments.map(att => [
-      `--${boundary}`,
+      `--${mixB}`,
       `Content-Type: ${att.mimeType || 'application/octet-stream'}; name="${att.filename}"`,
       `Content-Disposition: attachment; filename="${att.filename}"`,
       'Content-Transfer-Encoding: base64',
       '',
-      att.content,
+      b64Lines(att.content),
     ].join('\r\n'))
 
-    body = [htmlPart, ...attParts, `--${boundary}--`].join('\r\n')
+    body = [
+      `--${mixB}`,
+      `Content-Type: multipart/alternative; boundary="${altB}"`,
+      '',
+      ...altSection,
+      ...attParts,
+      `--${mixB}--`,
+    ].join('\r\n')
   } else {
-    headers.push('Content-Type: text/html; charset=utf-8')
-    headers.push('Content-Transfer-Encoding: base64')
-    body = Buffer.from(htmlBody || '').toString('base64')
+    headers.push(`Content-Type: multipart/alternative; boundary="${altB}"`)
+    body = altSection.join('\r\n')
   }
 
   return Buffer.from([...headers, '', body].join('\r\n'))
