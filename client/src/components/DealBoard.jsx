@@ -49,18 +49,18 @@ export default function DealBoard({ deals, onViewDeal, onEdit, onGoToCompany, on
                 <div className="deal-board-column-empty">No deals</div>
               ) : colDeals.map(d => (
           <div key={d.id} className="deal-tab-card" onClick={() => onViewDeal(d)}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
               {/* Company name leads the card and carries the weight; the deal name
                   sits under it in regular text. Both are always rendered — the
                   company line only steps aside when the deal genuinely has no
                   company, which is the same fallback as before (nothing shown). */}
               <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                 {(d.companyName || d.company?.name) && (
-                  <span style={{ fontSize: 14.5, fontWeight: 650, color: '#0f172a', wordBreak: 'break-word' }}>
+                  <span style={{ fontSize: 13, fontWeight: 650, color: '#0f172a', wordBreak: 'break-word' }}>
                     {d.companyName || d.company?.name}
                   </span>
                 )}
-                <span style={{ fontSize: 14, fontWeight: 450, color: '#28313f', wordBreak: 'break-word' }}>{d.title}</span>
+                <span style={{ fontSize: 12.5, fontWeight: 450, color: '#28313f', wordBreak: 'break-word' }}>{d.title}</span>
               </span>
               <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                 <button
@@ -93,21 +93,21 @@ export default function DealBoard({ deals, onViewDeal, onEdit, onGoToCompany, on
             {/* The company name moved into the card header above, so it is no
                 longer repeated here. */}
             {isVisible('contactPerson') && d.contactPerson && (
-              <div style={{ fontSize: 12.5, color: '#475467', marginTop: 2, wordBreak: 'break-word' }}>{d.contactPerson}</div>
+              <div style={{ fontSize: 11, color: '#475467', marginTop: 4, wordBreak: 'break-word' }}>{d.contactPerson}</div>
             )}
             {isVisible('_flags') && dealFlagsLabel(d) && (
               <span style={{
-                display: 'inline-block', marginTop: 6, fontSize: 13, fontWeight: 700,
+                display: 'inline-block', marginTop: 8, fontSize: 10.5, fontWeight: 700,
                 color: '#0d9488', background: '#f0fdfa', border: '1px solid #99f6e4',
-                borderRadius: 20, padding: '2px 8px',
+                borderRadius: 6, padding: '3px 7px',
               }}>
                 {dealFlagsLabel(d)}
               </span>
             )}
             {extraFields.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
                 {extraFields.map(f => (
-                  <div key={f.key} style={{ fontSize: 12.5, color: '#344054', wordBreak: 'break-word' }}>
+                  <div key={f.key} style={{ fontSize: 11, color: '#344054', wordBreak: 'break-word' }}>
                     <span style={{ fontWeight: 600, color: '#475467' }}>{f.label}: </span>
                     {renderField ? renderField(f, d) : (d[f.key] ?? '--')}
                   </div>
@@ -115,12 +115,12 @@ export default function DealBoard({ deals, onViewDeal, onEdit, onGoToCompany, on
               </div>
             )}
             {(isVisible('value') || isVisible('ownerId')) && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 9, paddingTop: 8, borderTop: '1px solid #f4f6f8' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTop: '1px solid #f4f6f8' }}>
                 {isVisible('value') ? (
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: '#1d2939' }}>{formatCurrency(d.value, d.currency)}</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1d2939' }}>{formatCurrency(d.value, d.currency)}</span>
                 ) : <span />}
                 {isVisible('ownerId') && (
-                  <span title="Deal owner" style={{ fontSize: 13, fontWeight: 700, color: '#fff', background: '#e63329', borderRadius: '50%', width: 21, height: 21, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <span title="Deal owner" style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#e63329', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     {getOwnerInitials(d)}
                   </span>
                 )}
