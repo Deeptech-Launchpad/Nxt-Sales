@@ -411,8 +411,19 @@ export default function CompanyDetail() {
   const initials    = displayName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
   const enriched    = { ...company, _ownerName: company.owner?.name || null }
 
+  // A single wrapping element, not a bare Fragment — `.app-content > *` (see
+  // layout.css) caps and centers the page's own top-level content to
+  // 1440px, and every modal below needs to render INSIDE that one child to
+  // stay a grandchild of .app-content rather than a direct child. A bare
+  // Fragment here made every modal (CreateDealModal included) a sibling of
+  // company-workspace and therefore ALSO a direct child of .app-content,
+  // so that rule's width/margin was being applied to the modal's own
+  // position:fixed overlay — shrinking and centering it into a 1440px box
+  // instead of covering the full viewport. Deals.jsx never had this bug
+  // because its whole page (content + modals) already renders inside one
+  // outer <div>.
   return (
-    <>
+    <div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       <div className="company-workspace">
@@ -620,6 +631,6 @@ export default function CompanyDetail() {
           onSaved={onActivitySaved}
         />
       )}
-    </>
+    </div>
   )
 }
