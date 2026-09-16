@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import {
   Bold, Italic, Underline, List, ListOrdered, Link2, Heading1, Heading2,
-  Pilcrow, Undo2, Redo2, RemoveFormatting, Code2,
+  Pilcrow, Undo2, Redo2, RemoveFormatting, Code2, Highlighter,
 } from 'lucide-react'
 
 // Minimal WYSIWYG editor for email bodies.
@@ -86,6 +86,7 @@ export default function RichTextEditor({ value, onChange, minHeight = 300, place
         <ToolbarButton title="Bold" onClick={() => exec('bold')}><Bold size={14} /></ToolbarButton>
         <ToolbarButton title="Italic" onClick={() => exec('italic')}><Italic size={14} /></ToolbarButton>
         <ToolbarButton title="Underline" onClick={() => exec('underline')}><Underline size={14} /></ToolbarButton>
+        <ToolbarButton title="Highlight" onClick={() => exec('hiliteColor', '#FFF176')}><Highlighter size={14} /></ToolbarButton>
         <Divider />
         <ToolbarButton title="Heading 1" onClick={() => exec('formatBlock', '<h1>')}><Heading1 size={14} /></ToolbarButton>
         <ToolbarButton title="Heading 2" onClick={() => exec('formatBlock', '<h2>')}><Heading2 size={14} /></ToolbarButton>

@@ -2075,3 +2075,11 @@ select.et-input{
 @media (max-width:720px){
   .et-section-message .et-textarea{min-height:132px;max-height:min(320px,38vh)}
 }
+
+/* Same cap as .et-textarea above, applied to the rich editor that replaced
+   the plain textarea for Email Body — same reason: free to grow past the
+   viewport pushes the sticky Send bar out of reach. */
+.et-section-message .et-body-editor{max-height:min(420px,42vh);overflow-y:auto}
+@media (max-width:720px){
+  .et-section-message .et-body-editor{max-height:min(320px,38vh)}
+}

@@ -4,6 +4,7 @@ import { Chart, registerables } from 'chart.js'
 import api from '../api/client'
 import '../styles/email-tool.css'
 import DeliverabilityReport from '../components/activities/DeliverabilityReport'
+import RichTextEditor from '../components/RichTextEditor'
 import { runDeliverabilityAnalysis } from '../utils/emailDeliverability'
 import { compressImageIfNeeded } from '../utils/imageCompress'
 import { callGemini, getAiStatus, aiUnavailableMessage } from '../utils/geminiModel'
@@ -401,6 +402,13 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
     setTemplate(val)
     setSubject('')
     setBody('')
+    // Keep the "already edited" baseline (see compilePreview/getFinalContent)
+    // in lockstep with the fields it tracks — without this, the next compile
+    // would see body ('') mismatch a stale non-empty lastCompiledBody.current
+    // and wrongly treat the blank field as a pending edit, skipping the
+    // fresh template population entirely.
+    lastCompiledSubject.current = ''
+    lastCompiledBody.current = ''
     lastAiKey.current = ''
   }
 
@@ -411,6 +419,9 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
     setBody('')
     setPreviewSubject('')
     setPreviewHtml('')
+    // See the identical note in handleTemplateChange above.
+    lastCompiledSubject.current = ''
+    lastCompiledBody.current = ''
     lastAiKey.current = ''
   }
 
@@ -483,13 +494,6 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
   const wrapDefaultFont = (html) =>
     `<div style="font-family:Verdana,Arial,sans-serif;font-size:14px;line-height:1.6;color:#222">${html}</div>`
 
-  // Plain text (as typed in the Email Body field) -> simple paragraph HTML.
-  // Exactly the transform the 'manual' branch of compilePreview already used
-  // below — factored out so getFinalContent can reuse it verbatim rather than
-  // risk drifting from it.
-  const bodyToHtml = (text) =>
-    text.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('')
-
   // The HTML/subject that will actually go out if Send is clicked right now.
   //
   // previewHtml/previewSubject are a SNAPSHOT from the last compilePreview()
@@ -500,16 +504,15 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
   // is non-empty, not that it is still current.
   //
   // If body/subject match what was last compiled, nothing has been edited
-  // since — return previewHtml/previewSubject unchanged, so template and AI
-  // output keep whatever richer formatting they produced (bold, links, lists),
-  // none of which survives body's plain-text round trip. Only when they have
-  // diverged is fresh HTML built from the live body text, using the same
-  // paragraph-wrapping manual mode already relies on — guaranteeing whatever
-  // is currently on screen is what gets sent, for every template.
+  // since — return previewHtml/previewSubject unchanged. Otherwise, build
+  // from the live body: the Email Body field is a rich editor (RichTextEditor
+  // below), so body IS already HTML — no plain-text round trip, and no lost
+  // formatting, the way a stripped-then-rebuilt plain-text mirror would lose
+  // bold/lists/links the moment the user touched the field.
   const getFinalContent = () => {
     const edited = body !== lastCompiledBody.current || subject !== lastCompiledSubject.current
     if (!edited) return { html: previewHtml, subject: previewSubject || subject }
-    return { html: wrapDefaultFont(bodyToHtml(body)), subject: subject || '(No Subject)' }
+    return { html: wrapDefaultFont(body), subject: subject || '(No Subject)' }
   }
 
   // auto=true → silent auto-generation (no recipient required, no success toast).
@@ -533,10 +536,13 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
         setPreviewHtml(wrapDefaultFont(finalBody))
         setPreviewSubject(finalSubj)
         setSubject(finalSubj)
-        const finalBodyText = finalBody.replace(/<[^>]*>/g, '\n').replace(/\n\n+/g, '\n\n').trim()
-        setBody(finalBodyText)
         lastCompiledSubject.current = finalSubj
-        lastCompiledBody.current    = finalBodyText
+        // Same "don't clobber a pending edit" rule as the templates 1/2/4
+        // branch below — see the comment there.
+        if (body === lastCompiledBody.current) {
+          setBody(finalBody)
+          lastCompiledBody.current = finalBody
+        }
         lastAiKey.current = aiKeyStr
         showToast('AI Audit email generated!', 'success')
       } catch (err) {
@@ -565,24 +571,34 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
       const t = clientType === 'static' ? buildStaticTemplate4(clientName) : buildTemplate4(clientName)
       subj = t.subject; bod = t.body
     } else {
+      // Manual mode: body IS the HTML (Email Body is a rich editor below) —
+      // bod is simply whatever it already holds, the reverse direction from
+      // every other branch above.
       subj = subject || '(No Subject)'
-      bod = body.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('') || ''
+      bod = body || ''
     }
 
     setPreviewSubject(subj)
     setPreviewHtml(wrapDefaultFont(bod))
     setSubject(subj)
     lastCompiledSubject.current = subj
-    if (template !== 'manual') {
-      const bodyText = bod.replace(/<[^>]*>/g, '\n').replace(/\n\n+/g, '\n\n').trim()
-      setBody(bodyText)
-      lastCompiledBody.current = bodyText
-    } else {
+    if (template === 'manual') {
       // Manual mode never rewrites body from bod (bod is DERIVED from body,
       // the reverse direction) — the baseline is simply whatever body already
       // holds at this compile.
       lastCompiledBody.current = body
+    } else if (body === lastCompiledBody.current) {
+      // Nothing has been typed into Email Body since the last compile — safe
+      // to (re)populate it from the template.
+      setBody(bod)
+      lastCompiledBody.current = bod
     }
+    // else: template !== 'manual' but the user already edited Email Body
+    // since the last compile (e.g. before attaching Before/After files, which
+    // re-runs this via the auto-compile effect below) — leave it alone.
+    // getFinalContent() above builds the live preview/send content straight
+    // from the current body whenever it has diverged from lastCompiledBody,
+    // so overwriting it here would just discard the edit.
     if (!auto) showToast('Email preview compiled!', 'success')
   }
 
@@ -667,9 +683,8 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
     if (s) { setSubject(s); setPreviewSubject(s); lastCompiledSubject.current = s }
     if (html) {
       setPreviewHtml(html)
-      const bodyText = html.replace(/<[^>]+>/g, '\n').replace(/\n\n+/g, '\n\n').trim()
-      setBody(bodyText)
-      lastCompiledBody.current = bodyText
+      setBody(html)
+      lastCompiledBody.current = html
     }
     setShowReport(false)
   }
@@ -769,6 +784,8 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
     setBeforeThumb(null); setAfterThumb(null)
     setAdditionalFiles([])
     setPreviewHtml(''); setPreviewSubject('')
+    lastCompiledSubject.current = ''
+    lastCompiledBody.current = ''
   }
 
   // Attachment names for preview panel — must list exactly what sendEmail()
@@ -1000,13 +1017,20 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
                   value={subject} onChange={e => setSubject(e.target.value)} />
               </div>
 
-              {/* Body */}
+              {/* Body — a rich editor, not a plain textarea, so formatting
+                  the user applies here (bold/italic/lists/links/highlight)
+                  is real HTML rather than lost the moment they type. See
+                  getFinalContent above for why that matters. */}
               <div className="et-form-group et-field-body">
                 <label className="et-label">Email Body</label>
-                <textarea className="et-textarea" rows="6"
-                  placeholder={isManual ? 'Write your email body...' : 'Auto-filled after clicking Compile Preview. You can edit.'}
-                  value={body} onChange={e => setBody(e.target.value)}
-                />
+                <div className="et-body-editor">
+                  <RichTextEditor
+                    value={body}
+                    onChange={setBody}
+                    minHeight={150}
+                    placeholder={isManual ? 'Write your email body...' : 'Auto-filled after clicking Compile Preview. You can edit.'}
+                  />
+                </div>
               </div>
             </div>
           </section>
