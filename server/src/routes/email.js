@@ -473,24 +473,62 @@ router.get('/track/open/:token', async (req, res) => {
   try {
     const activity = await prisma.activity.findFirst({ where: { trackingId: token } })
     if (activity) {
-      const now     = new Date()
-      const history = Array.isArray(activity.openHistory) ? activity.openHistory : []
-      history.push({
-        at: now.toISOString(),
-        ip: (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null,
-        ua: (req.headers['user-agent'] || '').toString().slice(0, 200) || null,
-      })
-      await prisma.activity.update({
-        where: { id: activity.id },
-        data: {
-          openCount:     (activity.openCount || 0) + 1,
-          firstOpenedAt: activity.firstOpenedAt || now,
-          lastOpenedAt:  now,
-          openHistory:   history.slice(-50),
-          // reflect the open in the email status (keeps existing 'opened' badge)
-          ...(activity.direction === 'outbound' && { emailStatus: 'opened' }),
-        },
-      })
+      const now = new Date()
+
+      // ── Which hits actually count ─────────────────────────────────────
+      // Gmail mirrors the exact MIME we send into the SENDER's own Sent
+      // folder, so the salesperson's copy carries the same pixel and the
+      // same token as the client's. Every fetch also arrives via Google's
+      // image proxy — identical user-agent, Google IP ranges — so nothing
+      // in the request itself can tell the two apart. Measured on live
+      // data before adding this: 68 of 73 tracked emails showed as opened,
+      // and 93% of first opens landed within 5 minutes of sending,
+      // including cold outreach "opened" 13 seconds after send. That is
+      // the sender's own mailbox rendering the Sent copy, not the client.
+      //
+      // Two windows, both deliberately conservative:
+      const SUPPRESS_AFTER_SEND_MS = 120 * 1000      // sender's own copy
+      const DEDUPE_AFTER_OPEN_MS   = 5 * 60 * 1000   // proxy re-fetches
+
+      const sinceSend = activity.createdAt
+        ? now - new Date(activity.createdAt)
+        : Number.POSITIVE_INFINITY
+      // Measured against the last COUNTED open, since suppressed hits
+      // deliberately leave lastOpenedAt alone.
+      const sinceLastOpen = activity.lastOpenedAt
+        ? now - new Date(activity.lastOpenedAt)
+        : Number.POSITIVE_INFINITY
+
+      // Self-open: too soon after send to be a real recipient.
+      const isSelfOpen = sinceSend < SUPPRESS_AFTER_SEND_MS
+      // Duplicate: Google's proxy re-fetches the same pixel from several
+      // nodes, which previously logged one human view as 4-7 opens.
+      const isDuplicate = sinceLastOpen < DEDUPE_AFTER_OPEN_MS
+
+      // A suppressed hit changes nothing at all: no openCount, no
+      // firstOpenedAt/lastOpenedAt, no emailStatus — so the derived
+      // notification (see routes/notifications.js, which selects on
+      // openCount > 0) never fires for it either. The pixel is still
+      // served normally below, so the mail client sees no difference.
+      if (!isSelfOpen && !isDuplicate) {
+        const history = Array.isArray(activity.openHistory) ? activity.openHistory : []
+        history.push({
+          at: now.toISOString(),
+          ip: (req.headers['x-forwarded-for'] || req.ip || '').toString().split(',')[0].trim() || null,
+          ua: (req.headers['user-agent'] || '').toString().slice(0, 200) || null,
+        })
+        await prisma.activity.update({
+          where: { id: activity.id },
+          data: {
+            openCount:     (activity.openCount || 0) + 1,
+            firstOpenedAt: activity.firstOpenedAt || now,
+            lastOpenedAt:  now,
+            openHistory:   history.slice(-50),
+            // reflect the open in the email status (keeps existing 'opened' badge)
+            ...(activity.direction === 'outbound' && { emailStatus: 'opened' }),
+          },
+        })
+      }
     }
   } catch (err) {
     console.error('[Email Track] open record error:', err.message)
