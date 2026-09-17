@@ -1139,9 +1139,28 @@ select.et-input {
   --et-t:160ms ease;
   --et-tn:190ms cubic-bezier(.2,.7,.2,1);
   width:100%;
-  height:calc(100vh - 98px);
-  min-height:650px;
+  /* Was height:calc(100vh - 98px) — a hardcoded guess at "TopBar height +
+     app-content's own padding" duplicated here from layout.css, where the
+     real numbers actually live. Whenever the guess undershot the real
+     value (a taller rendered TopBar, browser chrome, extensions row —
+     anything not exactly 98px), .et-root came out shorter than the space
+     it actually had, and its own overflow:hidden below clipped the action
+     bar instead of just leaving blank space.
+     .app-content (the real parent, see layout.css) is flex:1 inside a
+     flex column shell, so it already resolves to the correct remaining
+     height on its own — no guessing needed. height:100% simply inherits
+     that real, always-correct value instead of re-deriving it. */
+  height:100%;
   margin:0;
+  /* height:100% above needs .app-content (the real parent, in layout.css —
+     shared by every page, so scoped here to this route only) to actually
+     shrink to its flex-computed share instead of being forced taller by
+     its own content. .app-content sets overflow-x:hidden but nothing for
+     the y/block axis, so per the flex spec its automatic minimum height
+     still defaults to "at least as tall as my content" — which is exactly
+     .et-root's own height, a circular floor that kept it pinned to content
+     size regardless of viewport. This breaks that floor without touching
+     layout.css or any other page that uses .app-content normally. */
   overflow:hidden;
   border:1px solid var(--et-border);
   border-radius:14px;
@@ -1149,6 +1168,24 @@ select.et-input {
   background:var(--et-bg);
   background-image:none;
   box-shadow:0 1px 2px rgba(16,24,40,.03);
+}
+
+/* See the comment on .et-root's height:100% above.
+   .app-shell only has min-height:100vh (a floor, not a cap) — everywhere
+   else that's correct, a normal page's content should be free to exceed
+   100vh and let the whole page scroll. But it means nothing above .et-root
+   is ever actually viewport-CAPPED: when content wants to be taller, the
+   shell just grows to fit it instead of holding still, so .et-root's
+   height:100% inherits that grown size instead of a true "viewport minus
+   chrome" value, and .app-content's own min-height:0 (below) has nothing
+   to shrink against. Only this route needs a true ceiling, so it's set
+   here, scoped to when .et-root is present, rather than in layout.css. */
+/* Desktop only (matches the split-view breakpoint below) — the stacked
+   ≤1024px layout deliberately lets the whole page grow and scroll instead
+   (see that media query), and must keep doing exactly that. */
+@media (min-width:1025px){
+  .app-shell:has(.et-root){height:100vh}
+  .app-content:has(.et-root){min-height:0}
 }
 
 .et-root .material-symbols-rounded {
@@ -1319,7 +1356,6 @@ select.et-input{
 
 @media (max-width:1100px){
   .et-sidebar{width:156px}
-  .et-compose-split{grid-template-columns:minmax(420px,1fr) minmax(340px,.8fr)}
 }
 @media (max-width:900px){
   .et-root{height:auto;min-height:calc(100vh - 92px);overflow:visible}
@@ -1327,7 +1363,7 @@ select.et-input{
   .et-brand-name,.et-compose-btn:not(:hover){font-size:0}.et-compose-btn{width:38px;padding:0}.et-compose-btn .material-symbols-rounded{font-size:21px}
   .et-sidebar-header{padding:0}.et-nav-item{width:38px;padding:0;justify-content:center}.et-nav-item>span:not(.material-symbols-rounded):not(.et-nav-badge){display:none}.et-nav-badge{position:absolute;top:-2px;right:-3px;padding:1px 4px}
   .et-sidebar-footer{width:100%}.et-status-badge{justify-content:center;padding:0}.et-status-badge span{display:none}
-  .et-compose-split{grid-template-columns:1fr;overflow:visible}.et-form-card,.et-preview-card{overflow:visible}.et-preview-card{min-height:540px}
+  .et-compose-split{overflow:visible}.et-form-card,.et-preview-card{overflow:visible}
   .et-section,.et-content-panel{overflow:visible}.et-panel-body{overflow:visible}
 }
 @media (max-width:640px){
@@ -1347,13 +1383,8 @@ select.et-input{
   .et-root{border-radius:16px}
   .et-sidebar{width:174px;padding:16px 10px 12px}
   .et-sidebar-header{padding:0 8px 6px}
-  .et-compose-split{
-    grid-template-columns:minmax(0,1.28fr) minmax(390px,.72fr);
-    gap:0;padding:0;background:#fff;
-  }
   .et-form-card{
     display:grid;
-    grid-template-columns:repeat(12,minmax(0,1fr));
     align-content:start;
     column-gap:12px;
     row-gap:12px;
@@ -1364,20 +1395,6 @@ select.et-input{
     box-shadow:none;
     background:#fff;
   }
-  .et-form-card>.et-form-group,
-  .et-form-card>.et-form-row{grid-column:1/-1;min-width:0}
-  .et-form-card>.et-field-sender{grid-column:span 5}
-  .et-form-card>.et-field-recipient{grid-column:span 7}
-  .et-form-card>.et-field-mode{grid-column:span 4}
-  .et-form-card>.et-field-client-type{grid-column:span 3}
-  .et-form-card>.et-field-template{grid-column:span 5}
-  .et-form-card>.et-field-client-name{grid-column:span 5}
-  .et-form-card>.et-field-screenshots{grid-column:span 7}
-  .et-form-card>.et-field-quoted{grid-column:1/-1}
-  .et-form-card>.et-field-attachments{grid-column:span 5}
-  .et-form-card>.et-field-subject{grid-column:span 7}
-  .et-form-card>.et-field-body{grid-column:1/-1}
-  .et-form-card>.et-actions{grid-column:1/-1}
   .et-upload-box{min-height:78px}
   .et-drop-zone{min-height:78px}
   .et-textarea{min-height:126px}
@@ -1399,14 +1416,12 @@ select.et-input{
 }
 
 @media (min-width:1500px){
-  .et-compose-split{grid-template-columns:minmax(0,1.22fr) minmax(460px,.78fr)}
   .et-form-card{column-gap:14px;row-gap:13px;padding-left:26px;padding-right:26px}
   .et-actions{margin-left:-26px;margin-right:-26px;padding-left:26px;padding-right:26px}
   .et-preview-body{padding:20px}
 }
 
 @media (min-width:901px) and (max-width:1180px){
-  .et-compose-split{grid-template-columns:minmax(480px,1.08fr) minmax(340px,.92fr);gap:0;padding:0;background:#fff}
   .et-form-card,.et-preview-card{border-top:0;border-bottom:0;border-radius:0;box-shadow:none}
   .et-form-card{padding:16px 18px}
   .et-preview-card{border-right:0;background:#f6f8fb}
@@ -1440,17 +1455,7 @@ select.et-input{
 
 @media (min-width:1181px){
   .et-sidebar{width:160px;padding:14px 9px 10px}
-  .et-compose-split{grid-template-columns:minmax(0,1.17fr) minmax(420px,.83fr)}
   .et-form-card{column-gap:10px;row-gap:9px;padding:14px 18px 0}
-  .et-form-card>.et-field-sender{grid-column:span 5}
-  .et-form-card>.et-field-recipient{grid-column:span 7}
-  .et-form-card>.et-field-mode{grid-column:span 4}
-  .et-form-card>.et-field-client-type{grid-column:span 3}
-  .et-form-card>.et-field-template{grid-column:span 5}
-  .et-form-card>.et-field-client-name{grid-column:span 4}
-  .et-form-card>.et-field-screenshots{grid-column:span 8}
-  .et-form-card>.et-field-attachments{grid-column:span 4}
-  .et-form-card>.et-field-subject{grid-column:span 8}
   .et-upload-box,.et-drop-zone{min-height:68px;padding:7px}
   .et-thumb{height:42px}
   .et-textarea{min-height:104px}
@@ -1462,7 +1467,6 @@ select.et-input{
 }
 
 @media (min-width:1500px){
-  .et-compose-split{grid-template-columns:minmax(0,1.14fr) minmax(480px,.86fr)}
   .et-form-card{column-gap:12px;row-gap:10px;padding:16px 20px 0}
   .et-actions{margin-left:-20px;margin-right:-20px;padding-left:20px;padding-right:20px}
   .et-preview-body{padding:18px}
@@ -2046,40 +2050,468 @@ select.et-input{
 .et-preview-meta{padding-top:14px;padding-bottom:14px;gap:6px}
 .et-preview-attachments{padding-top:10px;padding-bottom:10px}
 
-/* ── Compose: column alignment + body editor ──────────────────────────
-   The section grid is 12 columns, but the paired label+input rows each
-   chose their own split — 5/7 for sender+recipient, 4/8 for client type
-   +template, 5/7 for mode+client name — while the nested Cc/Bcc row is a
-   plain 50/50. Four different boundaries meant the second column started
-   at a different x in every row. These put every paired row on the same
-   midpoint, so the left and right columns line up down the whole form.
-   The assets row is deliberately left at 8/4: it holds two upload boxes
-   against one, so an even split would squeeze the pair. */
+/* ═══════════════════════════════════════════════════════════════════════
+   COMPOSER RESPONSIVE SYSTEM — single source of truth for the composer's
+   layout, sizing and breakpoints.
+
+   This replaces eight overlapping redesign passes that each re-declared the
+   same things. Before this block, .et-compose-split was declared ten times
+   across six media queries with competing rigid floors (minmax(340px) …
+   minmax(480px)), and because a later `min-width:1181px` block outranks an
+   earlier `min-width:1500px` one by source order alone, which rule won at a
+   given width was effectively accidental. The rigid px floors are also what
+   made the columns fight for room instead of sharing it.
+
+   Everything below is driven by the tokens in the first rule, so a
+   breakpoint changes ONE value instead of five hand-synced ones. All of it
+   is scoped under .et-root, so no other page is affected.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.et-root{
+  --et-rail:104px;          /* step + section-name column                 */
+  --et-step-size:18px;      /* the numbered chip; the connector derives from it */
+  --et-pad-x:22px;          /* form card horizontal padding               */
+  --et-field-gap:12px;
+  --et-ctrl-h:34px;
+  --et-fs-title:18px;       /* page heading    (spec: 18–20 max)          */
+  --et-fs-head:14px;        /* section heading (spec: 14–16)              */
+  --et-fs-input:13.5px;     /* inputs          (spec: 13–14)              */
+  --et-fs-ui:12.5px;        /* standard UI text(spec: 12–13)              */
+  --et-fs-label:11.5px;     /* labels / helper (spec: 11–12)              */
+}
+
+/* ── Split: fluid ratio, no rigid floors ──────────────────────────────
+   minmax(0,Nfr) can never overflow its container — the columns simply
+   share what is available, which is what keeps 1280 and 1920 both sane.
+   1.32fr : 1fr ≈ 57 / 43, inside the requested 55–60 / 40–45 band. */
+.et-compose-split{
+  display:grid;
+  grid-template-columns:minmax(0,1.32fr) minmax(0,1fr);
+  align-items:stretch;
+  gap:0;
+  width:100%;
+  max-width:1680px;        /* stops the form sprawling on ultra-wide      */
+  margin-inline:auto;
+  padding:0;
+  overflow:visible;        /* never clip; adapt instead                   */
+  background:#fff;
+  /* Was max-height:calc(100vh - 210px) — another hardcoded guess, same
+     problem as .et-root's old height above: its parent chain
+     (.et-content-panel > .et-section, both flex:1 flex-columns already)
+     already knows the real remaining height after the panel header.
+     flex:1 + min-height:0 inherits that real value instead of re-guessing
+     it, so this can never end up taller than the space it actually has —
+     which is what was clipping the action bar against overflow:hidden
+     whenever the guess undershot reality. */
+  flex:1;
+  min-height:0;
+}
+
+.et-form-card,.et-preview-card{min-width:0}
+
+/* Form column = scrolling content + pinned footer. The bar is a sibling of
+   the scroll region, not inside it, so it is always visible AND can never
+   sit on top of a field. Only one scrollbar in the column. */
+.et-form-card{
+  display:grid;
+  /* grid-template-columns was missing — with only rows declared, the one
+     implicit column falls back to auto (content-sized) track sizing
+     instead of filling the card, so the column shrank to whichever row's
+     narrowest content allowed and left a blank gap on the right of it.
+     One explicit full-width column makes both rows (the scroll region and
+     the action bar) actually span the card's full width. */
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:minmax(0,1fr) auto;
+  gap:0;
+  padding:0;
+  border:0;
+  border-right:1px solid var(--et-border);   /* the divider: a border can't overlap */
+  border-radius:0;
+  box-shadow:none;
+  background:#fff;
+  overflow:hidden;
+  /* Height comes from the grid row via align-items:stretch on the parent
+     .et-compose-split (above) — same real, non-guessed value, not a second
+     independent calc(100vh …) that could drift from the first one. */
+  min-height:420px;
+}
+.et-form-scroll{
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  padding:14px var(--et-pad-x) 4px;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+
+/* ── Sections: one rail token drives the grid AND the connector line ── */
+.et-form-scroll>.et-form-section{
+  position:relative;
+  display:grid;
+  grid-template-columns:var(--et-rail) minmax(0,1fr);
+  gap:var(--et-field-gap);
+  margin:0;
+  padding:14px 0;
+  border:0;
+  border-bottom:1px solid #eef1f4;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+.et-form-scroll>.et-form-section:first-child{padding-top:4px}
+.et-form-scroll>.et-form-section:last-of-type{border-bottom:0}
+/* Connector is centred on the step chip by derivation, so it stays aligned
+   at every rail width instead of being pinned to one hard-coded left. */
+.et-form-scroll>.et-form-section::before{
+  content:"";
+  position:absolute;
+  z-index:1;
+  left:calc(var(--et-step-size) / 2 - 1px);
+  top:calc(var(--et-step-size) + 10px);
+  bottom:-2px;
+  width:2px;
+  border-radius:999px;
+  background:linear-gradient(180deg,#b8d4ff 0%,#dce8f8 100%);
+}
+.et-form-scroll>.et-form-section:last-of-type::before{display:none}
+
+.et-form-section-head{
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  align-self:start;
+  min-width:0;
+  margin:0;
+  padding:0;
+}
+.et-form-section-head h3{
+  min-width:0;
+  margin:0;
+  color:#25334a;
+  font:650 var(--et-fs-ui)/1.35 var(--et-fb);
+  letter-spacing:-.01em;
+  white-space:normal;           /* wrap rather than collide with the field */
+  overflow-wrap:normal;         /* break between words only, never inside one */
+}
+.et-section-step{
+  width:var(--et-step-size);
+  height:var(--et-step-size);
+  flex:0 0 var(--et-step-size);
+  position:relative;
+  z-index:2;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid #bfdbfe;
+  border-radius:999px;
+  background:#f5f9ff;
+  color:#1d4ed8;
+  font-size:11px;
+  font-weight:750;
+  line-height:1;
+}
+
+.et-form-section-grid{
+  min-width:0;
+  display:grid;
+  grid-template-columns:repeat(12,minmax(0,1fr));
+  gap:var(--et-field-gap);
+  align-content:start;
+}
+.et-form-section-grid>.et-form-group,
+.et-form-section-grid>.et-form-row{grid-column:1/-1;min-width:0}
+
+/* Paired rows share one midpoint so both columns line up down the form. */
 .et-section-recipients .et-field-sender{grid-column:1/span 6}
 .et-section-recipients .et-field-recipient{grid-column:7/-1}
 .et-section-setup .et-field-client-type{grid-column:1/span 6;grid-row:1}
 .et-section-setup .et-field-template{grid-column:7/-1;grid-row:1}
 .et-section-setup .et-field-mode{grid-column:1/span 6;grid-row:2}
 .et-section-setup .et-field-client-name{grid-column:7/-1;grid-row:2}
+.et-section-setup .et-field-quoted{grid-column:1/-1;grid-row:3}
+.et-section-assets .et-field-screenshots{grid-column:1/span 7}
+.et-section-assets .et-field-attachments{grid-column:8/-1}
+.et-section-assets .et-field-attachments:only-child{grid-column:1/-1}
+.et-section-message .et-field-subject,
+.et-section-message .et-field-body{grid-column:1/-1}
+.et-form-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--et-field-gap)}
 
-/* The body was 86px tall with no ceiling: too small to write in, yet free
-   to grow past the viewport and push the sticky Send bar out of reach.
-   A real working height, capped against the viewport so the textarea
-   scrolls internally instead of the page scrolling under the action bar. */
+/* ── Typography + control sizing to the requested scale ── */
+.et-panel-title{font-size:var(--et-fs-title);line-height:1.3}
+.et-label{
+  font-size:var(--et-fs-label);
+  font-weight:650;
+  line-height:1.35;
+  letter-spacing:.03em;
+}
+.et-form-group{display:flex;flex-direction:column;gap:5px;min-width:0}
+.et-form-section-grid .et-input,
+.et-form-section-grid select.et-input{
+  min-height:var(--et-ctrl-h);
+  padding:6px 10px;
+  font-size:var(--et-fs-input);
+  line-height:1.35;
+}
+.et-input[readonly],.et-readonly{font-size:var(--et-fs-input)}
+.et-help-text{font-size:var(--et-fs-label);line-height:1.45}
+/* Long values (subject, template names, addresses) shorten instead of
+   stretching their field and knocking the row out of alignment. */
+.et-form-section-grid .et-input{text-overflow:ellipsis}
+
+/* ── Assets: one responsive row, equal heights, no label collisions ──
+   Both labels are held to a single line so the two upload targets start
+   at the same y even when one title is much longer than the other. */
+.et-section-assets .et-label{
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.et-section-assets .et-form-group{min-width:0}
+.et-upload-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(118px,1fr));
+  gap:8px;
+  align-items:stretch;
+}
+.et-section-assets .et-upload-box,
+.et-section-assets .et-drop-zone{
+  min-height:72px;
+  height:100%;
+  padding:8px;
+  border-radius:8px;
+}
+.et-upload-filename,
+.et-drop-zone p{
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:var(--et-fs-label);
+}
+.et-upload-text{font-size:var(--et-fs-label)}
+
+/* Attachment chips wrap onto new rows instead of running off the edge. */
+.et-file-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.et-file-item{min-width:0;max-width:100%}
+.et-file-name{
+  max-width:15ch;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+/* ── Body editor: adapts, and owns exactly one scrollbar ──
+   The wrapper used to scroll as well as the editor inside it, which gave
+   the field two nested scrollbars. The wrapper now just sizes; the editor
+   scrolls. */
+.et-section-message .et-body-editor{
+  max-height:none;
+  overflow:visible;
+  min-width:0;
+}
+.et-section-message .et-body-editor [contenteditable]{
+  min-height:clamp(120px,18vh,190px)!important;
+  max-height:clamp(200px,34vh,400px)!important;
+}
 .et-section-message .et-textarea{
-  min-height:180px;
-  max-height:min(420px,42vh);
+  min-height:clamp(120px,18vh,190px);
+  max-height:clamp(200px,34vh,400px);
   overflow-y:auto;
   resize:vertical;
-}
-@media (max-width:720px){
-  .et-section-message .et-textarea{min-height:132px;max-height:min(320px,38vh)}
+  font-size:var(--et-fs-input);
 }
 
-/* Same cap as .et-textarea above, applied to the rich editor that replaced
-   the plain textarea for Email Body — same reason: free to grow past the
-   viewport pushes the sticky Send bar out of reach. */
-.et-section-message .et-body-editor{max-height:min(420px,42vh);overflow-y:auto}
-@media (max-width:720px){
-  .et-section-message .et-body-editor{max-height:min(320px,38vh)}
+/* ── Action bar: static, so it can never sit on top of the editor ──
+   It was position:sticky with bottom:-14px and five different hand-synced
+   negative margins; measured live, it covered the body editor by 103px at
+   1280 and 87px at 1440. It is now an ordinary last row, full-bleed via a
+   margin derived from the very token that sets the card's padding, so the
+   two can't drift apart. */
+.et-form-card>.et-actions{
+  position:static;          /* was sticky + bottom:-14px                   */
+  bottom:auto;
+  z-index:auto;
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:8px;
+  margin:0;                 /* full-bleed comes from the grid row, not from
+                               five hand-synced negative margins            */
+  padding:10px var(--et-pad-x);
+  border-top:1px solid var(--et-border);
+  background:#fff;
+  backdrop-filter:none;
+}
+.et-form-card>.et-actions .et-btn{
+  min-height:var(--et-ctrl-h);
+  flex:1 1 auto;
+  justify-content:center;
+  gap:6px;
+  font-size:var(--et-fs-ui);
+}
+.et-form-card>.et-actions .et-btn-primary{flex-grow:1.4}   /* primary reads first */
+
+/* ── Icons: one size, aligned to their label ── */
+.et-btn .material-symbols-rounded,
+.et-file-info .material-symbols-rounded,
+.et-file-remove .material-symbols-rounded{font-size:17px;line-height:1}
+.et-upload-icon .material-symbols-rounded{font-size:20px}
+.et-drop-icon .material-symbols-rounded{font-size:19px;color:#475467}
+.et-upload-icon,.et-drop-icon{display:inline-flex;align-items:center;justify-content:center;color:#475467}
+.et-upload-pdf{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  color:#b42318;
+  font-size:var(--et-fs-label);
+  font-weight:650;
+}
+.et-upload-pdf .material-symbols-rounded{font-size:17px}
+.et-file-info{display:inline-flex;align-items:center;gap:5px;min-width:0}
+.et-file-remove{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto}
+
+/* ── Preview panel ── */
+.et-preview-card{
+  display:flex;
+  flex-direction:column;
+  min-width:0;
+  border:0;
+  border-radius:0;
+  box-shadow:none;
+  background:#f6f8fb;
+}
+.et-preview-header{
+  min-height:48px;
+  display:flex;
+  align-items:center;
+  padding:12px 20px;
+  background:#fff;
+}
+.et-preview-header h3{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:0;
+  font-size:var(--et-fs-head);
+  line-height:1.3;
+}
+/* FROM / TO / CC / BCC / SUBJECT share one grid, so every value starts at
+   the same x. display:contents lets each row's two cells join the parent
+   grid without needing a DOM change. */
+.et-preview-meta{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  gap:6px 12px;
+  padding:12px 20px;
+  background:#fff;
+}
+.et-preview-meta .et-meta-row{display:contents}
+.et-meta-label{
+  font-size:var(--et-fs-label);
+  font-weight:700;
+  letter-spacing:.04em;
+  white-space:nowrap;
+}
+.et-meta-val{
+  min-width:0;
+  font-size:var(--et-fs-ui);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;      /* a long subject shortens, never overflows */
+}
+.et-preview-body{
+  flex:1;
+  min-height:0;
+  display:flex;
+  align-items:stretch;
+  padding:16px 20px;
+  overflow-y:auto;         /* the preview scrolls; the header stays put */
+}
+.et-gmail-envelope{
+  width:100%;
+  min-height:0;
+  padding:18px;
+  font-size:var(--et-fs-ui);
+  line-height:1.6;
+}
+.et-gmail-envelope p{margin:0 0 10px}
+.et-gmail-envelope>*:last-child{margin-bottom:0}
+.et-preview-attachments{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  padding:10px 20px;
+}
+.et-attach-chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ═══ Breakpoint ladder: 1200 / 1024 / 768 / 640 ═══════════════════════ */
+
+/* Tighten the rail and gaps before anything has to shrink awkwardly. */
+@media (max-width:1200px){
+  .et-root{--et-rail:100px;--et-pad-x:16px;--et-field-gap:10px}
+}
+
+/* Tablet and below: the preview moves under the composer rather than
+   being squeezed into an unreadable column. Both panels grow naturally and
+   the page scrolls, instead of two independent inner scrollbars. */
+@media (max-width:1024px){
+  /* The tool is a fixed-height app shell on desktop (.et-root is locked to
+     the viewport and clips). Stacking only works if that lock is released
+     here too — otherwise the split keeps its viewport-sized height, the two
+     rows get squeezed, and the form's content spills over the preview.
+     The existing sheet already did this at 900px; the stack starts at 1024. */
+  .et-root{height:auto;min-height:0;overflow:visible}
+  .et-content-panel,.et-section{flex:none;height:auto;min-height:0;overflow:visible}
+  /* flex:none resets the base rule's flex:1 (flex-basis:0%) — in a column
+     flex container, flex-basis controls height and out-ranks a plain
+     height:auto, so without this the stacked split would still be
+     squashed to zero-ish height instead of growing to fit its content. */
+  .et-compose-split{flex:none;grid-template-columns:minmax(0,1fr);max-width:820px;height:auto;min-height:0;max-height:none;overflow:visible}
+  /* Drop the fixed-height two-row grid entirely once stacked — with no
+     height to divide, a minmax(0,1fr) row lets its content spill over the
+     row below it (the bar and the preview landed on top of Message). A
+     plain column grows to fit instead, and the page does the scrolling. */
+  .et-form-card{
+    display:flex;
+    flex-direction:column;
+    border-right:0;
+    border-bottom:1px solid var(--et-border);
+    max-height:none;
+    min-height:0;
+    overflow:visible;
+  }
+  .et-form-scroll{overflow:visible;min-height:auto}
+  .et-preview-card{background:#fff;overflow:visible;max-height:none}
+  .et-preview-body{max-height:60vh}
+}
+
+@media (max-width:768px){
+  .et-root{--et-pad-x:14px;--et-ctrl-h:32px}
+  /* The rail would be too narrow to hold a section name here, so the head
+     moves above its fields instead of being pinched beside them. */
+  .et-form-scroll>.et-form-section{grid-template-columns:minmax(0,1fr);gap:10px}
+  .et-form-scroll>.et-form-section::before{display:none}
+  .et-form-section-head h3{white-space:nowrap}
+  /* Two-column field rows become one column. */
+  .et-form-row{grid-template-columns:minmax(0,1fr)}
+  .et-section-recipients .et-field-sender,
+  .et-section-recipients .et-field-recipient,
+  .et-section-setup .et-field-client-type,
+  .et-section-setup .et-field-template,
+  .et-section-setup .et-field-mode,
+  .et-section-setup .et-field-client-name,
+  .et-section-assets .et-field-screenshots,
+  .et-section-assets .et-field-attachments{grid-column:1/-1}
+  .et-section-setup .et-field-client-type,
+  .et-section-setup .et-field-template,
+  .et-section-setup .et-field-mode,
+  .et-section-setup .et-field-client-name,
+  .et-section-setup .et-field-quoted{grid-row:auto}
+}
+
+/* Phone: buttons go full width, primary first. */
+@media (max-width:640px){
+  .et-section-assets .et-label{white-space:normal}
+  .et-form-card>.et-actions .et-btn{flex:1 1 100%}
+  .et-form-card>.et-actions .et-btn-primary{order:-1}   /* primary stays first */
 }

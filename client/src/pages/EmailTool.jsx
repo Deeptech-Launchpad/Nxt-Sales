@@ -21,6 +21,12 @@ import { invalidateCompanyEmail } from '../utils/emailCache'
 
 Chart.register(...registerables)
 
+// Google Material Symbols, the same approach the rest of the app uses
+// (Deals, Companies, modals) — the font is already loaded globally.
+const MaterialIcon = ({ children }) => (
+  <span className="material-symbols-rounded" aria-hidden="true">{children}</span>
+)
+
 // ─────────────────────────────────────────────────────────
 // Utilities
 // ─────────────────────────────────────────────────────────
@@ -810,6 +816,10 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
       <div className="et-compose-split">
         {/* ── Left: Form ── */}
         <div className="et-form-card">
+          {/* Layout wrapper only — groups the four sections so they can
+              scroll as one region while the action bar below stays pinned
+              and visible. No behaviour attached to it. */}
+          <div className="et-form-scroll">
           {/* ── 1. Recipients ─────────────────────────────────────────── */}
           <section className="et-form-section et-section-recipients">
             <div className="et-form-section-head">
@@ -931,9 +941,9 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
                       {beforeThumb
                         ? <img src={beforeThumb} alt="before" className="et-thumb" />
                         : beforeFile?.type === 'application/pdf'
-                          ? <span style={{ color: '#EF4444', fontSize: '0.75rem', fontWeight: 600 }}>📄 PDF Attached</span>
+                          ? <span className="et-upload-pdf"><MaterialIcon>picture_as_pdf</MaterialIcon> PDF Attached</span>
                           : <>
-                              <span className="et-upload-icon">⬆️</span>
+                              <span className="et-upload-icon"><MaterialIcon>upload</MaterialIcon></span>
                               <div className="et-upload-text"><span>BEFORE</span> screenshot</div>
                             </>
                       }
@@ -947,9 +957,9 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
                       {afterThumb
                         ? <img src={afterThumb} alt="after" className="et-thumb" />
                         : afterFile?.type === 'application/pdf'
-                          ? <span style={{ color: '#EF4444', fontSize: '0.75rem', fontWeight: 600 }}>📄 PDF Attached</span>
+                          ? <span className="et-upload-pdf"><MaterialIcon>picture_as_pdf</MaterialIcon> PDF Attached</span>
                           : <>
-                              <span className="et-upload-icon">⬆️</span>
+                              <span className="et-upload-icon"><MaterialIcon>upload</MaterialIcon></span>
                               <div className="et-upload-text"><span>AFTER</span> screenshot</div>
                             </>
                       }
@@ -971,9 +981,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
                   onDrop={e => { e.preventDefault(); setIsDragOver(false); handleAdditionalFiles(e.dataTransfer.files) }}
                 >
                   <input ref={addFilesRef} type="file" multiple onChange={e => handleAdditionalFiles(e.target.files)} />
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: '#344054' }}>
-                    <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                  </svg>
+                  <span className="et-drop-icon"><MaterialIcon>attach_file</MaterialIcon></span>
                   <p>Drag &amp; drop files or <span>click to browse</span></p>
                 </div>
                 {additionalFiles.length > 0 && (
@@ -981,19 +989,15 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
                     {additionalFiles.map((f, i) => (
                       <div key={i} className="et-file-item">
                         <div className="et-file-info">
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                          </svg>
+                          <MaterialIcon>attach_file</MaterialIcon>
                           {/* Size moved into the tooltip (still one hover away) rather than
                               its own visible span — freed the width a second compact chip
                               needed to fit on the same row; nothing about upload/remove changed. */}
                           <span className="et-file-name" title={`${f.name} (${formatBytes(f.size)})`}>{f.name}</span>
                           <span className="et-file-size">({formatBytes(f.size)})</span>
                         </div>
-                        <button className="et-file-remove" onClick={() => removeAdditional(i)}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                          </svg>
+                        <button className="et-file-remove" onClick={() => removeAdditional(i)} title="Remove attachment" aria-label="Remove attachment">
+                          <MaterialIcon>close</MaterialIcon>
                         </button>
                       </div>
                     ))}
@@ -1034,24 +1038,20 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
               </div>
             </div>
           </section>
+          </div>{/* /.et-form-scroll */}
 
           <div className="et-actions">
             <button className="et-btn et-btn-secondary" onClick={() => compilePreview()} disabled={generating}>
               {generating
                 ? <><div className="et-spinner" /> Generating...</>
                 : <>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                    </svg>
+                    <MaterialIcon>search</MaterialIcon>
                     Compile Preview
                   </>
               }
             </button>
             <button className="et-btn et-btn-secondary" onClick={saveDraft}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
-                <polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
-              </svg>
+              <MaterialIcon>save</MaterialIcon>
               Save Draft
             </button>
             <button className="et-btn et-btn-primary" onClick={reviewBeforeSend} disabled={sending || analyzing}>
@@ -1060,10 +1060,7 @@ function ComposerSection({ gmailStatus, setSection, onDraftSaved, initialDraft, 
                 : analyzing
                   ? <><div className="et-spinner" /> Analyzing...</>
                   : <>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <line x1="22" y1="2" x2="11" y2="13"/>
-                        <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-                      </svg>
+                      <MaterialIcon>send</MaterialIcon>
                       Review &amp; Send
                     </>
               }
