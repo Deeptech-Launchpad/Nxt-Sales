@@ -35,10 +35,28 @@ router.post('/generate', auth, async (req, res) => {
     return res.status(400).json({ message: 'A `request` object with a `contents` array is required.' })
   }
 
+  const featureKey = typeof feature === 'string' ? feature.slice(0, 64) : null
+
+  // The deliverability review is the one AI call a user sits and waits on:
+  // it blocks the Review & Send dialog. Every other feature runs in its own
+  // screen where a slower, more thorough fallback is the better trade, so
+  // only this one gets a tighter budget. Measured healthy round-trip is
+  // ~4.3s, so 9s leaves roughly 2x headroom before giving up on a model,
+  // and 3 attempts still covers the preferred model plus two fallbacks.
+  // Nothing here skips the check — it only bounds how long a DEGRADED
+  // Gemini may stall it. When Gemini answers, the report is identical.
+  const DELIVERABILITY_TIMEOUT_MS  = 9000
+  const DELIVERABILITY_MAX_ATTEMPTS = 3
+  const isDeliverability = featureKey === 'email_deliverability'
+
   try {
     const data = await gemini.generate(request, {
-      feature: typeof feature === 'string' ? feature.slice(0, 64) : null,
+      feature: featureKey,
       userId: req.user.id,
+      ...(isDeliverability && {
+        timeoutMs: DELIVERABILITY_TIMEOUT_MS,
+        maxAttempts: DELIVERABILITY_MAX_ATTEMPTS,
+      }),
     })
     res.json(data)
   } catch (err) {

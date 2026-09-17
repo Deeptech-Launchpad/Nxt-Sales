@@ -30,6 +30,14 @@ const MODEL_PRIORITY = [
 const ATTEMPT_TIMEOUT_MS = 20000
 // Re-detect at most this often; a redeploy or a restart clears it anyway.
 const MODEL_CACHE_MS = 60 * 60 * 1000
+// How long a FAILED detection is remembered. Short on purpose: a key whose
+// quota resets, or a transient Google outage, must start working again
+// quickly — but without this, a failing /models call was repeated on every
+// single request (the guard below tests cache.model, which a failure leaves
+// null, so the error it stored could never be read back). On a send that
+// meant paying the detection timeout again before the fallback chain even
+// started.
+const MODEL_ERROR_CACHE_MS = 60 * 1000
 
 const apiKey = () => (process.env.GEMINI_API_KEY || '').trim()
 // AI can be switched off without removing the key, so features degrade to
@@ -73,6 +81,11 @@ async function detectModel() {
 
 async function resolveModel({ force = false } = {}) {
   if (!force && cache.model && Date.now() - cache.at < MODEL_CACHE_MS) return cache.model
+  // Re-throw a recent failure instead of re-running detection. `force` still
+  // bypasses it, so the Settings "refresh" button re-checks immediately.
+  if (!force && cache.error && Date.now() - cache.at < MODEL_ERROR_CACHE_MS) {
+    throw new Error(cache.error)
+  }
   try {
     const model = await detectModel()
     cache = { model, at: Date.now(), error: null }
@@ -109,14 +122,23 @@ async function getStatus({ refresh = false } = {}) {
 // legitimately slow — multimodal screenshot analysis takes far longer than the
 // text prompts this default was chosen for. Omitting it keeps the old value,
 // so no existing caller changes behaviour.
-async function generate(requestBody, { feature = null, userId = null, timeoutMs = ATTEMPT_TIMEOUT_MS } = {}) {
+// maxAttempts caps how far down the priority list one call may walk. Null
+// (the default) keeps the original behaviour of trying every candidate, so no
+// existing caller changes. A caller that is latency-sensitive — the
+// deliverability check runs while the user waits on the Review & Send dialog —
+// passes a small number so a degraded Gemini costs seconds rather than the
+// full chain's worth of per-attempt timeouts.
+async function generate(requestBody, { feature = null, userId = null, timeoutMs = ATTEMPT_TIMEOUT_MS, maxAttempts = null } = {}) {
   if (!isConfigured()) throw Object.assign(new Error('AI is not configured on the server.'), { status: 503 })
   if (!aiEnabled()) throw Object.assign(new Error('AI is currently disabled.'), { status: 503 })
 
   let preferred = null
   try { preferred = await resolveModel() } catch { /* fall through to the priority list */ }
 
-  const candidates = [preferred, ...MODEL_PRIORITY].filter((v, i, a) => v && a.indexOf(v) === i)
+  const allCandidates = [preferred, ...MODEL_PRIORITY].filter((v, i, a) => v && a.indexOf(v) === i)
+  const candidates = Number.isFinite(maxAttempts) && maxAttempts > 0
+    ? allCandidates.slice(0, maxAttempts)
+    : allCandidates
   let lastErr = null
   let attempts = 0
 
