@@ -688,6 +688,7 @@ router.post('/send', auth, async (req, res) => {
     // a token with a dead pixel would sit at zero opens forever and be
     // indistinguishable from a genuinely unopened email.
     const trackingId  = TRACK_BASE ? crypto.randomUUID() : null
+    console.log('[Email Track DIAG]', JSON.stringify({ to, fromEmail, companyId, trackBase: TRACK_BASE, trackingId, emailMode, explicitThreadId }))
     // Quoted/forwarded content (built client-side by ThreadDrawer.jsx's
     // Reply/Reply All/Forward actions) is placed AFTER the signature, matching
     // standard reply layout: [content] [signature] [quoted original].
