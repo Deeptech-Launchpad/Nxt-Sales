@@ -358,7 +358,12 @@ export default function Companies({ recentsMode = false }) {
         ...(industryFilter.length   > 0 && { industries:   industryFilter }),
         ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
         ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
-        ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter.join(',') }),
+        // Array, not comma-joined — same reasoning as industries above,
+        // and CMS names can legitimately contain a comma. A joined string
+        // ("Shopify,WooCommerce") never equals any single cms column value,
+        // so selecting a second value turned the filter into an impossible
+        // AND-of-one-literal-string instead of an OR across the array.
+        ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter }),
         ...(remarksFilter.length > 0 && { remarksValues: remarksFilter }),
         ...(websiteFilter.trim()    && { website:      websiteFilter.trim() }),
         ...(phoneFilter.trim()      && { phone:        phoneFilter.trim() }),
@@ -397,7 +402,7 @@ export default function Companies({ recentsMode = false }) {
     ...(industryFilter.length   > 0 && { industries:   industryFilter }),
     ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
     ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
-    ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter.join(',') }),
+    ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter }),
     ...(remarksFilter.length > 0 && { remarksValues: remarksFilter }),
     ...(websiteFilter.trim()    && { website:      websiteFilter.trim() }),
     ...(phoneFilter.trim()      && { phone:        phoneFilter.trim() }),
@@ -432,7 +437,7 @@ export default function Companies({ recentsMode = false }) {
       ...(industryFilter.length   > 0 && { industries:   industryFilter }),
       ...(countryFilter.length    > 0 && { countries:    countryFilter.join(',') }),
       ...(hasDealFilter.length    > 0 && { hasDeal:      hasDealFilter[0] }),
-      ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter.join(',') }),
+      ...(cmsFilter.length > 0    && { cmsValues:    cmsFilter }),
       ...(remarksFilter.length > 0 && { remarksValues: remarksFilter }),
       ...(websiteFilter.trim()    && { website:      websiteFilter.trim() }),
       ...(phoneFilter.trim()      && { phone:        phoneFilter.trim() }),
