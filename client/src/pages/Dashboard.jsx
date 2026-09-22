@@ -206,7 +206,7 @@ export default function Dashboard() {
           <header className="md-card-head">
             <div>
               <span className="md-section-kicker"><Zap size={10} /> Smart priority queue</span>
-              <h2>Today’s best actions <em>{!actionsLoading && nextActions.length}</em></h2>
+              <h2>Best actions <em>{!actionsLoading && nextActions.length}</em></h2>
               <p>Ranked using live engagement, pipeline progress and urgency.</p>
             </div>
             <button type="button" className="md-text-action" onClick={loadNextActions}><RefreshCw size={13} /> Refresh</button>
