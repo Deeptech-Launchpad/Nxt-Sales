@@ -502,8 +502,18 @@ router.get('/track/open/:token', async (req, res) => {
       // can, without a second, recipient-only signal this architecture
       // doesn't have — but it matches both real measurements much better
       // than 120s did.
+      // DEDUPE_AFTER_OPEN_MS was 5 minutes — sized to stop Google's proxy
+      // re-fetching the same pixel from several nodes in quick succession
+      // from inflating one human view into 4-7 counted opens. Lowered to
+      // 1 minute (2026-09-22): 5 minutes was also swallowing a genuine
+      // second read shortly after the first — a recipient opening the
+      // email again a couple of minutes later looked identical to proxy
+      // noise and got silently discarded the same way. 1 minute keeps the
+      // same protection against a rapid multi-node re-fetch immediately
+      // after the counted open, while letting a real second read minutes
+      // later increment the count as expected.
       const SUPPRESS_AFTER_SEND_MS = 15 * 1000       // sender's own copy
-      const DEDUPE_AFTER_OPEN_MS   = 5 * 60 * 1000   // proxy re-fetches
+      const DEDUPE_AFTER_OPEN_MS   = 1 * 60 * 1000   // proxy re-fetches
 
       const sinceSend = activity.createdAt
         ? now - new Date(activity.createdAt)
