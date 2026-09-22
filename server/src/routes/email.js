@@ -480,14 +480,29 @@ router.get('/track/open/:token', async (req, res) => {
       // folder, so the salesperson's copy carries the same pixel and the
       // same token as the client's. Every fetch also arrives via Google's
       // image proxy — identical user-agent, Google IP ranges — so nothing
-      // in the request itself can tell the two apart. Measured on live
-      // data before adding this: 68 of 73 tracked emails showed as opened,
-      // and 93% of first opens landed within 5 minutes of sending,
-      // including cold outreach "opened" 13 seconds after send. That is
-      // the sender's own mailbox rendering the Sent copy, not the client.
+      // in the request itself can tell the two apart, at any window length.
+      // This is a real, permanent limitation of a single shared pixel, not
+      // something the window below can ever fully solve.
       //
-      // Two windows, both deliberately conservative:
-      const SUPPRESS_AFTER_SEND_MS = 120 * 1000      // sender's own copy
+      // SUPPRESS_AFTER_SEND_MS was 120s, based on one early self-open
+      // measurement (a cold-outreach Sent-copy render 13s after send).
+      // Reproduced live with server access logs, 2026-09-22: a sender who
+      // never opened their own Sent copy, recipient confirmed opening
+      // normally — the recipient's own real opens landed at 33s, 68s, 81s,
+      // 95s and 119s after send, i.e. every one of them inside that 120s
+      // window, so all five were silently discarded (isSelfOpen, no trace
+      // kept anywhere — not a bug in the arithmetic, the window was simply
+      // too wide). 120s was trading away real, fast recipient opens — which
+      // this data shows are completely ordinary — for protection against a
+      // self-open pattern that, per the original 13s data point, resolves
+      // much sooner than that. 15s keeps the same protection against a
+      // near-instant self-check right after hitting Send, without treating
+      // a recipient reading their email in the first two minutes as
+      // suspicious. It cannot perfectly separate the two — nothing here
+      // can, without a second, recipient-only signal this architecture
+      // doesn't have — but it matches both real measurements much better
+      // than 120s did.
+      const SUPPRESS_AFTER_SEND_MS = 15 * 1000       // sender's own copy
       const DEDUPE_AFTER_OPEN_MS   = 5 * 60 * 1000   // proxy re-fetches
 
       const sinceSend = activity.createdAt
