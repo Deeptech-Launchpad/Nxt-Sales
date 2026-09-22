@@ -174,7 +174,11 @@ router.get('/', auth, async (req, res) => {
         // owner (the Deal's own owner) is now included so the client can
         // show the correct owner initials per row — All Deals can show
         // deals belonging to any user, not just the one viewing the page.
-        company: { select: { id: true, name: true, ownerId: true } },
+        // company.remarks: the Remarks filter dropdown (Deals.jsx) matches
+        // client-side against d.company?.remarks — omitted here, it was
+        // always undefined, so selecting any Remarks value matched zero
+        // deals regardless of what was picked.
+        company: { select: { id: true, name: true, ownerId: true, remarks: true } },
         owner:   { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
