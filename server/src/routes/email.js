@@ -851,7 +851,7 @@ router.post('/send', auth, async (req, res) => {
       const lastMsg = await prisma.activity.findFirst({
         where: { threadId, userId: req.user.id },
         orderBy: { createdAt: 'desc' },
-        select: { fromEmail: true, createdAt: true, body: true }
+        select: { fromEmail: true, createdAt: true, body: true, bodyHtml: true }
       })
       if (lastMsg) {
         const escapeHtml = (s) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -871,11 +871,24 @@ router.post('/send', auth, async (req, res) => {
           .replace(/&gt;/g, '>')
           .replace(/&amp;/g, '&')
         const when = lastMsg.createdAt ? lastMsg.createdAt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : ''
-        const bodyHtml = escapeHtml(decodeHtmlEntities(lastMsg.body || '')).replace(/\n/g, '<br>')
-        quotedHtml = `<div class="gmail_quote">`
-          + `<div dir="ltr" class="gmail_attr">On ${escapeHtml(when)}, ${escapeHtml(lastMsg.fromEmail || '')} wrote:<br></div>`
+        // Prefer lastMsg.bodyHtml (real, already-escaped HTML — exactly what was
+        // actually sent last time, minus the tracking pixel, which is never
+        // stored). From message #2 onward this already contains that message's
+        // OWN nested gmail_quote/blockquote wrapping its ancestor, so embedding
+        // it here reproduces Gmail's native recursive quote nesting at every
+        // hop, the same way a real Gmail reply chain does. Falls back to the
+        // escaped/decoded plain-text body only for older rows saved before the
+        // bodyHtml column existed (bodyHtml null).
+        const quoteContent = lastMsg.bodyHtml || escapeHtml(decodeHtmlEntities(lastMsg.body || '')).replace(/\n/g, '<br>')
+        // gmail_quote_container + the mailto-wrapped sender in gmail_attr match
+        // what Gmail's own web client emits for a native reply on this same
+        // account (confirmed by inspecting real Sent-mail replies) — ours was
+        // missing both. Everything else here (quote content, single-level
+        // nesting, date format) is unchanged.
+        quotedHtml = `<div class="gmail_quote gmail_quote_container">`
+          + `<div dir="ltr" class="gmail_attr">On ${escapeHtml(when)}, &lt;<a href="mailto:${lastMsg.fromEmail || ''}">${escapeHtml(lastMsg.fromEmail || '')}</a>&gt; wrote:<br></div>`
           + `<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">`
-          + bodyHtml
+          + quoteContent
           + `</blockquote>`
           + `</div>`
       }
