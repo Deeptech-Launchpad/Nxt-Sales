@@ -35,8 +35,15 @@ const WINDOW_DAYS = 2
 // mailbox, so it is NOT part of the recurring pass — it runs the first time a
 // mailbox is seen, then never again unless triggered manually via
 // POST /api/email/sync-mailbox { days: 'all' }.
-const historicalDone = new Set()
-
+//
+// "First time a mailbox is seen" is tracked on EmailAccount.historicalSyncAt
+// (persisted), not in an in-memory Set. It used to be an in-memory Set here,
+// which meant every process restart — a routine deploy — forgot every
+// mailbox had already been done and re-ran a full "in:anywhere" resync of
+// all of them. That stacked with the normal recurring pass and was the
+// direct cause of a Gmail API quota exhaustion incident (2026-09-24). A
+// restart now never re-triggers it; only a mailbox whose historicalSyncAt is
+// still null does.
 async function syncOneMailbox(account, { historical = false } = {}) {
   const label = account.email
   try {
@@ -68,7 +75,7 @@ async function autoSyncGmail() {
   try {
     const accounts = await prisma.emailAccount.findMany({
       where: { provider: 'gmail' },
-      select: { userId: true, email: true },
+      select: { id: true, userId: true, email: true, historicalSyncAt: true },
     })
     if (!accounts.length) return
 
@@ -77,12 +84,20 @@ async function autoSyncGmail() {
     matcher.invalidateIndex()
 
     for (const account of accounts) {
-      const key = `${account.userId}:${account.email}`
-      if (!historicalDone.has(key)) {
-        // First sight of this mailbox in this process: pull the full history
-        // once so existing conversations appear without anyone clicking.
-        historicalDone.add(key)
-        await syncOneMailbox(account, { historical: true })
+      if (!account.historicalSyncAt) {
+        // Genuinely never done for this mailbox (not just "not yet done in
+        // this process"): pull the full history once so existing
+        // conversations appear without anyone clicking. Only recorded as
+        // done on success, so a mailbox that fails (expired token, quota)
+        // keeps retrying on future passes instead of being silently skipped
+        // forever.
+        const result = await syncOneMailbox(account, { historical: true })
+        if (result) {
+          await prisma.emailAccount.update({
+            where: { id: account.id },
+            data: { historicalSyncAt: new Date() },
+          }).catch(err => console.error(`[Gmail Auto-sync] failed to record historical-sync completion for ${account.email}:`, err.message))
+        }
         continue
       }
       await syncOneMailbox(account)
