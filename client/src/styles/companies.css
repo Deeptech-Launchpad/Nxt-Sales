@@ -360,10 +360,14 @@
 .companies-hero-primary:hover { transform:translateY(-2px); box-shadow:0 16px 34px rgba(3,18,53,.28); }
 
 .company-summary-grid {
+  /* Only the "Total companies" card remains here now — a 4-column grid
+     sized for four cards would leave three empty tracks stretching off to
+     the right of it. Sizing to content keeps the one remaining card at its
+     natural card width instead of leaving that dead space. */
   position:relative;
   z-index:2;
   display:grid;
-  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-template-columns:minmax(0,320px);
   gap:11px;
   margin:-28px 22px 0;
 }
@@ -464,7 +468,6 @@
 .companies-page:not(.recents-workspace) .grid-company-head { grid-template-columns:31px minmax(0,1fr) 24px; }
 
 @media (max-width:1100px) {
-  .company-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .companies-hero { min-height:230px; }
   .companies-page:not(.recents-workspace) .contacts-table-wrapper,
   .companies-page:not(.recents-workspace) .company-grid-view { max-height:none; }
@@ -479,7 +482,7 @@
   .companies-hero-actions { width:100%; align-items:stretch; }
   .companies-hero-primary { order:1; width:100%; }
   .companies-hero-secondary-actions { order:2; display:grid; grid-template-columns:1fr 1fr; }
-  .company-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)); margin:-56px 12px 0; gap:8px; }
+  .company-summary-grid { grid-template-columns:minmax(0,1fr); margin:-56px 12px 0; gap:8px; }
   .company-summary-card { min-height:116px; flex-direction:column; gap:9px; padding:13px; }
   .company-summary-card>span { width:32px; height:32px; }
   .company-summary-card strong { font-size:20px; }
