@@ -89,12 +89,12 @@ async function getGmailSignature(gmail, fromEmail) {
 }
 
 // Gmail's own web client always wraps a signature in a div carrying this
-// exact class — matching it (rather than inventing our own wrapper) is what
-// keeps Gmail's thread-view quote-folding from ever mistaking the signature
-// for quoted history, and matches a native Gmail signature byte-for-byte in
-// how the recipient's client renders/recognizes it.
+// exact class and dir attribute — matching it (rather than inventing our own
+// wrapper) is what keeps Gmail's thread-view quote-folding from ever mistaking
+// the signature for quoted history, and matches a native Gmail signature
+// byte-for-byte in how the recipient's client renders/recognizes it.
 function wrapGmailSignature(html) {
-  return `<div class="gmail_signature" data-smartmail="gmail_signature">${html}</div>`
+  return `<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">${html}</div>`
 }
 
 function stripHtml(html) {
@@ -613,8 +613,9 @@ async function resolveThreadMeta(gmail, threadId) {
 router.post('/send', auth, async (req, res) => {
   const {
     to, subject, body, htmlBody, cc, bcc, attachments = [], companyId, emailMode,
-    threadId: explicitThreadId, quotedHtml, standaloneAccessToken,
+    threadId: explicitThreadId, standaloneAccessToken,
   } = req.body
+  let quotedHtml = req.body.quotedHtml
   if (!to || !subject) return res.status(400).json({ message: 'To and Subject are required.' })
 
   // Never trust the frontend on this — a bin'd company should reject writes
@@ -693,18 +694,15 @@ router.post('/send', auth, async (req, res) => {
     // getGmailSignature above), appended automatically to every send through
     // this route regardless of which UI surface sent the request (Email
     // Tool, Contact/Company "Log an email", Reply/Reply All/Forward). Never
-    // blocks a send if the lookup fails. Skipped if the composed body
-    // already contains the same signature text (compared on stripped text,
-    // since Gmail signatures are rich HTML where an exact markup substring
-    // match would be unreliable) — guards against a future manual "insert
-    // signature" affordance ever doubling it up; no current composer path
-    // inserts it into the editable body itself.
+    // blocks a send if the lookup fails. Skipped only if the composed body
+    // already contains a wrapped Gmail signature element.
     let signatureHtml = ''
     const gmailSig = await getGmailSignature(gmail, fromEmail)
     if (gmailSig) {
-      const sigPlain = stripHtml(gmailSig)
-      const alreadyPresent = sigPlain.length > 10 && stripHtml(baseHtml).includes(sigPlain)
-      if (!alreadyPresent) signatureHtml = `<br>${wrapGmailSignature(gmailSig)}`
+      const alreadyHasSignature = baseHtml.includes('data-smartmail="gmail_signature"') || baseHtml.includes('class="gmail_signature"')
+      if (!alreadyHasSignature) {
+        signatureHtml = `<br clear="all"><div>${wrapGmailSignature(gmailSig)}</div>`
+      }
     }
 
     // Open-tracking: unique token embedded as a hidden pixel; when the recipient
@@ -713,7 +711,6 @@ router.post('/send', auth, async (req, res) => {
     // a token with a dead pixel would sit at zero opens forever and be
     // indistinguishable from a genuinely unopened email.
     const trackingId  = TRACK_BASE ? crypto.randomUUID() : null
-    console.log('[Email Track DIAG]', JSON.stringify({ to, fromEmail, companyId, trackBase: TRACK_BASE, trackingId, emailMode, explicitThreadId }))
     // Quoted/forwarded content (built client-side by ThreadDrawer.jsx's
     // Reply/Reply All/Forward actions) is placed AFTER the signature, matching
     // standard reply layout: [content] [signature] [quoted original].
@@ -722,8 +719,15 @@ router.post('/send', auth, async (req, res) => {
     // back in our own viewer would fetch it and record a false "open" every time
     // somebody read the email inside the CRM, corrupting the number it exists to
     // measure.
-    const storedHtml    = `${baseHtml}${signatureHtml}${quotedHtml || ''}`
-    const effectiveHtml = `${storedHtml}${trackingPixel(trackingId)}`
+    // NOTE: quoteHtml/storedHtml/effectiveHtml are NOT built here. They must
+    // be built AFTER thread continuation below resolves `threadId` and AFTER
+    // the auto-build-quotedHtml block runs — both can still change
+    // `quotedHtml`'s value, and a template literal captures it at the moment
+    // it's evaluated, not lazily. Building these three here (as this used to)
+    // silently discarded the auto-built quote: `effectiveHtml` (what Gmail
+    // actually sends) and `storedHtml` (what we save) would already be frozen
+    // on the old, empty `quotedHtml` by the time the auto-build block set it.
+    // See the actual construction just above `rawBuffer` below.
 
     // ── Thread continuation ─────────────────────────────────
     // Four ways this resolves, in priority order:
@@ -836,6 +840,54 @@ router.post('/send', auth, async (req, res) => {
         references = meta.references
       }
     }
+
+    // Auto-build quotedHtml for emailMode: 'continue' when the frontend didn't
+    // provide it (Email Tool direct follow-up, not Reply/Reply All/Forward).
+    // Reply/Reply All/Forward already populate quotedHtml via ThreadDrawer, so
+    // this only fills the gap for standalone "Continue Existing Thread" sends.
+    // This ensures Gmail's parser sees an explicit gmail_quote marker and
+    // correctly distinguishes new content + signature from quoted history.
+    if (emailMode === 'continue' && !quotedHtml && threadId) {
+      const lastMsg = await prisma.activity.findFirst({
+        where: { threadId, userId: req.user.id },
+        orderBy: { createdAt: 'desc' },
+        select: { fromEmail: true, createdAt: true, body: true }
+      })
+      if (lastMsg) {
+        const escapeHtml = (s) => (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        // `lastMsg.body` is plain text produced elsewhere by stripping HTML TAGS
+        // out of the original htmlBody (see activityData.body above) — that
+        // strip never decoded entities, so literal "&amp;", "&lt;" etc. from
+        // the original markup (e.g. an anchor's "Baker &amp; Farrows" text)
+        // survive as-is. Escaping that text as if it were plain then doubled
+        // every "&" into "&amp;amp;". Decoding the entities we could plausibly
+        // have inherited before escaping avoids that, without touching how
+        // `body` itself is built or used anywhere else.
+        const decodeHtmlEntities = (s) => (s || '')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+        const when = lastMsg.createdAt ? lastMsg.createdAt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : ''
+        const bodyHtml = escapeHtml(decodeHtmlEntities(lastMsg.body || '')).replace(/\n/g, '<br>')
+        quotedHtml = `<div class="gmail_quote">`
+          + `<div dir="ltr" class="gmail_attr">On ${escapeHtml(when)}, ${escapeHtml(lastMsg.fromEmail || '')} wrote:<br></div>`
+          + `<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">`
+          + bodyHtml
+          + `</blockquote>`
+          + `</div>`
+      }
+    }
+
+    // Built here — not earlier — because `quotedHtml` can still change above:
+    // Reply/Reply All/Forward already have it from the frontend by this point;
+    // the "continue" auto-build block may have just set it. This is the first
+    // point after both of those where its final value is guaranteed settled.
+    const quoteHtml     = quotedHtml ? `<br>${quotedHtml}` : ''
+    const storedHtml    = `${baseHtml}${signatureHtml}${quoteHtml}`
+    const effectiveHtml = `${storedHtml}${trackingPixel(trackingId)}`
 
     const rawBuffer = buildRawEmail({
       from: fromEmail,
