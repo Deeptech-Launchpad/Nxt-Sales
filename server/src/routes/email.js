@@ -879,7 +879,21 @@ router.post('/send', auth, async (req, res) => {
         // hop, the same way a real Gmail reply chain does. Falls back to the
         // escaped/decoded plain-text body only for older rows saved before the
         // bodyHtml column existed (bodyHtml null).
-        const quoteContent = lastMsg.bodyHtml || escapeHtml(decodeHtmlEntities(lastMsg.body || '')).replace(/\n/g, '<br>')
+        // Every genuine Gmail-native reply chain we inspected (3 real threads,
+        // up to 7 messages / 6 nesting levels deep) has gmail_quote_container
+        // on exactly ONE div — the newest/outermost wrapper — never on any
+        // embedded ancestor level, no matter how deep. That's because Gmail's
+        // own compose-time code only ever stamps the wrapper it is currently
+        // creating; it never rewrites already-quoted, frozen content. Ours
+        // instead re-embeds lastMsg.bodyHtml verbatim, and that HTML already
+        // carries a gmail_quote_container from when IT was built (as that
+        // message's own outermost wrapper), so the class accumulates one
+        // extra occurrence per hop instead of staying at one. Stripping it
+        // from the embedded ancestor content — and only from there — matches
+        // native Gmail's own pattern without touching quote content, nesting,
+        // or anything else.
+        const quoteContentRaw = lastMsg.bodyHtml || escapeHtml(decodeHtmlEntities(lastMsg.body || '')).replace(/\n/g, '<br>')
+        const quoteContent = quoteContentRaw.replace(/\s*gmail_quote_container/g, '')
         // gmail_quote_container + the mailto-wrapped sender in gmail_attr match
         // what Gmail's own web client emits for a native reply on this same
         // account (confirmed by inspecting real Sent-mail replies) — ours was
