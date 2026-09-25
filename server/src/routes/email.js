@@ -88,11 +88,78 @@ async function getGmailSignature(gmail, fromEmail) {
   }
 }
 
+// SendAs display name for the quoted history's "On ... wrote:" attribution
+// line (e.g. "Manoj s") — native Gmail uses the sender's configured display
+// name there, not their bare address. Matched on the actual address for the
+// same reason as getGmailSignature above: isDefault doesn't reliably mean
+// "this address". Never throws; falls back to null so the caller can use the
+// email address instead, same graceful-degradation shape as the signature
+// lookup.
+async function getSendAsDisplayName(gmail, email) {
+  try {
+    const res = await gmail.users.settings.sendAs.list({ userId: 'me' })
+    const sendAsList = res.data.sendAs || []
+    const target = (email || '').toLowerCase()
+    const chosen = sendAsList.find(s => (s.sendAsEmail || '').toLowerCase() === target)
+    const name = (chosen?.displayName || '').trim()
+    return name || null
+  } catch (err) {
+    return null
+  }
+}
+
+// Same display name, with a fallback for when sendAs.displayName comes back
+// empty because a Workspace admin locks that field (confirmed live: still ""
+// after the address's own Gmail "send mail as" name was set) — the Gmail API
+// has no way to see past that lock. Falls back to the name already stored in
+// our own DB against that address: the EmailAccount's owning User first
+// (the normal case — the address is a connected mailbox), then a User row
+// directly (in case the address itself is a user's own login email). No new
+// fields, no new scopes — existing User.name only. Null if nothing matches,
+// same graceful-degradation shape as every other lookup here.
+async function resolveDisplayName(gmail, email) {
+  const sendAsName = await getSendAsDisplayName(gmail, email)
+  if (sendAsName) return sendAsName
+  const target = (email || '').trim().toLowerCase()
+  if (!target) return null
+  // More than one EmailAccount row can exist for the same connected address
+  // (e.g. an assistant's own account also holding a connection to it) — the
+  // one whose OWN User.email matches this address is that person's own
+  // inbox, the correct name to show for it. Any other row is someone else
+  // managing/sending through it, not the identity native Gmail displays.
+  // Falls back to the most recently updated row if no self-owned match
+  // exists, rather than an arbitrary/unordered pick.
+  const accounts = await prisma.emailAccount.findMany({
+    where: { email: { equals: target, mode: 'insensitive' } },
+    orderBy: { updatedAt: 'desc' },
+    select: { user: { select: { name: true, email: true } } },
+  })
+  const selfOwned = accounts.find(a => (a.user?.email || '').toLowerCase() === target)
+  const account = selfOwned || accounts[0]
+  if (account?.user?.name) return account.user.name
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: target, mode: 'insensitive' } },
+    select: { name: true },
+  })
+  return user?.name || null
+}
+
 // Gmail's own web client always wraps a signature in a div carrying this
 // exact class and dir attribute — matching it (rather than inventing our own
 // wrapper) is what keeps Gmail's thread-view quote-folding from ever mistaking
 // the signature for quoted history, and matches a native Gmail signature
 // byte-for-byte in how the recipient's client renders/recognizes it.
+//
+// data-smartmail="gmail_signature" is always included on a NEW signature —
+// confirmed from the raw "Show original" source of a real native Gmail
+// follow-up #3: native keeps this attribute on the current message's own
+// signature on every send, first message or reply alike. (An earlier version
+// of this fix conditionally omitted it on replies based on a different, less
+// direct reading of native behavior; live DevTools inspection later showed
+// that omission did not change Gmail's quote-folding, and the raw source
+// capture now shows native never omits it here at all — it only ever strips
+// this attribute from an OLDER signature re-embedded inside quoted history,
+// handled separately where ancestor content is assembled.)
 function wrapGmailSignature(html) {
   return `<div dir="ltr" class="gmail_signature" data-smartmail="gmail_signature">${html}</div>`
 }
@@ -390,7 +457,7 @@ function b64Lines(input) {
 // Mail all emit both halves. It also leaves plain-text readers with nothing to
 // display. Nothing else about the message changes: same headers, same HTML,
 // same attachment bytes, same threading.
-function buildRawEmail({ from, to, cc, bcc, subject, htmlBody, attachments = [], inReplyTo = null, references = null }) {
+function buildRawEmail({ from, fromName = null, to, cc, bcc, subject, htmlBody, attachments = [], inReplyTo = null, references = null }) {
   // Random, not `Date.now()`: two sends in the same millisecond used to be
   // able to pick the same delimiter, and a predictable one is also a delimiter
   // a body could contain by accident.
@@ -407,9 +474,21 @@ function buildRawEmail({ from, to, cc, bcc, subject, htmlBody, attachments = [],
     ? safeSubject
     : `=?UTF-8?B?${Buffer.from(safeSubject, 'utf8').toString('base64')}?=`
 
+  // Display name is optional — no sendAs displayName configured for this
+  // address means we keep sending the bare address, exactly as before.
+  // Same CRLF-stripping safety and same RFC 2047 pattern as the subject
+  // above; a non-ASCII name is a base64 encoded-word (not quoted), an ASCII
+  // one is a quoted string with its own quotes/backslashes escaped.
+  const safeFromName = String(fromName || '').replace(/[\r\n]+/g, ' ').trim()
+  const fromHeader = !safeFromName
+    ? from
+    : /^[\x20-\x7E]*$/.test(safeFromName)
+      ? `"${safeFromName.replace(/(["\\])/g, '\\$1')}" <${from}>`
+      : `=?UTF-8?B?${Buffer.from(safeFromName, 'utf8').toString('base64')}?= <${from}>`
+
   const headers = [
     'MIME-Version: 1.0',
-    `From: ${from}`,
+    `From: ${fromHeader}`,
     `To: ${to}`,
     cc  ? `Cc: ${cc}`   : null,
     bcc ? `Bcc: ${bcc}` : null,
@@ -696,14 +775,20 @@ router.post('/send', auth, async (req, res) => {
     // Tool, Contact/Company "Log an email", Reply/Reply All/Forward). Never
     // blocks a send if the lookup fails. Skipped only if the composed body
     // already contains a wrapped Gmail signature element.
-    let signatureHtml = ''
+    // Whether a signature block should be appended at all. The actual HTML
+    // shape it's wrapped in depends on whether this send ends up with quoted
+    // history, which isn't settled yet at this point (see the storedHtml
+    // construction below) — so this only resolves the yes/no, not the markup.
     const gmailSig = await getGmailSignature(gmail, fromEmail)
-    if (gmailSig) {
-      const alreadyHasSignature = baseHtml.includes('data-smartmail="gmail_signature"') || baseHtml.includes('class="gmail_signature"')
-      if (!alreadyHasSignature) {
-        signatureHtml = `<br clear="all"><div>${wrapGmailSignature(gmailSig)}</div>`
-      }
-    }
+    const appendSignature = !!gmailSig
+      && !baseHtml.includes('data-smartmail="gmail_signature"')
+      && !baseHtml.includes('class="gmail_signature"')
+
+    // From header display name — the connected address's own sendAs
+    // displayName, same lookup used for the quoted-history attribution name
+    // below. Null when Gmail has none configured; buildRawEmail then falls
+    // back to the bare address exactly as before.
+    const fromDisplayName = await resolveDisplayName(gmail, fromEmail)
 
     // Open-tracking: unique token embedded as a hidden pixel; when the recipient
     // opens the email the pixel loads and /track/open records it against this id.
@@ -841,6 +926,21 @@ router.post('/send', auth, async (req, res) => {
       }
     }
 
+    // Native Gmail prefixes the subject with "Re: " for any reply into an
+    // existing thread, never for a brand-new first message — confirmed from
+    // the same native reply source used for the HTML fix above. `threadId`
+    // is only ever non-null here once one of the branches above actually
+    // found (or was given) a thread to continue, so it's the correct signal
+    // for "this is a reply" regardless of which of the four paths resolved
+    // it. No code anywhere in server/src compares subjects for exact
+    // equality to match threads/emails/companies (checked directly) — that
+    // matching is done entirely by threadId, addresses, and Gmail's own
+    // In-Reply-To/References — so adding this prefix needs no companion
+    // "ignore leading Re:" fix anywhere.
+    if (threadId && !/^re:/i.test(sendSubject.trim())) {
+      sendSubject = `Re: ${sendSubject}`
+    }
+
     // Auto-build quotedHtml for emailMode: 'continue' when the frontend didn't
     // provide it (Email Tool direct follow-up, not Reply/Reply All/Forward).
     // Reply/Reply All/Forward already populate quotedHtml via ThreadDrawer, so
@@ -870,7 +970,18 @@ router.post('/send', auth, async (req, res) => {
           .replace(/&lt;/g, '<')
           .replace(/&gt;/g, '>')
           .replace(/&amp;/g, '&')
-        const when = lastMsg.createdAt ? lastMsg.createdAt.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : ''
+        // Native Gmail's own "wrote:" line format: "Fri, Sep 25, 2026 at
+        // 12:25 PM" (date and time joined with "at", not toLocaleString's
+        // default comma) — confirmed from a real native reply's raw source.
+        // Sender's own timezone, same as before.
+        const when = lastMsg.createdAt
+          ? `${lastMsg.createdAt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} at ${lastMsg.createdAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+          : ''
+        // Native uses the sender's SendAs display name here (e.g. "Manoj s"),
+        // not their bare address — falls back to the address if Gmail has no
+        // display name configured for it, same as native would show nothing
+        // better to show either.
+        const attrName = (await resolveDisplayName(gmail, lastMsg.fromEmail)) || lastMsg.fromEmail || ''
         // Prefer lastMsg.bodyHtml (real, already-escaped HTML — exactly what was
         // actually sent last time, minus the tracking pixel, which is never
         // stored). From message #2 onward this already contains that message's
@@ -893,16 +1004,29 @@ router.post('/send', auth, async (req, res) => {
         // native Gmail's own pattern without touching quote content, nesting,
         // or anything else.
         const quoteContentRaw = lastMsg.bodyHtml || escapeHtml(decodeHtmlEntities(lastMsg.body || '')).replace(/\n/g, '<br>')
-        const quoteContent = quoteContentRaw.replace(/\s*gmail_quote_container/g, '')
+        // Two things stripped from the re-embedded ancestor content, both
+        // confirmed against native Gmail's own raw reply source (never from
+        // content, nesting or anything else in it):
+        //  - gmail_quote_container: native stamps this only on the ONE
+        //    outermost wrapper it's currently creating, never on an
+        //    already-quoted ancestor — see the accumulation note this
+        //    replaced above.
+        //  - data-smartmail="gmail_signature": native keeps this attribute
+        //    only on the CURRENT message's own new signature (see
+        //    wrapGmailSignature above); an older signature re-embedded here
+        //    as quoted history never carries it.
+        const quoteContent = quoteContentRaw
+          .replace(/\s*gmail_quote_container/g, '')
+          .replace(/\s*data-smartmail="gmail_signature"/g, '')
         // gmail_quote_container + the mailto-wrapped sender in gmail_attr match
         // what Gmail's own web client emits for a native reply on this same
         // account (confirmed by inspecting real Sent-mail replies) — ours was
         // missing both. Everything else here (quote content, single-level
-        // nesting, date format) is unchanged.
+        // nesting) is unchanged.
         quotedHtml = `<div class="gmail_quote gmail_quote_container">`
-          + `<div dir="ltr" class="gmail_attr">On ${escapeHtml(when)}, &lt;<a href="mailto:${lastMsg.fromEmail || ''}">${escapeHtml(lastMsg.fromEmail || '')}</a>&gt; wrote:<br></div>`
+          + `<div dir="ltr" class="gmail_attr">On ${escapeHtml(when)} ${escapeHtml(attrName)} &lt;<a href="mailto:${lastMsg.fromEmail || ''}">${escapeHtml(lastMsg.fromEmail || '')}</a>&gt; wrote:<br></div>`
           + `<blockquote class="gmail_quote" style="margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">`
-          + quoteContent
+          + `<div dir="ltr">${quoteContent}</div>`
           + `</blockquote>`
           + `</div>`
       }
@@ -912,12 +1036,37 @@ router.post('/send', auth, async (req, res) => {
     // Reply/Reply All/Forward already have it from the frontend by this point;
     // the "continue" auto-build block may have just set it. This is the first
     // point after both of those where its final value is guaranteed settled.
-    const quoteHtml     = quotedHtml ? `<br>${quotedHtml}` : ''
-    const storedHtml    = `${baseHtml}${signatureHtml}${quoteHtml}`
+    //
+    // Two different shapes, chosen by whether there's quoted history at all —
+    // both taken directly from a native Gmail message's own raw HTML source
+    // ("Show original"), not inferred from rendered/live DOM:
+    //
+    //  - No quote (first/new message): body and signature share one
+    //    <div dir="ltr">...</div>. Unchanged from before.
+    //
+    //  - Quote present (reply/follow-up): body gets its own
+    //    <div>{body}<br clear="all"></div>, the signature its own
+    //    <div><div class="gmail_signature">...</div></div>, then a trailing
+    //    <br>, all still inside one shared <div dir="ltr">...</div> that
+    //    closes BEFORE the quote begins as a fresh sibling. Live Gmail
+    //    DevTools inspection had already shown Gmail's collapse script
+    //    sweeping the signature into the same HOEnZb/adL region as the quote
+    //    when body+signature were flat siblings with no such boundary; this
+    //    matches native's actual raw shape instead of an inferred one.
+    const quoteHtml = quotedHtml ? `<br>${quotedHtml}` : ''
+    let storedHtml
+    if (quotedHtml) {
+      const sigBlock = appendSignature ? `<div>${wrapGmailSignature(gmailSig)}</div>` : ''
+      storedHtml = `<div dir="ltr"><div>${baseHtml}<br clear="all"></div>${sigBlock}<br></div>${quoteHtml}`
+    } else {
+      const signatureHtml = appendSignature ? `<br clear="all"><div>${wrapGmailSignature(gmailSig)}</div>` : ''
+      storedHtml = `<div dir="ltr">${baseHtml}${signatureHtml}</div>`
+    }
     const effectiveHtml = `${storedHtml}${trackingPixel(trackingId)}`
 
     const rawBuffer = buildRawEmail({
       from: fromEmail,
+      fromName: fromDisplayName,
       to,
       cc:  cc  || null,
       bcc: bcc || null,
