@@ -82,7 +82,10 @@ async function processFollowUpEnrollment(id) {
 async function processDueFollowUps() {
   try {
     const due = await prisma.followUpEnrollment.findMany({
-      where: { status: 'active', nextRunAt: { lte: new Date() } },
+      // Enrollments of a deactivated user are left as they are (still
+      // 'active', nextRunAt unchanged) rather than cancelled, so reactivating
+      // the user picks them up again on the next sweep.
+      where: { status: 'active', nextRunAt: { lte: new Date() }, user: { status: { not: 'deactivated' } } },
       orderBy: { nextRunAt: 'asc' },
       take: 50,
       select: { id: true },

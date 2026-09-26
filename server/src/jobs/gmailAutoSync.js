@@ -73,8 +73,12 @@ async function syncOneMailbox(account, { historical = false } = {}) {
 
 async function autoSyncGmail() {
   try {
+    // A deactivated user's mailbox is not synced: deactivation cuts off their
+    // access, and this job reads with their stored Gmail token. The account
+    // row and everything already imported stay untouched, so reactivating the
+    // user resumes syncing on the next pass.
     const accounts = await prisma.emailAccount.findMany({
-      where: { provider: 'gmail' },
+      where: { provider: 'gmail', user: { status: { not: 'deactivated' } } },
       select: { id: true, userId: true, email: true, historicalSyncAt: true },
     })
     if (!accounts.length) return
