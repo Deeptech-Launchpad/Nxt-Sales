@@ -11,10 +11,10 @@ import '../styles/user-management.css'
 const ROLE_OPTIONS = [
   { value: 'member', label: 'Member' },
   { value: 'admin', label: 'Admin' },
-  { value: 'super_admin', label: 'Super Admin' },
 ]
 
-const ROLE_LABEL = { super_admin: 'Super Admin', admin: 'Admin', member: 'Member' }
+// Two roles only. A legacy 'super_admin' row is shown and treated as Admin.
+const ROLE_LABEL = { super_admin: 'Admin', admin: 'Admin', member: 'Member' }
 
 function ActionsMenu({ user, activeTab, onStatusChange, onDelete, onResend }) {
   const [open, setOpen] = useState(false)

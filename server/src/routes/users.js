@@ -1,6 +1,7 @@
 const router = require('express').Router()
 const crypto = require('crypto')
 const auth   = require('../middleware/authMiddleware')
+const requireAdmin = require('../middleware/requireAdmin')
 const { PrismaClient, Prisma } = require('@prisma/client')
 const prisma = new PrismaClient()
 
@@ -42,7 +43,7 @@ router.get('/', auth, async (req, res) => {
 // no functional gain.
 
 // ── GET /api/users/manage — all users for User Management page ───────────
-router.get('/manage', auth, async (req, res) => {
+router.get('/manage', auth, requireAdmin, async (req, res) => {
   try {
     const users = await prisma.user.findMany({
       select: {
@@ -60,10 +61,11 @@ router.get('/manage', auth, async (req, res) => {
 })
 
 // ── POST /api/users/invite — create pending user + return invite link ────
-router.post('/invite', auth, async (req, res) => {
+router.post('/invite', auth, requireAdmin, async (req, res) => {
   try {
     const { name, email, role = 'member' } = req.body
     if (!name || !email) return res.status(400).json({ message: 'Name and email are required.' })
+    if (!['member', 'admin'].includes(role)) return res.status(400).json({ message: 'Invalid role.' })
 
     const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } })
     if (existing) return res.status(409).json({ message: 'A user with this email already exists.' })
@@ -129,15 +131,22 @@ router.post('/invite', auth, async (req, res) => {
 })
 
 // ── PATCH /api/users/:id/status — activate / deactivate ─────────────────
-router.patch('/:id/status', auth, async (req, res) => {
+// Deactivation only turns off access: the user's status flips (login, Google
+// sign-in and every existing session are refused) and any outstanding invite /
+// reset token is cleared. Their companies, deals, activities, emails and tasks
+// are never touched, so historical ownership stays intact.
+router.patch('/:id/status', auth, requireAdmin, async (req, res) => {
   try {
     const { status } = req.body
     if (!['active', 'deactivated'].includes(status)) {
       return res.status(400).json({ message: 'status must be active or deactivated.' })
     }
+    if (status === 'deactivated' && req.user.id === req.params.id) {
+      return res.status(400).json({ message: 'You cannot deactivate your own account.' })
+    }
     const user = await prisma.user.update({
       where: { id: req.params.id },
-      data: { status },
+      data: status === 'deactivated' ? { status, inviteToken: null, inviteExpires: null } : { status },
       select: { id: true, name: true, email: true, role: true, status: true },
     })
     res.json(user)
@@ -148,10 +157,10 @@ router.patch('/:id/status', auth, async (req, res) => {
 })
 
 // ── PATCH /api/users/:id/role ────────────────────────────────────────────
-router.patch('/:id/role', auth, async (req, res) => {
+router.patch('/:id/role', auth, requireAdmin, async (req, res) => {
   try {
     const { role } = req.body
-    if (!['member', 'admin', 'super_admin'].includes(role)) {
+    if (!['member', 'admin'].includes(role)) {
       return res.status(400).json({ message: 'Invalid role.' })
     }
     const user = await prisma.user.update({
@@ -167,8 +176,13 @@ router.patch('/:id/role', auth, async (req, res) => {
 })
 
 // ── POST /api/users/:id/resend-invite ────────────────────────────────────
-router.post('/:id/resend-invite', auth, async (req, res) => {
+router.post('/:id/resend-invite', auth, requireAdmin, async (req, res) => {
   try {
+    // A deactivated account is only brought back by an admin's explicit
+    // Reactivate — an invite must not be a side door around that.
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { status: true } })
+    if (!target) return res.status(404).json({ message: 'User not found.' })
+    if (target.status === 'deactivated') return res.status(400).json({ message: 'This user is deactivated. Reactivate them instead, or invite the new employee with their own email.' })
     const inviteToken   = genToken()
     const inviteExpires = inviteExpiry()
 
@@ -189,7 +203,7 @@ router.post('/:id/resend-invite', auth, async (req, res) => {
 })
 
 // ── DELETE /api/users/:id ────────────────────────────────────────────────
-router.delete('/:id', auth, async (req, res) => {
+router.delete('/:id', auth, requireAdmin, async (req, res) => {
   try {
     if (req.user.id === req.params.id) {
       return res.status(400).json({ message: 'You cannot delete your own account.' })

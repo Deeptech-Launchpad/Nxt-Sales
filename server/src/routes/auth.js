@@ -169,7 +169,7 @@ router.post('/accept-invite', async (req, res) => {
     const existing = await prisma.user.findFirst({
       where: { inviteToken: token, inviteExpires: { gt: new Date() } },
     })
-    if (!existing) return res.status(400).json({ message: 'This invite link is invalid or has expired.' })
+    if (!existing || existing.status === 'deactivated') return res.status(400).json({ message: 'This invite link is invalid or has expired.' })
 
     const passwordHash = await bcrypt.hash(password, 10)
     const user = await prisma.user.update({

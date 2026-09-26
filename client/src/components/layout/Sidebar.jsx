@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import api from '../../api/client'
+import { useAuth } from '../../context/AuthContext'
 import '../../styles/sidebar.css'
 import {
   LayoutDashboard, Users, Building2, TrendingUp, Mail, Settings, Inbox,
@@ -9,7 +10,7 @@ import {
   User,
 } from 'lucide-react'
 
-const groups = [
+const ALL_GROUPS = [
   { label: 'CRM', Icon: Briefcase, items: [
     { to: '/companies', label: 'Companies', Icon: Building2 },
     { to: '/recents', label: 'Recents', Icon: History },
@@ -34,6 +35,10 @@ const groups = [
 ]
 
 export default function Sidebar() {
+  const { user } = useAuth()
+  // User management is admin-only (the server enforces it too).
+  const isAdmin = ['admin', 'super_admin'].includes(user?.role)
+  const groups = ALL_GROUPS.map(group => ({ ...group, items: group.items.filter(item => item.to !== '/users' || isAdmin) }))
   const navigate = useNavigate()
   const location = useLocation()
   const sidebarRef = useRef(null)

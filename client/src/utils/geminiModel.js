@@ -37,6 +37,24 @@ export async function getAiStatus({ refresh = false } = {}) {
   return data
 }
 
+// Admin only — the server answers 403 to a Member, so nothing here ever
+// reveals the key to one. Returns the key currently configured on the server.
+export async function getAiKey() {
+  const { data } = await api.get('/ai/key')
+  return data.apiKey || ''
+}
+
+// Admin only. Saves a new key on the server (the one source every AI feature
+// reads) and resolves with the fresh connection status — never the key.
+export async function updateAiKey(apiKey) {
+  try {
+    const { data } = await api.put('/ai/key', { apiKey })
+    return data
+  } catch (err) {
+    throw new Error(err?.response?.data?.message || err.message || 'Could not save the API key.')
+  }
+}
+
 // A single message for whichever way AI is unavailable, so each feature does
 // not invent its own wording.
 export function aiUnavailableMessage(status) {

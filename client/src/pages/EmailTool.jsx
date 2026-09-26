@@ -7,7 +7,8 @@ import DeliverabilityReport from '../components/activities/DeliverabilityReport'
 import RichTextEditor from '../components/RichTextEditor'
 import { runDeliverabilityAnalysis } from '../utils/emailDeliverability'
 import { compressImageIfNeeded } from '../utils/imageCompress'
-import { callGemini, getAiStatus, aiUnavailableMessage } from '../utils/geminiModel'
+import { callGemini, getAiStatus, aiUnavailableMessage, getAiKey, updateAiKey } from '../utils/geminiModel'
+import { useAuth } from '../context/AuthContext'
 import { recordAiUsage, AI_FEATURES } from '../utils/aiUsage'
 import AiUsagePanel from '../components/AiUsagePanel'
 import { stripInlineFontSize } from '../utils/sanitizeEmailHtml'
@@ -1348,6 +1349,34 @@ function SettingsSection({ onGmailChange }) {
 
   useEffect(() => { loadAiStatus(false) }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Admin-only Gemini key field. The key is requested only for an Admin (the
+  // server answers 403 to anyone else), so a Member's browser never receives it.
+  const { user: authUser } = useAuth()
+  const isAdmin = ['admin', 'super_admin'].includes(authUser?.role)
+  const [aiKey, setAiKey]           = useState('')
+  const [aiKeyDraft, setAiKeyDraft] = useState('')
+  const [showAiKey, setShowAiKey]   = useState(false)
+  const [savingKey, setSavingKey]   = useState(false)
+
+  useEffect(() => {
+    if (!isAdmin) return
+    getAiKey().then(k => { setAiKey(k); setAiKeyDraft(k) }).catch(() => {})
+  }, [isAdmin])
+
+  const saveAiKey = async () => {
+    setSavingKey(true)
+    try {
+      const status = await updateAiKey(aiKeyDraft.trim())
+      setAiStatus(status)
+      setAiKey(aiKeyDraft.trim())
+      showToast(status.connected ? `Gemini API key updated — using ${status.model}` : 'Gemini API key saved.', 'success')
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setSavingKey(false)
+    }
+  }
+
   const saveSettings = async () => {
     localStorage.setItem('google_client_id', googleClientId.trim())
     localStorage.setItem('ai_provider', aiProvider)
@@ -1467,6 +1496,38 @@ function SettingsSection({ onGmailChange }) {
                 The model above is detected against that key, so a model Google retires is
                 replaced automatically instead of breaking Customer Intelligence or Template 3.
               </div>
+              {isAdmin && (
+                <div style={{ marginTop: 12 }}>
+                  <label className="et-label">Gemini API Key (Admin only)</label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      className="et-input"
+                      style={{ flex: 1 }}
+                      type={showAiKey ? 'text' : 'password'}
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={aiKeyDraft}
+                      onChange={e => setAiKeyDraft(e.target.value)}
+                      placeholder="AIza…"
+                    />
+                    <button type="button" className="et-btn et-btn-secondary" style={{ flex: 'none' }} onClick={() => setShowAiKey(v => !v)}>
+                      {showAiKey ? 'Hide' : 'Show'}
+                    </button>
+                    <button
+                      type="button"
+                      className="et-btn et-btn-primary"
+                      style={{ flex: 'none', whiteSpace: 'nowrap' }}
+                      disabled={savingKey || !aiKeyDraft.trim() || aiKeyDraft.trim() === aiKey}
+                      onClick={saveAiKey}
+                    >
+                      {savingKey ? 'Saving…' : 'Save key'}
+                    </button>
+                  </div>
+                  <div className="et-help-text">
+                    Saved on the server as the single key every AI feature uses; it applies immediately.
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

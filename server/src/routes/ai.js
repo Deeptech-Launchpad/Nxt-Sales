@@ -1,5 +1,6 @@
 const router = require('express').Router()
 const auth = require('../middleware/authMiddleware')
+const requireAdmin = require('../middleware/requireAdmin')
 const gemini = require('../services/geminiService')
 
 // The single AI endpoint for the whole CRM.
@@ -19,6 +20,37 @@ router.get('/status', auth, async (req, res) => {
   } catch (err) {
     console.error('[AI] status error:', err.message)
     res.status(500).json({ message: 'Could not read AI status.' })
+  }
+})
+
+// ── Admin-only key management ────────────────────────────────────────────
+// The only routes that ever carry the key. requireAdmin runs on the live
+// database role, so a Member gets 403 and never sees the key or any field for it.
+// The key is not logged and not echoed back after a save.
+
+// GET /api/ai/key — the currently configured key, for the admin settings field.
+router.get('/key', auth, requireAdmin, (req, res) => {
+  res.set('Cache-Control', 'no-store')
+  res.json({ apiKey: gemini.getApiKey() })
+})
+
+// PUT /api/ai/key — replace the key. { apiKey }
+router.put('/key', auth, requireAdmin, async (req, res) => {
+  const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : ''
+  if (!apiKey) return res.status(400).json({ message: 'An API key is required.' })
+  // Rules out anything that could break out of the single .env line.
+  if (!/^[A-Za-z0-9_\-.]{8,256}$/.test(apiKey)) {
+    return res.status(400).json({ message: 'That does not look like a valid Gemini API key.' })
+  }
+  try {
+    const check = await gemini.verifyKey(apiKey)
+    if (!check.valid) return res.status(400).json({ message: `Google rejected this key: ${check.message}` })
+    gemini.setApiKey(apiKey)
+    res.set('Cache-Control', 'no-store')
+    res.json(await gemini.getStatus({ refresh: true }))
+  } catch (err) {
+    console.error('[AI] key update failed:', err.message)
+    res.status(500).json({ message: 'Could not save the API key on the server.' })
   }
 })
 

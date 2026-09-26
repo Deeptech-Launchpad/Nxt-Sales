@@ -41,6 +41,11 @@ function PrivateRoute({ children }) {
   return user ? children : <Navigate to="/login" replace />
 }
 
+function AdminRoute({ children }) {
+  const { user } = useAuth()
+  return ['admin', 'super_admin'].includes(user?.role) ? children : <Navigate to="/dashboard" replace />
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -68,7 +73,7 @@ export default function App() {
             <Route path="email" element={<EmailTool />} />
             <Route path="prompt-templates" element={<PromptTemplates />} />
             <Route path="ai-usage" element={<AiUsage />} />
-            <Route path="users" element={<UserManagement />} />
+            <Route path="users" element={<AdminRoute><UserManagement /></AdminRoute>} />
             <Route path="profile" element={<Profile />} />
             <Route path="settings" element={<Settings />} />
             <Route path="settings/dropdowns" element={<DropdownManager />} />

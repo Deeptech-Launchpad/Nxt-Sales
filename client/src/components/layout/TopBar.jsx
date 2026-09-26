@@ -31,7 +31,7 @@ const PAGE_TITLES = {
   '/users':      'User Management',
 }
 
-const NAV_GROUPS = [
+const ALL_NAV_GROUPS = [
   {
     label: 'CRM',
     items: [
@@ -78,6 +78,9 @@ function relTime(iso) {
 
 export default function TopBar() {
   const { user, logout } = useAuth()
+  // User management is admin-only (the server enforces it too).
+  const isAdmin = ['admin', 'super_admin'].includes(user?.role)
+  const NAV_GROUPS = ALL_NAV_GROUPS.map(group => ({ ...group, items: group.items.filter(item => item.to !== '/users' || isAdmin) }))
   const location = useLocation()
   const navigate = useNavigate()
   const notif = useNotifications()

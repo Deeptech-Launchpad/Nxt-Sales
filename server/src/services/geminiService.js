@@ -182,4 +182,63 @@ async function generate(requestBody, { feature = null, userId = null, timeoutMs 
   throw err
 }
 
-module.exports = { isConfigured, aiEnabled, getStatus, resolveModel, generate, MODEL_PRIORITY }
+// ── Admin key management ─────────────────────────────────────────────────
+// The key's one home stays GEMINI_API_KEY in the server's environment — the
+// same variable apiKey() and enrichmentReports.js already read — so changing it
+// here changes it for every AI feature at once. There is deliberately no second
+// store: the new value is written to the server's .env (so it survives a
+// restart/redeploy) and to process.env (so it applies immediately), and the
+// detected-model cache is cleared so the new key's own models are picked up.
+// Only the admin-only routes in routes/ai.js call these.
+const fs = require('fs')
+const path = require('path')
+
+// Same file dotenv loads at boot (server/.env, relative to the working dir).
+const envPath = () => path.resolve(process.cwd(), '.env')
+
+// Reads the current key for the admin settings screen. Never used by any route
+// a Member can reach.
+function getApiKey() {
+  return apiKey()
+}
+
+// Asks Google whether a key is accepted, without saving it. Only a definite
+// "this key is not valid/allowed" (400/401/403) counts as a failure — a quota
+// or network problem must not stop an admin saving a good key.
+async function verifyKey(candidate) {
+  try {
+    const { ok, status, body } = await fetchJson(`${API_BASE}/models?key=${encodeURIComponent(candidate)}`)
+    if (ok) return { valid: true }
+    if ([400, 401, 403].includes(status)) return { valid: false, message: body?.error?.message || 'Google rejected this API key.' }
+    return { valid: true }
+  } catch {
+    return { valid: true }
+  }
+}
+
+function persistKey(newKey) {
+  const file = envPath()
+  const original = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+  const eol = original.includes('\r\n') ? '\r\n' : '\n'
+  const line = `GEMINI_API_KEY=${newKey}`
+  // [ \t] and [^\r\n], never \s or .: those can reach across a CRLF boundary and
+  // eat the line ending of the neighbouring line.
+  const pattern = /^[ \t]*GEMINI_API_KEY[ \t]*=[^\r\n]*/m
+  const next = pattern.test(original)
+    ? original.replace(pattern, line)
+    : original + (original && !original.endsWith('\n') ? eol : '') + line + eol
+  // Write beside the target then rename, so a crash mid-write can never leave a
+  // truncated .env (it also holds the database URL and JWT secret).
+  const tmp = `${file}.tmp-${process.pid}`
+  fs.writeFileSync(tmp, next, { mode: 0o600 })
+  fs.renameSync(tmp, file)
+}
+
+// Persist first, then apply: if the file cannot be written nothing changes.
+function setApiKey(newKey) {
+  persistKey(newKey)
+  process.env.GEMINI_API_KEY = newKey
+  cache = { model: null, at: 0, error: null }
+}
+
+module.exports = { isConfigured, aiEnabled, getStatus, resolveModel, generate, MODEL_PRIORITY, getApiKey, verifyKey, setApiKey }
