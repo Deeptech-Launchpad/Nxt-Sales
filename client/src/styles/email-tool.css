@@ -2090,7 +2090,6 @@ select.et-input{
   align-items:stretch;
   gap:0;
   width:100%;
-  max-width:1680px;        /* stops the form sprawling on ultra-wide      */
   margin-inline:auto;
   padding:0;
   overflow:visible;        /* never clip; adapt instead                   */
