@@ -2427,6 +2427,8 @@ select.et-input{
 }
 .et-gmail-envelope{
   width:100%;
+  align-self:start;
+  height:auto;
   min-height:0;
   padding:18px;
   font-size:var(--et-fs-ui);
