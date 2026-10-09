@@ -379,19 +379,24 @@ The exact, already-proven command sequence lives in [`PROJECT_CONTEXT.md` §9](P
 
 ---
 
-## 18. Items that still need confirmation from the project owner
+## 18. Account ownership, and other open items
 
-These were provided by the project owner but **cannot be verified from the source code** — the code only contains opaque configuration values (client IDs, API keys), which don't reveal *who* owns the underlying Google account or Cloud project. Please confirm these directly in Google Cloud Console / Google AI Studio before relying on them:
+### 18.1 Account ownership — confirmed by the project owner
+
+None of this is visible in the source code — the code only contains opaque configuration values (client IDs, API keys), which never reveal *who* owns the underlying Google account or Cloud project. The five items below were previously listed as `NEEDS CONFIRMATION`; the project owner has since confirmed each one directly. That confirmation is recorded here as the owner's statement — it has not been independently re-verified by inspecting Google Cloud Console or Google AI Studio directly, since this guide is written from the codebase, not from access to those consoles.
 
 | Claim | Status |
 |---|---|
-| Gemini API key was obtained from the Google account `itsupport@altiusnxt.com` | **NEEDS CONFIRMATION** |
-| The Gemini key's Google project/context is named "Audio To text Converter and Nxt Sales" | **NEEDS CONFIRMATION** |
-| The Google Cloud project behind the OAuth client (Gmail/Calendar/Sign-in) is `nxt-marketingwiz` ("NXT MarketingWiz") | **NEEDS CONFIRMATION** |
-| The Gmail/OAuth-related account `dtlpsaranya@gmail.com` is relevant to this setup, and in what capacity | **NEEDS CONFIRMATION** |
-| Whether the Gemini key's Google project and the OAuth client's Google project are the same project or two different ones | **NEEDS CONFIRMATION** — important distinction, don't assume |
+| The Gemini API key was created from the Google account `itsupport@altiusnxt.com` | **CONFIRMED** (project owner) |
+| The Gemini API key was created under the project named **"Audio To text Converter and Nxt Sales"** | **CONFIRMED** (project owner) |
+| The Google Cloud OAuth client used for Gmail, Google Calendar, and Google Sign-In (see §8.2) is configured under the Google account `dtlpsaranya@gmail.com`, in the project **"NXT MarketingWiz"** (`nxt-marketingwiz`) | **CONFIRMED** (project owner) |
+| The Gemini key's project and the OAuth client's project are the same underlying project setup — not two separate projects, despite the two different names above | **CONFIRMED** (project owner) |
 
-**A general note on this, worth remembering:** the Google account used to *log into Google Cloud Console and manage the OAuth client* is not necessarily the same as any specific *Gmail mailbox* an employee connects for sending/receiving email inside the CRM. Those are two separate, independent things — one is "who administers the app's Google integration," the other is "whose actual inbox is this specific employee using." Don't assume they're the same person or account.
+**Important distinction, still worth stating plainly:** `dtlpsaranya@gmail.com` is the Google account that **manages the Google Cloud Console OAuth configuration** for NXT MarketingWiz — it is an administrative/console-access account, not a mailbox connected inside NXT Sales for sending or receiving a specific employee's email. Do not describe it as, or treat it as, an employee's connected Gmail mailbox unless that is separately and explicitly verified — those are two genuinely different roles (see §8.2-8.3 for how an individual employee's own Gmail connection works, which is unrelated to who manages the Cloud Console project).
 
-**Also still open** (carried over from `PROJECT_CONTEXT.md`, not new to this document):
+On the Gemini/OAuth project relationship: the project owner has confirmed these are the same project setup. The two names above ("Audio To text Converter and Nxt Sales" for Gemini, "NXT MarketingWiz" / `nxt-marketingwiz` for the OAuth client) are recorded here exactly as provided — this guide does not rename, reconcile, or otherwise alter either name, and does not speculate about why one underlying setup carries two different labels.
+
+### 18.2 Still open
+
+Carried over from `PROJECT_CONTEXT.md`, not resolved by this update:
 - The Marketing AI Agent service account exists but is still configured with a human employee's user ID rather than its own dedicated service identity — needs to be repointed.
