@@ -108,3 +108,7 @@ Register or sign in from **http://localhost:3000**. Connect a Gmail account unde
 
 - The Vite dev server proxies `/api` and `/auth` requests to the backend at `http://localhost:4000`.
 - `node_modules`, build output (`dist`), and all `.env` files are excluded from version control.
+
+## New to this project?
+
+Read [`docs/DEVELOPER_HANDOVER.md`](docs/DEVELOPER_HANDOVER.md) — a full plain-language guide to the architecture, every integration (Gmail, Gemini AI, Google Calendar, CallHippo), environment variables, known issues, and an onboarding checklist.

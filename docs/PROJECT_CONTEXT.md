@@ -84,7 +84,7 @@ promptTemplates  prospects  settings   users
 
 ## 4. Data model
 
-22 Prisma models, 42 migrations. Grouped:
+22 Prisma models, 43 migrations. Grouped:
 
 | Area | Models |
 |---|---|
