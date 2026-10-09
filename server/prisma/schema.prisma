@@ -620,3 +620,33 @@ model ScheduledOutreach {
 
   @@index([userId, status, scheduledAt])
 }
+
+// ── Marketing AI Agent bulk email, sent through NXT Sales (2026-10-09) ──────
+// One row per email the Marketing AI Agent asked NXT Sales to send
+// (routes/marketingBulk.js). The idempotency key is claimed here BEFORE the
+// send, so a retried or repeated request can never send the same email twice.
+// The email itself is recorded as a normal Activity by the existing send
+// pipeline; activityId points at it (plain ids, no relation, so no existing
+// model changes). status: sending | sent | failed | unknown.
+model MarketingBulkSend {
+  id             String    @id @default(cuid())
+  idempotencyKey String    @unique
+  campaignId     String
+  recipientId    String
+  senderUserId   String
+  toEmail        String
+  subject        String
+  payloadHash    String
+  status         String
+  error          String?
+  sentAt         DateTime?
+  activityId     String?
+  messageId      String?
+  threadId       String?
+  fromEmail      String?
+  tracked        Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([campaignId])
+}
