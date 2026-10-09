@@ -33,6 +33,7 @@ const LEFT_FIELDS = [
   { label: 'Company URL',     key: 'domain'                      },
   { label: 'Lead Owner',      key: '_ownerName'                  },
   { label: 'Industry',        key: 'industry'                    },
+  { label: 'Country of Origin', key: 'country'                  },
   { label: 'Lead status',     key: 'leadStatus'                  },
   { label: 'Contact Person',  key: 'contactPersons', isMulti: true },
   { label: 'Linked Profile',  key: 'linkedProfiles',  isMulti: true },
@@ -45,7 +46,7 @@ const CENTER_TABS = ['Overview', 'Activities', 'Intelligence']
 
 const PROPERTY_ICONS = {
   email: 'mail', phone: 'call', domain: 'language', _ownerName: 'person',
-  industry: 'category', leadStatus: 'flag', contactPersons: 'badge',
+  industry: 'category', country: 'public', leadStatus: 'flag', contactPersons: 'badge',
   linkedProfiles: 'link', endPdpUrl: 'link', cms: 'web', remarks: 'notes',
 }
 
