@@ -61,7 +61,7 @@ const send = async (sender, payload) => {
 let server, base
 async function start() {
   const app = express()
-  app.use(express.json())
+  app.use(express.json({ limit: '50mb' })) // as in src/index.js, so attachment-sized bodies reach the route
   app.use('/api/marketing-bulk', createMarketingBulkRouter({ prisma, auth, send }))
   server = app.listen(0)
   base = `http://127.0.0.1:${server.address().port}/api/marketing-bulk`
@@ -108,7 +108,7 @@ test('only the Marketing service account may call; the feature must be configure
 test('the sender is the configured user with Gmail connected — no token or credential is returned', async () => {
   const r = await call('/sender')
   assert.equal(r.status, 200)
-  assert.deepEqual(r.body, { configured: true, ready: true, problem: null, name: 'Manoj S', fromEmail: 'manoj@altiusnxt.test' })
+  assert.deepEqual(r.body, { configured: true, ready: true, problem: null, name: 'Manoj S', fromEmail: 'manoj@altiusnxt.test', capabilities: { attachments: { maxFiles: 5, maxBytes: 10485760 } } })
   accounts = []
   const none = await call('/sender')
   assert.equal(none.body.ready, false)
@@ -218,4 +218,77 @@ test('an untracked send (no public URL in NXT Sales) reports no open data rather
   const r = await call('/status?keys=bulk:rec_000001')
   assert.equal(r.body.results[0].tracked, false)
   assert.equal(r.body.results[0].openCount, null)
+})
+
+// ── attachments (2026-10-12) ──────────────────────────────────────────
+const PDF = { filename: 'AltiusNxt overview.pdf', mimeType: 'application/pdf', content: Buffer.from('%PDF-1.4 test file').toString('base64') }
+const { checkAttachments } = require('../src/routes/marketingBulk')
+
+test('attachments are validated and forwarded unchanged to the send pipeline', async () => {
+  const r = await call('/send', { method: 'POST', body: { ...EMAIL, attachments: [PDF] } })
+  assert.equal(r.status, 201)
+  assert.equal(sends.length, 1)
+  assert.deepEqual(sends[0].payload.attachments, [PDF])
+  assert.equal(sends[0].payload.htmlBody, EMAIL.htmlBody) // the HTML (where the pixel goes) is untouched
+})
+
+test('without attachments the pipeline payload is exactly as before (no attachments key)', async () => {
+  await call('/send', { method: 'POST', body: EMAIL })
+  assert.equal('attachments' in sends[0].payload, false)
+  await call('/send', { method: 'POST', body: { ...EMAIL, idempotencyKey: 'bulk:rec_000003', recipientId: 'rec3', attachments: [] } })
+  assert.equal('attachments' in sends[1].payload, false)
+})
+
+test('the same key with different attachments is a different email: refused, not sent', async () => {
+  await call('/send', { method: 'POST', body: { ...EMAIL, attachments: [PDF] } })
+  const other = { ...PDF, content: Buffer.from('another file').toString('base64') }
+  assert.equal((await call('/send', { method: 'POST', body: { ...EMAIL, attachments: [other] } })).status, 409)
+  assert.equal((await call('/send', { method: 'POST', body: EMAIL })).status, 409)
+  const same = await call('/send', { method: 'POST', body: { ...EMAIL, attachments: [PDF] } })
+  assert.equal(same.body.duplicate, true)
+  assert.equal(sends.length, 1)
+})
+
+test('a request without attachments keeps the old payload hash (rows from before this feature still match)', async () => {
+  const crypto = require('crypto')
+  await call('/send', { method: 'POST', body: EMAIL })
+  const old = crypto.createHash('sha256').update(JSON.stringify([EMAIL.to, [...EMAIL.cc].sort(), EMAIL.subject, EMAIL.htmlBody])).digest('hex')
+  assert.equal(rows[0].payloadHash, old)
+})
+
+test('invalid attachments are refused before anything is claimed or sent', async () => {
+  const big = Buffer.alloc(10 * 1024 * 1024 + 1, 1).toString('base64')
+  for (const attachments of [
+    'not a list',
+    [PDF, PDF, PDF, PDF, PDF, PDF],
+    [{ ...PDF, filename: '' }],
+    [{ ...PDF, filename: 'a\r\nb.pdf' }],
+    [{ ...PDF, filename: 'evil".pdf' }],
+    [{ ...PDF, filename: '../x.pdf' }],
+    [{ ...PDF, filename: 'run.exe' }],
+    [{ ...PDF, filename: 'macro.JS' }],
+    [{ ...PDF, mimeType: 'text/html\r\nX: y' }],
+    [{ ...PDF, content: 'data:application/pdf;base64,' + PDF.content }],
+    [{ ...PDF, content: 'not base64!' }],
+    [{ ...PDF, content: '' }],
+    [{ ...PDF, content: big }],
+    [null],
+  ]) {
+    const r = await call('/send', { method: 'POST', body: { ...EMAIL, attachments } })
+    assert.equal(r.status, 400, JSON.stringify(attachments).slice(0, 80))
+  }
+  assert.equal(sends.length, 0)
+  assert.equal(rows.length, 0)
+})
+
+test('limits: 5 files and 10 MB in all are accepted; one byte more is not', () => {
+  const nine = Buffer.alloc(2 * 1024 * 1024, 7).toString('base64')
+  const five = [1, 2, 3, 4, 5].map((i) => ({ filename: `f${i}.pdf`, mimeType: 'application/pdf', content: nine }))
+  assert.equal(checkAttachments(five).ok, true)
+  const exact = Buffer.alloc(10 * 1024 * 1024, 7).toString('base64')
+  assert.equal(checkAttachments([{ filename: 'big.pdf', content: exact }]).ok, true)
+  const over = Buffer.alloc(10 * 1024 * 1024 + 1, 7).toString('base64')
+  assert.equal(checkAttachments([{ filename: 'big.pdf', content: over }]).ok, false)
+  assert.deepEqual(checkAttachments(undefined), { ok: true, list: [] })
+  assert.equal(checkAttachments([{ filename: 'x.pdf', content: PDF.content }]).list[0].mimeType, 'application/octet-stream')
 })
