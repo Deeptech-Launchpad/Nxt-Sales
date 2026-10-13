@@ -40,6 +40,56 @@ const EMAIL_RE = /^[^\s@<>()[\]\\,;:"']+@[^\s@<>()[\]\\,;:"']+\.[A-Za-z]{2,}$/
 const MAX_CC = 20
 const MAX_STATUS_KEYS = 200
 
+// Attachments (2026-10-12): the same files may go with every email of a bulk
+// send. They are forwarded, unchanged, to the existing /api/email/send, which
+// builds the Gmail message (the open-tracking pixel is in the HTML part and is
+// not affected). That route validates nothing about attachments, so every rule
+// is enforced HERE, before the idempotency key is claimed.
+const MAX_ATTACHMENTS = 5
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024 // decoded, all files together
+// No control characters, quotes, slashes or other header/path-significant characters.
+// eslint-disable-next-line no-control-regex
+const ATTACHMENT_NAME_RE = /^[^\x00-\x1f\x7f"\\/<>:*?|]{1,150}$/
+const ATTACHMENT_MIME_RE = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]{0,126}$/
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/
+const BLOCKED_EXTENSIONS = new Set([
+  'exe', 'bat', 'cmd', 'com', 'scr', 'pif', 'msi', 'msp', 'dll', 'jar', 'js', 'jse', 'vbs', 'vbe', 'wsf', 'wsh', 'ps1', 'psm1',
+  'reg', 'lnk', 'hta', 'cpl', 'app', 'apk', 'sh', 'bin', 'iso', 'dmg',
+])
+
+/** Validates the attachments of one send. Returns { ok: true, list } or { ok: false, message }. */
+function checkAttachments(input) {
+  if (input === undefined || input === null) return { ok: true, list: [] }
+  const bad = (message) => ({ ok: false, message })
+  if (!Array.isArray(input)) return bad('attachments must be a list.')
+  if (input.length > MAX_ATTACHMENTS) return bad(`At most ${MAX_ATTACHMENTS} attachments.`)
+  let encodedChars = 0
+  for (const a of input) encodedChars += a && typeof a.content === 'string' ? a.content.length : 0
+  if (encodedChars > Math.ceil((MAX_ATTACHMENT_BYTES * 4) / 3) + 16) return bad('The attachments are too large (10 MB in all).')
+  const list = []
+  let total = 0
+  for (const a of input) {
+    if (!a || typeof a !== 'object') return bad('Each attachment must be an object with filename, mimeType and content.')
+    const filename = typeof a.filename === 'string' ? a.filename.trim() : ''
+    if (!ATTACHMENT_NAME_RE.test(filename) || filename === '.' || filename === '..') return bad('An attachment has an invalid file name.')
+    const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : ''
+    if (BLOCKED_EXTENSIONS.has(ext)) return bad(`Attachments of type .${ext} are not allowed.`)
+    const mimeType = a.mimeType === undefined || a.mimeType === null || a.mimeType === '' ? 'application/octet-stream' : String(a.mimeType)
+    if (!ATTACHMENT_MIME_RE.test(mimeType)) return bad(`An attachment has an invalid mimeType.`)
+    const content = typeof a.content === 'string' ? a.content : ''
+    if (!content || content.length % 4 !== 0 || !BASE64_RE.test(content)) return bad('An attachment content must be standard base64 (no data: prefix).')
+    const bytes = (content.length / 4) * 3 - (content.endsWith('==') ? 2 : content.endsWith('=') ? 1 : 0)
+    if (bytes <= 0) return bad('An attachment is empty.')
+    total += bytes
+    if (total > MAX_ATTACHMENT_BYTES) return bad('The attachments are too large (10 MB in all).')
+    list.push({ filename, mimeType, content })
+  }
+  return { ok: true, list }
+}
+
+/** What an attachment contributes to the "same key = same email" hash: names, types and a digest, in order. */
+const attachmentDigest = (list) => list.map((a) => [a.filename, a.mimeType, crypto.createHash('sha256').update(a.content).digest('hex')])
+
 function config() {
   return {
     serviceUserId: (process.env.MARKETING_SERVICE_USER_ID || '').trim(),
@@ -58,6 +108,9 @@ async function sendThroughPipeline(sender, payload) {
   const res = await axios.post(`http://127.0.0.1:${process.env.PORT || 5000}/api/email/send`, payload, {
     headers: { Authorization: `Bearer ${token}` },
     timeout: 120000,
+    // Attachments make the body large (up to ~14 MB encoded); never let the HTTP client's own default cut it off.
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
   })
   return res.data
 }
@@ -104,7 +157,15 @@ function createMarketingBulkRouter({ prisma = oneConnectionClient(), auth = auth
   router.get('/sender', async (_req, res) => {
     try {
       const s = await loadSender()
-      res.json({ configured: true, ready: !s.problem, problem: s.problem, name: s.user?.name || null, fromEmail: s.gmail?.email || null })
+      res.json({
+        configured: true,
+        ready: !s.problem,
+        problem: s.problem,
+        name: s.user?.name || null,
+        fromEmail: s.gmail?.email || null,
+        // The caller must not send attachments to a CRM that does not advertise this: an older CRM would ignore them.
+        capabilities: { attachments: { maxFiles: MAX_ATTACHMENTS, maxBytes: MAX_ATTACHMENT_BYTES } },
+      })
     } catch (err) {
       console.error('[Marketing bulk] sender lookup failed:', err.message)
       res.status(500).json({ message: 'Could not read the configured sender.' })
@@ -145,9 +206,14 @@ function createMarketingBulkRouter({ prisma = oneConnectionClient(), auth = auth
     if (!subject || subject.length > 500 || /[\r\n]/.test(subject)) return res.status(400).json({ message: 'subject is required, one line, at most 500 characters.' })
     if (!htmlBody || htmlBody.length > 1_000_000) return res.status(400).json({ message: 'htmlBody is required (at most 1,000,000 characters).' })
     if (text.length > 200_000) return res.status(400).json({ message: 'text is too long.' })
+    const att = checkAttachments(b.attachments)
+    if (!att.ok) return res.status(400).json({ message: att.message })
 
-    // The same key must always mean the same email.
-    const payloadHash = crypto.createHash('sha256').update(JSON.stringify([to, [...cc].sort(), subject, htmlBody])).digest('hex')
+    // The same key must always mean the same email. Attachments join the hash only when there are any,
+    // so a request without attachments hashes exactly as before this feature.
+    const hashParts = [to, [...cc].sort(), subject, htmlBody]
+    if (att.list.length) hashParts.push(attachmentDigest(att.list))
+    const payloadHash = crypto.createHash('sha256').update(JSON.stringify(hashParts)).digest('hex')
 
     try {
       const sender = await loadSender()
@@ -182,6 +248,7 @@ function createMarketingBulkRouter({ prisma = oneConnectionClient(), auth = auth
           subject,
           htmlBody,
           ...(text ? { body: text } : {}),
+          ...(att.list.length ? { attachments: att.list } : {}),
           emailMode: 'new',
         })
         row = await prisma.marketingBulkSend.update({
@@ -255,3 +322,4 @@ function createMarketingBulkRouter({ prisma = oneConnectionClient(), auth = auth
 
 module.exports = createMarketingBulkRouter()
 module.exports.createMarketingBulkRouter = createMarketingBulkRouter
+module.exports.checkAttachments = checkAttachments
