@@ -8,6 +8,7 @@ const prisma = new PrismaClient()
 // email belongs to — on import, on send, and in the Inbox listing — is made
 // here and nowhere else. See server/src/utils/companyEmailMatcher.js.
 const matcher = require('../utils/companyEmailMatcher')
+const { gmailFailureIsSafeToRetry, GmailOutcomeUnknownError } = require('../utils/gmailSendSafety')
 
 // ── Email open tracking ──────────────────────────────────────────────────────
 // Public base the recipient's mail client can reach. In production this is the
@@ -1115,7 +1116,13 @@ router.post('/send', auth, async (req, res) => {
           media: { mimeType: 'message/rfc822', body: Readable.from(rawBuffer) },
         })
       } catch (mediaErr) {
-        console.warn('[Email Send] Multipart upload failed, falling back to simple send:', mediaErr.message)
+        // Fall back only when the upload certainly sent nothing; otherwise
+        // Gmail may already have sent it and a second send would duplicate it.
+        if (!gmailFailureIsSafeToRetry(mediaErr)) {
+          console.error('[Email Send] Multipart upload outcome unknown, NOT retried:', mediaErr.message)
+          throw new GmailOutcomeUnknownError(mediaErr)
+        }
+        console.warn('[Email Send] Multipart upload refused, falling back to simple send:', mediaErr.message)
       }
     }
     if (!sent) {
