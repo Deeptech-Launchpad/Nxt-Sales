@@ -517,3 +517,37 @@
 .grid-company-name { display:inline-block; text-decoration:none; }
 .grid-company-name:hover { text-decoration:none; }
 .row-open-btn, .grid-open-btn { text-decoration:none; }
+
+/* ── Warm Leads tab (components/companies/WarmLeads.jsx) ── */
+.companies-page .warm-leads-panel { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid #e5e7eb; }
+.companies-page .warm-leads-summary { display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; color:#344054; font-size:12px; }
+.companies-page .warm-leads-run { color:#475467; }
+.companies-page .warm-leads-approval { padding:2px 8px; border-radius:999px; font-weight:600; }
+.companies-page .warm-leads-approval.ok { background:#ecfdf3; color:#067647; }
+.companies-page .warm-leads-approval.wait { background:#fffaeb; color:#b54708; }
+.companies-page .warm-leads-status { display:flex; align-items:center; gap:6px; font-size:12px; color:#344054; }
+.companies-page .warm-leads-status select { min-height:28px; border:1px solid #d9dee7; border-radius:8px; padding:0 6px; background:#fff; }
+.companies-page .warm-col { vertical-align:top; font-size:12px; }
+.companies-page .warm-col-reasons { vertical-align:top; font-size:12px; white-space:normal; }
+/* The table is table-layout:fixed, so widths come from the header cells; the
+   table itself is widened only while the Warm Leads columns are shown. */
+.companies-page .contacts-table th.warm-col { width:150px; }
+.companies-page .contacts-table th.warm-col-reasons { width:420px; }
+.companies-page .contacts-table:has(th.warm-col-reasons) { min-width:1720px; }
+.companies-page .warm-chip { display:inline-block; padding:2px 8px; border-radius:999px; background:#f2f4f7; color:#344054; font-weight:600; font-size:11px; }
+.companies-page .warm-chip.warm { background:#fef0c7; color:#b54708; }
+.companies-page .warm-chip.cold { background:#eff8ff; color:#175cd3; }
+.companies-page .warm-chip.insufficient_data { background:#f2f4f7; color:#475467; }
+.companies-page .warm-chip.early_signal { background:#fdf2fa; color:#c11574; }
+.companies-page .warm-chip.existing_customer { background:#ecfdf3; color:#067647; }
+.companies-page .warm-chip.active_opportunity { background:#f4f3ff; color:#5925dc; }
+.companies-page .warm-chip.do_not_contact { background:#fef3f2; color:#b42318; border:1px solid #fda29b; }
+.companies-page .warm-chip.failed { background:#fef3f2; color:#b42318; }
+.companies-page .warm-score { margin-top:4px; font-weight:600; color:#101828; }
+.companies-page .warm-dim { color:#667085; }
+.companies-page .warm-summary { margin-bottom:4px; color:#101828; }
+.companies-page .warm-reasons ul { margin:0; padding-left:16px; }
+.companies-page .warm-reasons li { margin:2px 0; }
+.companies-page .warm-reasons li.negative .warm-points { color:#b42318; }
+.companies-page .warm-reasons li.positive .warm-points { color:#067647; }
+.companies-page .warm-points { font-weight:700; font-variant-numeric:tabular-nums; }

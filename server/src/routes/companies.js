@@ -388,6 +388,8 @@ async function buildCompanyWhere(query, userId) {
     // simply never read here, so the chips appeared to apply and changed
     // nothing. Each is now a real condition on the full table (see below).
     website, phone, email, updatedDate, lastActivity,
+    // Warm Leads tab: which evaluation results to list (default: the warm ones).
+    warmStatus,
   } = query
   // Companies in the Recycle Bin are archived — excluded from every normal
   // list/search/export view. Only the dedicated Recycle Bin routes look past this.
@@ -395,6 +397,18 @@ async function buildCompanyWhere(query, userId) {
 
   if (view === 'mine')       where.ownerId = userId
   if (view === 'pinned')     where.isPinned = true
+  if (view === 'warm') {
+    // Companies the Marketing AI Agent has evaluated (CompanyLeadEvaluation,
+    // written by routes/marketingWarmLeads.js). Added with AND for the same
+    // reason as 'unassigned' below: search sets where.OR.
+    const CLASSES = ['warm', 'early_signal', 'cold', 'insufficient_data', 'existing_customer', 'active_opportunity', 'do_not_contact']
+    const evaluation =
+      warmStatus === 'all'    ? {} :
+      warmStatus === 'failed' ? { evaluationStatus: 'failed' } :
+      CLASSES.includes(warmStatus) ? { evaluationStatus: 'evaluated', classification: warmStatus } :
+                                { evaluationStatus: 'evaluated', classification: 'warm' }
+    where.AND = [...(where.AND || []), { leadEvaluation: { is: evaluation } }]
+  }
   if (view === 'unassigned') {
     // BUG FIX: Prisma's `in` filter REJECTS a literal null in the array
     // (`{ in: [id, null] }` throws PrismaClientValidationError — SQL's own
@@ -605,6 +619,8 @@ router.get('/', auth, async (req, res) => {
         include: {
           owner: { select: { id: true, name: true, email: true } },
           _count: { select: { deals: true } },
+          // The evaluation is listed only on the Warm Leads tab.
+          ...(req.query.view === 'warm' ? { leadEvaluation: true } : {}),
         },
       }),
       prisma.company.count({ where }),

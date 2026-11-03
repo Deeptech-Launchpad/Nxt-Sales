@@ -15,6 +15,7 @@ import AddFilterMenu from '../components/filters/AddFilterMenu'
 import CreateCompanyModal from '../components/modals/CreateCompanyModal'
 import ImportModal from '../components/modals/ImportModal'
 import EditColumnsMenu from '../components/EditColumnsMenu'
+import { WarmLeadsPanel, WarmLeadHeaderCells, WarmLeadCells, WarmLeadGridRows } from '../components/companies/WarmLeads'
 import { valueList } from '../utils/multiValue'
 import { exportCSV, exportXLSX, exportJSON, exportPDF } from '../utils/exportUtils'
 import { renderCustomCell } from '../utils/customFieldRender'
@@ -195,6 +196,8 @@ const TABS = [
   { key: 'mine',       label: 'My companies'         },
   { key: 'unassigned', label: 'Unassigned companies' },
   { key: 'pinned',     label: '★ Pinned'             },
+  // Results of the Marketing AI Agent's warm-lead evaluation (components/companies/WarmLeads.jsx).
+  { key: 'warm',       label: 'Warm Leads'           },
 ]
 
 export default function Companies({ recentsMode = false }) {
@@ -212,6 +215,8 @@ export default function Companies({ recentsMode = false }) {
   const [search, setSearch]           = useState('')
   const [view, setView]               = useState(() => localStorage.getItem(VIEW_STORAGE_KEY) === 'grid' ? 'grid' : 'table')
   const [activeTab, setActiveTab]     = useState('all')
+  // Warm Leads tab only: which evaluation results are listed.
+  const [warmStatus, setWarmStatus]   = useState('warm')
   const [page, setPage]               = useState(1)
   const [selected, setSelected]       = useState([])
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false)
@@ -348,6 +353,7 @@ export default function Companies({ recentsMode = false }) {
         page,
         limit: PAGE_SIZE,
         view: activeTab === 'all' ? undefined : activeTab,
+        ...(activeTab === 'warm' && { warmStatus }),
         ...(search && { search }),
         ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
         ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
@@ -385,7 +391,7 @@ export default function Companies({ recentsMode = false }) {
     } finally {
       setLoading(false)
     }
-  }, [page, activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter, websiteFilter, phoneFilter, emailFilter, updatedDateFilter, lastActivityFilter, sortBy, sortDir, recentsMode])
+  }, [page, activeTab, warmStatus, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter, websiteFilter, phoneFilter, emailFilter, updatedDateFilter, lastActivityFilter, sortBy, sortDir, recentsMode])
 
   useEffect(() => { fetchCompanies() }, [fetchCompanies])
 
@@ -395,6 +401,7 @@ export default function Companies({ recentsMode = false }) {
   // neighbor lookup isn't page-bound, only filter-bound).
   const listContext = {
     view: activeTab === 'all' ? undefined : activeTab,
+    ...(activeTab === 'warm' && { warmStatus }),
     ...(search && { search }),
     ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
     ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
@@ -430,6 +437,7 @@ export default function Companies({ recentsMode = false }) {
   const fetchAllForExport = useCallback(async () => {
     const params = {
       view: activeTab === 'all' ? undefined : activeTab,
+      ...(activeTab === 'warm' && { warmStatus }),
       ...(search && { search }),
       ...(ownerFilter.length      > 0 && { owners:       ownerFilter.join(',') }),
       ...(leadStatusFilter.length > 0 && { leadStatuses: leadStatusFilter.join(',') }),
@@ -449,10 +457,11 @@ export default function Companies({ recentsMode = false }) {
     }
     const { data } = await api.get('/companies/export', { params })
     return data.companies || []
-  }, [activeTab, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter, websiteFilter, phoneFilter, emailFilter, updatedDateFilter, lastActivityFilter, sortBy, sortDir, recentsMode])
+  }, [activeTab, warmStatus, search, ownerFilter, leadStatusFilter, createDateFilter, industryFilter, countryFilter, hasDealFilter, cmsFilter, remarksFilter, websiteFilter, phoneFilter, emailFilter, updatedDateFilter, lastActivityFilter, sortBy, sortDir, recentsMode])
 
   // Tab change resets page
   const switchTab = (key) => { setActiveTab(key); setPage(1); setSelected([]) }
+  const warmTab = activeTab === 'warm' && !recentsMode
   const switchView = (nextView) => {
     setView(nextView)
     setSelected([])
@@ -655,12 +664,16 @@ export default function Companies({ recentsMode = false }) {
 
       {/* ── Tabs ── */}
       <div className="filter-tabs">
-        {TABS.map(t => (
+        {TABS.filter(t => !(recentsMode && t.key === 'warm')).map(t => (
           <button type="button" key={t.key} className={`tab ${activeTab === t.key ? 'active' : ''}`} onClick={() => switchTab(t.key)}>
             {recentsMode ? ({ all: 'All recent records', mine: 'My recent records', unassigned: 'Unassigned records' }[t.key]) : t.label}
           </button>
         ))}
       </div>
+
+      {activeTab === 'warm' && !recentsMode && (
+        <WarmLeadsPanel warmStatus={warmStatus} onWarmStatus={(v) => { setWarmStatus(v); setPage(1); setSelected([]) }} />
+      )}
 
       {/* ── Filter chips row ── */}
       <div className="filter-chips-row">
@@ -811,6 +824,7 @@ export default function Companies({ recentsMode = false }) {
                 </button>
               </th>
               {recentsMode && <th className="recents-updated-column">LAST UPDATED</th>}
+              {warmTab && <WarmLeadHeaderCells />}
               {orderedVisibleFields.map(f => (
                 <th key={f.key}>
                   {SORTABLE_COLUMN_KEYS.has(f.key) ? (
@@ -826,11 +840,11 @@ export default function Companies({ recentsMode = false }) {
             {loading ? (
               Array.from({ length: 9 }).map((_, row) => (
                 <tr className="company-skeleton-row" key={row} aria-label={row === 0 ? 'Loading...' : undefined}>
-                  {Array.from({ length: 3 + orderedVisibleFields.length + (recentsMode ? 1 : 0) }).map((__, cell) => <td key={cell}><span /></td>)}
+                  {Array.from({ length: 3 + orderedVisibleFields.length + (recentsMode ? 1 : 0) + (warmTab ? 3 : 0) }).map((__, cell) => <td key={cell}><span /></td>)}
                 </tr>
               ))
             ) : companies.length === 0 ? (
-              <tr><td colSpan={3 + orderedVisibleFields.length + (recentsMode ? 1 : 0)} style={{ textAlign: 'center', padding: '40px', color: '#475467' }}>No companies found</td></tr>
+              <tr><td colSpan={3 + orderedVisibleFields.length + (recentsMode ? 1 : 0) + (warmTab ? 3 : 0)} style={{ textAlign: 'center', padding: '40px', color: '#475467' }}>No companies found</td></tr>
             ) : companies.map(c => (
               <tr key={c.id} className={selected.includes(c.id) ? 'selected-row' : ''}>
                 <td className="select-column"><input type="checkbox" aria-label={`Select ${c.name}`} checked={selected.includes(c.id)} onChange={() => toggleOne(c.id)} /></td>
@@ -857,6 +871,7 @@ export default function Companies({ recentsMode = false }) {
                 {recentsMode && (
                   <td className="recents-updated-column" title={fullTimestamp(c.updatedAt)}>{fmtUpdated(c.updatedAt)}</td>
                 )}
+                {warmTab && <WarmLeadCells c={c} />}
                 {orderedVisibleFields.map(f => <td key={f.key} data-tooltip={companyCellTitle(f, c)}><div className="cell-clamp">{renderCompanyCell(f, c)}</div></td>)}
               </tr>
             ))}
@@ -908,6 +923,7 @@ export default function Companies({ recentsMode = false }) {
                     <span>Last updated</span><strong>{fmtUpdated(c.updatedAt)}</strong>
                   </div>
                 )}
+                {warmTab && <WarmLeadGridRows c={c} />}
                 {orderedVisibleFields.map(f => (
                   <div className="grid-field-row" key={f.key} title={companyCellTitle(f, c)}>
                     <span>{f.label}</span><strong>{renderCompanyCell(f, c)}</strong>
