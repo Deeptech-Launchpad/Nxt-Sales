@@ -1,5 +1,8 @@
 const router = require('express').Router()
 const auth = require('../middleware/authMiddleware')
+// The one validated signing secret (refuses to load when it is missing, empty, short or a placeholder). Never read
+// process.env.JWT_SECRET here, and never fall back to a built-in value: see config/jwtSecret.js.
+const JWT_SECRET = require('../config/jwtSecret')
 const crypto = require('crypto')
 const { PrismaClient, Prisma } = require('@prisma/client')
 const prisma = new PrismaClient()
@@ -270,7 +273,7 @@ router.get('/status', async (req, res) => {
     const jwt = require('jsonwebtoken')
     let userId
     try {
-      const decoded = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET || 'dev-secret')
+      const decoded = jwt.verify(header.split(' ')[1], JWT_SECRET)
       userId = decoded.id
     } catch {
       return res.json({ connected: false, email: null })
