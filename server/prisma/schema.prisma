@@ -94,6 +94,8 @@ model Company {
   callLogs       CallLog[]
   owner          User?      @relation(fields: [ownerId], references: [id])
   followUpEnrollments FollowUpEnrollment[]
+  // Warm-lead evaluation by the Marketing AI Agent (relation only: no Company column).
+  leadEvaluation CompanyLeadEvaluation?
 
   @@index([email])
   @@index([deletedAt])
@@ -649,4 +651,64 @@ model MarketingBulkSend {
   updatedAt      DateTime  @updatedAt
 
   @@index([campaignId])
+}
+
+// ── Warm leads, evaluated by the Marketing AI Agent (2026-10-30) ────────────
+// The latest evaluation of one company, written only by the Marketing AI Agent
+// service account (routes/marketingWarmLeads.js) and shown on Companies →
+// Warm Leads. One row per company (companyId is unique): a later evaluation
+// replaces the earlier one here, and the full history stays in the Marketing
+// AI Agent (runId / evaluationId point at it). Nothing on Company changes.
+//   classification:   warm | early_signal | cold | insufficient_data | existing_customer |
+//                     active_opportunity | do_not_contact  (null when the evaluation failed)
+//   evaluationStatus: evaluated | failed
+//   reasons: [{ signal, polarity, points, summary, evidence, sourceUrl, observedAt, source }]
+model CompanyLeadEvaluation {
+  id               String    @id @default(cuid())
+  companyId        String    @unique
+  classification   String?
+  evaluationStatus String
+  score            Int?
+  confidence       String?
+  summary          String?
+  reasons          Json?
+  deepCheck        String?
+  error            String?
+  runId            String
+  evaluationId     String
+  evaluatedAt      DateTime
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([classification])
+  @@index([evaluationStatus])
+}
+
+// One warm-lead evaluation run of the Marketing AI Agent, as reported by it:
+// the 10-company test, or a later batch. Shown as the summary above the Warm
+// Leads list. kind: test | batch | retry. status: queued | running | completed | failed.
+model MarketingWarmLeadRun {
+  id           String    @id
+  kind         String
+  status       String
+  requestedBy  String?
+  total        Int       @default(0)
+  processed    Int       @default(0)
+  warm         Int       @default(0)
+  earlySignal  Int       @default(0)
+  cold         Int       @default(0)
+  insufficient Int       @default(0)
+  existingCustomer  Int  @default(0)
+  activeOpportunity Int  @default(0)
+  doNotContact Int       @default(0)
+  failed       Int       @default(0)
+  approvedAt   DateTime?
+  approvedBy   String?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([createdAt])
 }

@@ -31,6 +31,7 @@ const enrichmentReportRoutes = require('./routes/enrichmentReports')
 const prospectRoutes     = require('./routes/prospects')
 const settingsRoutes     = require('./routes/settings')
 const marketingBulkRoutes = require('./routes/marketingBulk')
+const marketingWarmLeadsRoutes = require('./routes/marketingWarmLeads')
 const { startRecycleBinPurgeSweep } = require('./jobs/purgeRecycleBin')
 const { startAutoCompleteOverdueTasksSweep } = require('./jobs/autoCompleteOverdueTasks')
 const { startCallHippoAutoSync } = require('./jobs/callHippoAutoSync')
@@ -77,6 +78,8 @@ app.use('/api/prospects', prospectRoutes)
 app.use('/api/settings', settingsRoutes)
 // Marketing AI Agent bulk email → the existing send pipeline (service account only).
 app.use('/api/marketing-bulk', marketingBulkRoutes)
+// Warm leads evaluated by the Marketing AI Agent (results only; the evaluation runs there).
+app.use('/api/marketing-warm-leads', marketingWarmLeadsRoutes)
 
 // Chat file uploads (Update 3 / E5) — local disk, served back read-only.
 app.use('/uploads/chat', express.static(path.join(__dirname, '../uploads/chat')))
