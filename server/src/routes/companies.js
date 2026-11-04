@@ -403,7 +403,7 @@ async function buildCompanyWhere(query, userId) {
     // reason as 'unassigned' below: search sets where.OR.
     const CLASSES = ['warm', 'early_signal', 'cold', 'insufficient_data', 'existing_customer', 'active_opportunity', 'do_not_contact']
     const evaluation =
-      warmStatus === 'all'    ? {} :
+      warmStatus === 'all'    ? { evaluationStatus: { in: ['evaluated', 'failed'] } } :
       warmStatus === 'failed' ? { evaluationStatus: 'failed' } :
       CLASSES.includes(warmStatus) ? { evaluationStatus: 'evaluated', classification: warmStatus } :
                                 { evaluationStatus: 'evaluated', classification: 'warm' }

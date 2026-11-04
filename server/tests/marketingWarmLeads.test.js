@@ -148,6 +148,7 @@ test('the body is checked: bad values are refused, unknown keys and non-web link
     { confidence: 'sure' },
     { reasons: 'many' },
     { evaluatedAt: 'yesterday' },
+    { evaluatedAt: '2999-01-01T00:00:00.000Z' }, // a far-future date would block every later evaluation
     { runId: '' },
   ]
   for (const over of bad) {

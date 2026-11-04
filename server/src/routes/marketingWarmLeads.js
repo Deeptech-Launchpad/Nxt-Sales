@@ -80,6 +80,8 @@ function parseEvaluation(body) {
   if (b.reasons != null && !Array.isArray(b.reasons)) return { error: 'reasons must be a list.' }
   const evaluatedAt = date(b.evaluatedAt)
   if (!evaluatedAt) return { error: 'evaluatedAt must be a date.' }
+  // A date far in the future would make every later, genuine evaluation look older and be refused for good.
+  if (evaluatedAt.getTime() > Date.now() + 24 * 3600 * 1000) return { error: 'evaluatedAt cannot be in the future.' }
   return {
     data: {
       runId,
