@@ -14,6 +14,7 @@ import ActivityFeed      from '../../components/activities/ActivityFeed'
 import EditRecordModal   from '../../components/EditRecordModal'
 import CreateDealModal   from '../../components/modals/CreateDealModal'
 import CompanyIntelligence from '../../components/CompanyIntelligence'
+import LeadSignalsPanel  from '../../components/companies/LeadSignalsPanel'
 import { valueList } from '../../utils/multiValue'
 import { normalizeUrl } from '../../utils/url'
 import { invalidateCompanyEmail } from '../../utils/emailCache'
@@ -255,6 +256,9 @@ export default function CompanyDetail() {
   const [deals,           setDeals]           = useState([])
   const [showDealModal,   setShowDealModal]   = useState(false)
   const [editDeal,        setEditDeal]        = useState(null)
+  // "Marketing Agent Signals" panel (read only — components/companies/LeadSignalsPanel.jsx).
+  const [signalsOpen,     setSignalsOpen]     = useState(false)
+  const closeSignals = useCallback(() => setSignalsOpen(false), [])
 
   // Resizable side panels — see loadPanelWidths/clampPanelWidths above.
   const layoutRef = useRef(null)
@@ -485,6 +489,9 @@ export default function CompanyDetail() {
                 }}
               ><MaterialIcon>{action.icon}</MaterialIcon><span>{action.label}</span></button>
             ))}
+            <button type="button" title="Marketing Agent Signals" onClick={() => setSignalsOpen(true)}>
+              <MaterialIcon>insights</MaterialIcon><span>Marketing Agent Signals</span>
+            </button>
           </div>
         </header>
 
@@ -597,6 +604,11 @@ export default function CompanyDetail() {
           onClose={() => setEditDeal(null)}
           onSaved={() => fetchDeals()}
         />
+      )}
+
+      {/* ── Marketing Agent Signals (read only) ── */}
+      {signalsOpen && (
+        <LeadSignalsPanel companyId={id} companyName={company.name} onClose={closeSignals} />
       )}
 
       {/* ── Activity Modals ── */}

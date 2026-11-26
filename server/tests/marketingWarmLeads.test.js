@@ -181,7 +181,7 @@ test('run summaries are stored and the summary counts results per class, leaving
   const s = await call('GET', '/summary', null, 'u-someone')
   assert.equal(s.body.runs.length, 1)
   assert.equal(s.body.runs[0].warm, 2)
-  assert.deepEqual(s.body.totals, { evaluated: 2, warm: 1, earlySignal: 0, cold: 1, insufficient: 0, existingCustomer: 0, activeOpportunity: 0, doNotContact: 0, failed: 0 })
+  assert.deepEqual(s.body.totals, { evaluated: 2, warm: 1, earlySignal: 0, cold: 1, insufficient: 0, existingCustomer: 0, activeOpportunity: 0, doNotContact: 0, humanReview: 0, failed: 0 })
 })
 
 test('every status is accepted and counted on its own: early signal, existing customer, active opportunity and do not contact are never folded into cold', async () => {
@@ -199,7 +199,25 @@ test('every status is accepted and counted on its own: early signal, existing cu
   assert.equal(evaluations.find((e) => e.companyId === 'c1').classification, 'warm')
 
   const s = await call('GET', '/summary', null, 'u-someone')
-  assert.deepEqual(s.body.totals, { evaluated: 7, warm: 1, earlySignal: 1, cold: 1, insufficient: 1, existingCustomer: 1, activeOpportunity: 1, doNotContact: 1, failed: 0 })
+  assert.deepEqual(s.body.totals, { evaluated: 7, warm: 1, earlySignal: 1, cold: 1, insufficient: 1, existingCustomer: 1, activeOpportunity: 1, doNotContact: 1, humanReview: 0, failed: 0 })
+})
+
+test('human_review ("Needs review") is accepted, stored and counted on its own, never as warm or cold', async () => {
+  companies.push({ id: 'c3', deletedAt: null })
+  const put = (id, classification, extra = {}) => call('PUT', `/companies/${id}`, evaluation({ evaluationId: `ev-${id}`, classification, ...extra }))
+  const r = await put('c1', 'human_review', { score: 40, confidence: 'low', summary: 'Mixed signals; a person should look first.' })
+  assert.equal(r.status, 200)
+  assert.deepEqual(r.body, { stored: true })
+  assert.equal(evaluations.find((e) => e.companyId === 'c1').classification, 'human_review')
+  assert.equal((await put('c2', 'warm')).status, 200)
+  assert.equal((await put('c3', 'human_review')).status, 200)
+  // a binned company's human_review result is not counted
+  evaluations.push({ companyId: 'binned', classification: 'human_review', evaluationStatus: 'evaluated' })
+
+  const s = await call('GET', '/summary', null, 'u-someone')
+  assert.deepEqual(s.body.totals, { evaluated: 3, warm: 1, earlySignal: 0, cold: 0, insufficient: 0, existingCustomer: 0, activeOpportunity: 0, doNotContact: 0, humanReview: 2, failed: 0 })
+  // only the service account may write it, like every other value
+  assert.equal((await call('PUT', '/companies/c1', evaluation({ evaluationId: 'x', classification: 'human_review' }), 'u-someone')).status, 403)
 })
 
 test('a run summary keeps the counters of the new statuses; a reason keeps how fresh its evidence is', async () => {

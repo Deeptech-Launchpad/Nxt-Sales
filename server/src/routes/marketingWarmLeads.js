@@ -19,7 +19,8 @@ const authMiddleware = require('../middleware/authMiddleware')
 
 // warm | early_signal | cold | insufficient_data, and three statuses of their own for companies the CRM already
 // knows (never grouped under cold): existing_customer | active_opportunity | do_not_contact.
-const CLASSIFICATIONS = ['warm', 'early_signal', 'cold', 'insufficient_data', 'existing_customer', 'active_opportunity', 'do_not_contact']
+// human_review (2026-11-26): a person should review this company before anyone contacts it.
+const CLASSIFICATIONS = ['warm', 'early_signal', 'cold', 'insufficient_data', 'existing_customer', 'active_opportunity', 'do_not_contact', 'human_review']
 const EVALUATION_STATUSES = ['evaluated', 'failed']
 const CONFIDENCES = ['high', 'medium', 'low']
 const RUN_KINDS = ['test', 'batch', 'retry', 'pilot', 'daily']
@@ -207,8 +208,8 @@ function createMarketingWarmLeadsRouter({ prisma = oneConnectionClient(), auth =
           _count: { _all: true },
         }),
       ])
-      const totals = { evaluated: 0, warm: 0, earlySignal: 0, cold: 0, insufficient: 0, existingCustomer: 0, activeOpportunity: 0, doNotContact: 0, failed: 0 }
-      const KEY = { warm: 'warm', early_signal: 'earlySignal', cold: 'cold', insufficient_data: 'insufficient', existing_customer: 'existingCustomer', active_opportunity: 'activeOpportunity', do_not_contact: 'doNotContact' }
+      const totals = { evaluated: 0, warm: 0, earlySignal: 0, cold: 0, insufficient: 0, existingCustomer: 0, activeOpportunity: 0, doNotContact: 0, humanReview: 0, failed: 0 }
+      const KEY = { warm: 'warm', early_signal: 'earlySignal', cold: 'cold', insufficient_data: 'insufficient', existing_customer: 'existingCustomer', active_opportunity: 'activeOpportunity', do_not_contact: 'doNotContact', human_review: 'humanReview' }
       for (const g of groups) {
         const n = g._count._all
         if (g.evaluationStatus === 'failed') totals.failed += n

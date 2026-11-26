@@ -660,7 +660,8 @@ model MarketingBulkSend {
 // replaces the earlier one here, and the full history stays in the Marketing
 // AI Agent (runId / evaluationId point at it). Nothing on Company changes.
 //   classification:   warm | early_signal | cold | insufficient_data | existing_customer |
-//                     active_opportunity | do_not_contact  (null when the evaluation failed)
+//                     active_opportunity | do_not_contact | human_review  (null when the evaluation failed)
+//                     A plain TEXT column with no CHECK constraint: a new value needs no migration.
 //   evaluationStatus: evaluated | failed
 //   reasons: [{ signal, polarity, points, summary, evidence, sourceUrl, observedAt, source }]
 model CompanyLeadEvaluation {
