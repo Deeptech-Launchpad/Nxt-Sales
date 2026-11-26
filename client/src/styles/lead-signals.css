@@ -1,0 +1,51 @@
+/* Company Details → Marketing Agent Signals (components/companies/LeadSignalsPanel.jsx).
+   The drawer itself uses modal.css (.modal-drawer / .company-create-modal), like ThreadDrawer. */
+.company-create-modal.lead-signals-modal { width:min(620px,calc(100vw - 32px)); }
+.lead-signals-modal .lead-signals-body { padding:16px 20px 20px; font-family:Inter,system-ui,sans-serif; color:#101828; }
+
+.lead-signals-state { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:28px 4px; color:#475467; font-size:14px; }
+.lead-signals-state.error { color:#b42318; }
+.lead-signals-spin { animation:leadSignalsSpin 1s linear infinite; }
+@keyframes leadSignalsSpin { to { transform:rotate(360deg); } }
+
+.lead-signals-overview { padding:14px; border:1px solid #e4e7ec; border-radius:12px; background:#fff; }
+.lead-signals-badge { display:inline-block; padding:3px 10px; border-radius:999px; background:#f2f4f7; color:#344054; font-weight:700; font-size:12px; }
+.lead-signals-badge.warm { background:#fef0c7; color:#b54708; }
+.lead-signals-badge.early_signal { background:#fdf2fa; color:#c11574; }
+.lead-signals-badge.cold { background:#eff8ff; color:#175cd3; }
+.lead-signals-badge.insufficient_data { background:#f2f4f7; color:#475467; }
+.lead-signals-badge.existing_customer { background:#ecfdf3; color:#067647; }
+.lead-signals-badge.active_opportunity { background:#f4f3ff; color:#5925dc; }
+.lead-signals-badge.do_not_contact { background:#fef3f2; color:#b42318; border:1px solid #fda29b; }
+.lead-signals-badge.human_review { background:#fffaeb; color:#93370d; border:1px solid #fec84b; }
+.lead-signals-badge.failed { background:#fef3f2; color:#b42318; }
+
+.lead-signals-facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px 16px; margin:12px 0 0; }
+.lead-signals-facts > div { min-width:0; }
+.lead-signals-facts dt { color:#667085; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+.lead-signals-facts dd { margin:2px 0 0; font-size:13.5px; font-weight:600; overflow-wrap:anywhere; }
+.lead-signals-summary { margin:12px 0 0; font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+.lead-signals-error-text { margin:10px 0 0; color:#b42318; font-size:13.5px; overflow-wrap:anywhere; }
+
+.lead-signals-heading { margin:18px 0 8px; font-size:13px; font-weight:700; color:#344054; text-transform:uppercase; letter-spacing:.04em; }
+.lead-signals-muted { margin:0; color:#667085; font-size:13.5px; }
+.lead-signals-list { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; }
+.lead-signal { padding:10px 12px; border:1px solid #e4e7ec; border-left:4px solid #d0d5dd; border-radius:10px; background:#fff; }
+.lead-signal.positive { border-left-color:#17b26a; background:#f6fef9; }
+.lead-signal.negative { border-left-color:#f04438; }
+.lead-signal-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 8px; font-size:14px; }
+.lead-signal-polarity { padding:1px 7px; border-radius:999px; background:#f2f4f7; color:#475467; font-size:11px; font-weight:700; }
+.lead-signal.positive .lead-signal-polarity { background:#dcfae6; color:#067647; }
+.lead-signal.negative .lead-signal-polarity { background:#fee4e2; color:#b42318; }
+.lead-signal-points { font-weight:700; font-variant-numeric:tabular-nums; color:#344054; }
+.lead-signal.positive .lead-signal-points { color:#067647; }
+.lead-signal.negative .lead-signal-points { color:#b42318; }
+.lead-signal-summary { flex:1 1 200px; min-width:0; font-weight:600; overflow-wrap:anywhere; }
+.lead-signal-evidence { margin:6px 0 0; color:#475467; font-size:13px; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; }
+.lead-signal-meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; margin-top:6px; color:#667085; font-size:12px; }
+.lead-signal-meta a { display:inline-flex; align-items:center; gap:3px; color:#1d4ed8; font-weight:600; text-decoration:none; }
+.lead-signal-meta a:hover { text-decoration:underline; }
+
+@media (max-width:640px) {
+  .lead-signals-modal .lead-signals-body { padding:12px 14px 16px; }
+}

@@ -543,6 +543,7 @@
 .companies-page .warm-chip.active_opportunity { background:#f4f3ff; color:#5925dc; }
 .companies-page .warm-chip.do_not_contact { background:#fef3f2; color:#b42318; border:1px solid #fda29b; }
 .companies-page .warm-chip.failed { background:#fef3f2; color:#b42318; }
+.companies-page .warm-chip.human_review { background:#fffaeb; color:#93370d; border:1px solid #fec84b; }
 .companies-page .warm-score { margin-top:4px; font-weight:600; color:#101828; }
 .companies-page .warm-dim { color:#667085; }
 .companies-page .warm-summary { margin-bottom:4px; color:#101828; }

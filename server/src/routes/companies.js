@@ -401,7 +401,7 @@ async function buildCompanyWhere(query, userId) {
     // Companies the Marketing AI Agent has evaluated (CompanyLeadEvaluation,
     // written by routes/marketingWarmLeads.js). Added with AND for the same
     // reason as 'unassigned' below: search sets where.OR.
-    const CLASSES = ['warm', 'early_signal', 'cold', 'insufficient_data', 'existing_customer', 'active_opportunity', 'do_not_contact']
+    const CLASSES = ['warm', 'early_signal', 'cold', 'insufficient_data', 'existing_customer', 'active_opportunity', 'do_not_contact', 'human_review']
     const evaluation =
       warmStatus === 'all'    ? { evaluationStatus: { in: ['evaluated', 'failed'] } } :
       warmStatus === 'failed' ? { evaluationStatus: 'failed' } :
@@ -1162,6 +1162,47 @@ router.get('/:id', auth, async (req, res) => {
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: err.message || 'Server error.' })
+  }
+})
+
+// ── GET /api/companies/:id/lead-evaluation ────────────────
+// The Marketing AI Agent's latest evaluation of this company (stored by
+// routes/marketingWarmLeads.js), shown by "Marketing Agent Signals" on
+// Company Details. Read only. Same access as GET /:id above: any signed-in
+// user, and a Recycle-Binned company answers 404 exactly as its detail page
+// does. runId / evaluationId point into the Marketing AI Agent's own history
+// and are not returned.
+router.get('/:id/lead-evaluation', auth, async (req, res) => {
+  try {
+    const { id } = req.params
+    const company = await prisma.company.findUnique({ where: { id }, select: { id: true, deletedAt: true } })
+    if (!company || company.deletedAt) return res.status(404).json({ message: 'Company not found.' })
+
+    const e = await prisma.companyLeadEvaluation.findUnique({
+      where: { companyId: id },
+      select: {
+        classification: true, evaluationStatus: true, score: true, confidence: true, summary: true,
+        reasons: true, deepCheck: true, error: true, evaluatedAt: true, updatedAt: true,
+      },
+    })
+    if (!e) return res.json({ evaluation: null })
+    res.json({
+      evaluation: {
+        classification: e.classification,
+        evaluationStatus: e.evaluationStatus,
+        score: e.score,
+        confidence: e.confidence,
+        summary: e.summary,
+        reasons: Array.isArray(e.reasons) ? e.reasons : [],
+        deepCheck: e.deepCheck,
+        error: e.error,
+        evaluatedAt: e.evaluatedAt,
+        updatedAt: e.updatedAt,
+      },
+    })
+  } catch (err) {
+    console.error('[companies] lead evaluation:', err.message)
+    res.status(500).json({ message: 'Could not read the Marketing AI Agent evaluation.' })
   }
 })
 

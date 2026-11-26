@@ -10,7 +10,8 @@ import api from '../../api/client'
 
 export const WARM_STATUS_OPTIONS = [
   { value: 'warm',               label: 'Warm leads' },
-  { value: 'early_signal',       label: 'Early signal / Needs review' },
+  { value: 'early_signal',       label: 'Early signal' },
+  { value: 'human_review',       label: 'Needs review' },
   { value: 'cold',               label: 'Cold' },
   { value: 'insufficient_data',  label: 'Not enough data' },
   { value: 'existing_customer',  label: 'Existing customer' },
@@ -22,14 +23,15 @@ export const WARM_STATUS_OPTIONS = [
 
 const CLASS_LABEL = {
   warm: 'Warm',
-  early_signal: 'Early signal — needs review',
+  early_signal: 'Early signal',
   cold: 'Cold',
   insufficient_data: 'Not enough data',
   existing_customer: 'Existing customer',
   active_opportunity: 'Active opportunity',
   do_not_contact: 'Do not contact',
+  human_review: 'Needs review',
 }
-const DEEP_LABEL = {
+export const DEEP_LABEL = {
   done: 'Web research done',
   not_needed: 'Web research not needed',
   skipped_cap: 'Web research pending (batch limit)',
@@ -78,6 +80,7 @@ export function WarmLeadsPanel({ warmStatus, onWarmStatus }) {
             <span><b>{t.existingCustomer ?? 0}</b> existing customer</span>
             <span><b>{t.activeOpportunity ?? 0}</b> active opportunity</span>
             <span><b>{t.doNotContact ?? 0}</b> do not contact</span>
+            <span><b>{t.humanReview ?? 0}</b> needs review</span>
             <span><b>{t.failed}</b> failed</span>
             <span className="warm-leads-run">
               Latest run: {latest.kind === 'test' ? `${latest.total}-company test sample` : latest.kind === 'retry' ? 'retry' : 'batch'} · {latest.status} · {latest.processed}/{latest.total} processed · {fmtDate(latest.finishedAt || latest.startedAt || latest.createdAt)}
